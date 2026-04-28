@@ -337,6 +337,21 @@ The fix for the first four items is the same: **add an IMU**. A 6-axis MPU-6050 
 
 ---
 
+## A note on process
+
+This project was as much a deliberate experiment in working with AI tools as it was a hardware project. Every design decision — the choice of EMA α, the Kabsch derivation, the six-second cap on the world-frame memory, the validity gates on the pose estimator — was something I worked through with Claude as a thinking partner and then traced back to first principles myself before committing it. The aim wasn't to have an AI build this for me; it was to see how far I could push my own understanding of embedded systems, signal processing, and 3D geometry by integrating an AI into the loop the way an engineer integrates any other tool.
+
+What I came out actually understanding, rather than just having shipped:
+
+- Why a software-rendered 3D backend on the GUI thread translates to mouse-drag lag, and what threading the serial reader and switching to OpenGL fixes.
+- What the Kabsch / Procrustes solution is solving, why the SVD reflection guard is necessary, and where the small-motion correspondence assumption breaks.
+- Why yaw is unobservable from a flat-floor depth map regardless of algorithm, and what an IMU specifically adds to resolve it.
+- The discipline of writing a limitations section that names root causes rather than handwaves.
+
+The full [`PROGRESS.md`](PROGRESS.md) captures the process as it actually happened — every wiring mistake, every wrong field name in a struct, every I²C timeout default that bit me. AI accelerated the path through dead ends; the choices, the trade-offs, and the willingness to throw out two complete visualiser rewrites are mine.
+
+---
+
 ## References
 
 - [ST VL53L8CX product page](https://www.st.com/en/imaging-and-photonics-solutions/vl53l8cx.html) — datasheet, 65° diagonal / 45°-per-axis FoV, 1–15 Hz at 8×8.
