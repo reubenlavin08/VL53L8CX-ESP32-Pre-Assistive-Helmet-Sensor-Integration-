@@ -2,6 +2,22 @@
 
 An ESP-IDF project that interfaces the STMicroelectronics SATEL-VL53L8CX time-of-flight breakout board with an ESP32-S3, returning live 8×8 zone distance readings over serial.
 
+> Part of an ongoing assistive helmet sensor integration project.
+
+---
+
+## Hardware
+
+<p align="center">
+  <img src="images/sensor_closeup.jpg" width="380" alt="SATEL-VL53L8CX sensor closeup"/>
+  &nbsp;&nbsp;
+  <img src="images/full_setup_side.jpg" width="380" alt="Full breadboard setup"/>
+</p>
+
+<p align="center">
+  <img src="images/full_setup_top.jpg" width="760" alt="Complete circuit top-down view"/>
+</p>
+
 ---
 
 ## What It Does
