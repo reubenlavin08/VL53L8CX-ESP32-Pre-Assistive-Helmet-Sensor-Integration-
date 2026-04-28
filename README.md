@@ -15,17 +15,48 @@
 ---
 
 <p align="center">
-  <video src="visualizer/progress_demo_v6.mp4"
-         controls muted autoplay loop playsinline width="840">
-  </video>
+  <img src="visualizer/progress_demo_v6.gif" width="840" alt="v6 visualiser in motion — world-frame point memory wrapping around the sensor"/>
 </p>
-<p align="center"><em>v6 — accumulated past observations slide off to the side as the sensor pans, the cone effectively wraps around. Trail behind the sensor fades from invisible at the tail to bright yellow at the head. Live at 15 Hz.</em></p>
+<p align="center">
+  <em>v6 — accumulated past observations slide off to the side as the sensor pans, the cone effectively wraps around. Trail behind the sensor fades from invisible at the tail to bright yellow at the head. Live at 15 Hz.</em>
+  <br/>
+  <sub><a href="visualizer/progress_demo_v6.mp4">▶ HD MP4 (10 s, 370 KB)</a></sub>
+</p>
 
 ---
 
 ## What it does
 
 An ESP32-S3 talks to an **ST VL53L8CX** time-of-flight sensor over I²C, uploads ST's ULD firmware to the chip on boot, and streams the 64-zone depth grid as compact `DATA:d0,d1,…,d63\n` lines over USB-serial at 15 Hz. A Python visualiser reads those lines and renders the scene live — animated ToF rays from the sensor body, a side colour-bar with the distance scale, a Kabsch-based 6-DOF pose estimator, and a world-frame point memory that builds a rolling 3D scan as the sensor sweeps.
+
+---
+
+## Iteration gallery — v1 → v6 at a glance
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%">
+      <img src="images/poster_matplotlib_v2.png" width="100%" alt="v1/v2 matplotlib"/>
+      <br/><strong>v1 / v2 — matplotlib</strong>
+      <br/><sub>first scatter; flicker / drift fixed by v2</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="images/poster_v3.png" width="100%" alt="v3 PyQtGraph"/>
+      <br/><strong>v3 — PyQtGraph + threaded</strong>
+      <br/><sub>GPU rotation; drain-first pipeline</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="images/poster_v4.png" width="100%" alt="v4 scientific look + ToF beams"/>
+      <br/><strong>v4 — scientific look + ToF beams</strong>
+      <br/><sub>colour bar, axes, sensor body, frustum</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="images/poster_v6.png" width="100%" alt="v6 world-frame memory"/>
+      <br/><strong>v6 — world-frame memory</strong>
+      <br/><sub>+ Kabsch 6-DOF pose, fading trail</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -48,11 +79,13 @@ An ESP32-S3 talks to an **ST VL53L8CX** time-of-flight sensor over I²C, uploads
 The visualiser was rewritten three times in a single weekend. The first cut used matplotlib `mplot3d`; mouse rotation was sluggish and the renderer was always one frame stale. v3 swapped in PyQtGraph + OpenGL, threaded the serial reader, and flipped the drain order. The clip below is 3 seconds of the original, then 7 seconds of v3:
 
 <p align="center">
-  <video src="visualizer/progress_demo.mp4"
-         controls muted autoplay loop playsinline width="780">
-  </video>
+  <img src="visualizer/progress_demo.gif" width="780" alt="matplotlib v2 vs PyQtGraph v3 before/after"/>
 </p>
-<p align="center"><em>Before / after — the same data on the same hardware, rendered through two different pipelines.</em></p>
+<p align="center">
+  <em>Before / after — the same data on the same hardware, rendered through two different pipelines.</em>
+  <br/>
+  <sub><a href="visualizer/progress_demo.mp4">▶ HD MP4 (10 s, 134 KB)</a></sub>
+</p>
 
 | | v1 / v2 (matplotlib) | v3 (PyQtGraph) |
 |---|---|---|
@@ -83,11 +116,13 @@ flowchart LR
 ## What you're looking at
 
 <p align="center">
-  <video src="visualizer/progress_demo_v4.mp4"
-         controls muted autoplay loop playsinline width="780">
-  </video>
+  <img src="visualizer/progress_demo_v4.gif" width="780" alt="v4 visualiser elements in motion"/>
 </p>
-<p align="center"><em>v4 in motion — sensor body, FoV frustum, animated ToF beams. Same scene as v6 but without the world-frame memory layer, so it's easier to identify each element on its own.</em></p>
+<p align="center">
+  <em>v4 in motion — sensor body, FoV frustum, animated ToF beams. Same scene as v6 but without the world-frame memory layer, so each element is easier to identify in isolation.</em>
+  <br/>
+  <sub><a href="visualizer/progress_demo_v4.mp4">▶ HD MP4 (5 s, 182 KB)</a></sub>
+</p>
 
 | Element | What it is |
 |---|---|
@@ -141,6 +176,11 @@ z =  cos(h_angle) × cos(v_angle)      (sensor boresight = +Z)
 
 Multiplying each unit vector by its zone's measured distance gives the 3D point in the sensor's body frame.
 
+<p align="center">
+  <img src="images/visualizer_point_cloud.png" width="780" alt="Live 3D point cloud — frame 1916, pointing at a wall ~1800 mm away"/>
+</p>
+<p align="center"><em>First-light static screenshot — frame 1916, sensor pointed at a wall ~1800 mm away.</em></p>
+
 ### EMA smoothing
 Raw zones jitter ±10–30 mm frame-to-frame on a static scene. Per-zone exponential moving average:
 
@@ -170,11 +210,6 @@ Same-zone correspondence relies on the small-motion assumption — at 15 Hz (~67
 ### World-frame point memory (v6)
 
 Each frame, valid sensor-frame points are transformed via `world_p = R_world · sensor_p + t_world` and pushed into a rolling 6-second deque. For rendering, every entry is transformed *back* into the current sensor frame and given an alpha proportional to its age (newest = ~0.35, oldest = 0). The visual effect: as the sensor pans, old observations stay fixed in space and slide around — the "cone" effectively wraps around.
-
-<p align="center">
-  <img src="images/visualizer_point_cloud.png" width="780" alt="Live 3D point cloud — frame 1916, pointing at a wall ~1800 mm away"/>
-</p>
-<p align="center"><em>Static screenshot — frame 1916, sensor pointed at a wall ~1800 mm away.</em></p>
 
 ### Honest limits
 
@@ -266,12 +301,30 @@ vl53l8cx_esp32/
 ├── visualizer/
 │   ├── visualizer.py           # live PyQtGraph 3D scene + scientific overlay
 │   ├── pose_estimator.py       # Kabsch/SVD 6-DOF relative pose, gated and composable
-│   └── progress_demo*.mp4      # screen-capture clips (v3 vs v4 vs v6)
-├── images/                     # hardware photos + first-light point-cloud screenshot
+│   ├── progress_demo*.gif      # inline-renderable demo clips for the README
+│   └── progress_demo*.mp4      # original HD captures (downloadable)
+├── images/                     # hardware photos + per-version poster screenshots
 ├── sdkconfig.defaults          # I²C timeout, raised stack, log levels
 ├── PROGRESS.md                 # full iteration log + every fix and its evidence
 └── README.md                   # you are here
 ```
+
+---
+
+## Known limitations of v6 (the honest list)
+
+This project is paused at a deliberate stopping point — every remaining issue below either needs new hardware or is an inherent property of the sensor. None of them are bugs in the code that another rewrite would fix. Putting them up front so anyone evaluating the project knows exactly where the edges are:
+
+- **Yaw drifts continuously.** Rotation around gravity is fundamentally unobservable from a flat-floor depth map — the same wall looks the same from every yaw angle. The Kabsch estimator fills the gap with whatever the noise suggests and accumulates error. Visible as the trail and accumulated cloud slowly rotating relative to a stationary scene over ~30 s.
+- **All-axis drift over time, even on a static scene.** With ±10–30 mm per-zone noise and only 64 points, every frame's pose estimate has a small bias. Over a few hundred frames that integrates into a noticeable offset. The 6-second memory cap exists specifically because anything older than that is too drifted to be useful.
+- **Same-zone correspondence breaks under fast motion.** The estimator assumes zone *i* in two consecutive frames sees roughly the same world point. A quick wave of the hand can shift several zones onto entirely different objects in one 67 ms tick — the gates (`≤ 300 mm`, `≤ 20°` per frame) catch this and the cumulative pose just *pauses*. Useful behaviour (better than corrupting the chain), but you'll see frames where the trail simply doesn't update.
+- **Accumulated point cloud smears, not snaps.** When pose drifts, world-frame points from old frames end up at slightly wrong world coordinates. Returning the sensor to a previously-scanned region produces a "ghosted" cloud rather than perfect overlap. There is no loop closure.
+- **64 points is genuinely sparse.** A consumer depth camera gives ~300 000 points per frame; this gives 64. ICP-style methods are noticeably less stable with this density. The visual effect is correct, but anyone expecting Kinect-grade scanning quality should know this is two orders of magnitude away from that.
+- **EMA introduces a 200 ms tail.** Even at α = 0.6, the smoothed reading is ~200 ms behind a fast scene change. You'll see this when an object enters the FoV — the points snap into place over ~3 frames rather than instantly. Tradeoff for noise rejection; lowering α makes the points jitter visibly on a static scene.
+- **Power glitches / loose connections silently produce 0/64-valid frames.** When that happens, every zone clamps to 4 000 mm and renders transparent — the cone "goes dark" with no error popup, just a status-bar reading of `valid 0/64 | pose paused`. This was hit several times during development (see [`PROGRESS.md`](PROGRESS.md) issue #6).
+- **Sensor cover glass / fingerprints / tilt-induced specular drop matter.** A smudge or a steep angle on a glossy surface drops valid-zone count to a handful, which both starves the live cloud and kills the pose estimator's correspondence count below its 6-point threshold.
+
+The fix for the first four items is the same: **add an IMU**. A 6-axis MPU-6050 / LSM6DSO on the same I²C bus gives gravity (absolute pitch / roll, no drift), gyro rate (yaw integration with accel-gravity correction, far less drift than depth-only), and a hardware-level timing reference. None of these can come from the VL53L8CX alone, no matter how good the algorithm is. The remaining items are sensor-physics ceilings that no software change can move.
 
 ---
 
