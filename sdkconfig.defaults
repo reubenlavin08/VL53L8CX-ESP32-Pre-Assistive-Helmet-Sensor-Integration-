@@ -1,0 +1,12 @@
+# Increase main task stack — VL53L8CX ULD needs at least 7168 bytes
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Log level
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# I2C driver
+CONFIG_I2C_ENABLE_DEBUG_LOG=n
+
+# VL53L8CX — enable I2C timeout so failures print an error instead of hanging
+CONFIG_VL53L8CX_I2C_TIMEOUT=y
+CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=1000

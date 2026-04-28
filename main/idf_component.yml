@@ -1,0 +1,5 @@
+## IDF Component Manager manifest
+dependencies:
+  rjrp44/vl53l8cx: "^4.0.0"
+  idf:
+    version: ">=5.0.0"
