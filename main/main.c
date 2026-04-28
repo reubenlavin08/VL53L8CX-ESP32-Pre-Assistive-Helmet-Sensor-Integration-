@@ -34,10 +34,35 @@
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 
 /* ── Display options ─────────────────────────────────────────────────────── */
-#define PRINT_GRID          1   /* set 0 to disable the 8×8 ASCII grid */
-#define PRINT_CLOSEST_ONLY  0   /* set 1 to only log the nearest zone   */
+#define PRINT_GRID          0   /* set 1 to print the 8×8 ASCII grid     */
+#define PRINT_CLOSEST_ONLY  0   /* set 1 to only log the nearest zone    */
+#define STREAM_DATA         1   /* set 1 to stream a parseable line/frame */
+#define MAX_DISTANCE_MM     4000 /* clamp invalid zones to this distance  */
 
 static const char *TAG = "VL53L8CX";
+
+/* ── Helper: stream one parseable line per frame ─────────────────────────
+ *  Format:  DATA:<d0>,<d1>,...,<dN>\n
+ *  Invalid zones are clamped to MAX_DISTANCE_MM so the host never sees gaps.
+ */
+#if STREAM_DATA
+static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resolution)
+{
+    int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    printf("DATA:");
+    for (int z = 0; z < total; z++) {
+        int16_t dist;
+        if (results->nb_target_detected[z] > 0 &&
+            results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE] == 5) {
+            dist = results->distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
+            if (dist > MAX_DISTANCE_MM) dist = MAX_DISTANCE_MM;
+        } else {
+            dist = MAX_DISTANCE_MM;
+        }
+        printf("%d%c", dist, (z == total - 1) ? '\n' : ',');
+    }
+}
+#endif
 
 /* ── Helper: print full 8×8 distance grid ───────────────────────────────── */
 static void print_distance_grid(VL53L8CX_ResultsData *results, uint8_t resolution)
@@ -185,12 +210,16 @@ static void ranging_task(void *arg)
             continue;
         }
 
-        ESP_LOGI(TAG, "Frame #%lu", (unsigned long)++frame_num);
+        ++frame_num;
 
+#if STREAM_DATA
+        stream_distance_line(&results, SENSOR_RESOLUTION);
+#endif
 #if PRINT_CLOSEST_ONLY
         print_closest_zone(&results, SENSOR_RESOLUTION);
 #endif
 #if PRINT_GRID
+        ESP_LOGI(TAG, "Frame #%lu", (unsigned long)frame_num);
         print_distance_grid(&results, SENSOR_RESOLUTION);
 #endif
     }

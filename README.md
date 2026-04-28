@@ -131,11 +131,29 @@ vl53l8cx_esp32/
 ├── CMakeLists.txt          root build file
 ├── sdkconfig.defaults      pre-configured stack size and I2C timeout
 ├── README.md
-└── main/
-    ├── CMakeLists.txt
-    ├── idf_component.yml   pulls rjrp44/vl53l8cx ^4.0.0 automatically
-    └── main.c              sensor interface — init, firmware upload, ranging loop
+├── main/
+│   ├── CMakeLists.txt
+│   ├── idf_component.yml   pulls rjrp44/vl53l8cx ^4.0.0 automatically
+│   └── main.c              sensor interface — init, firmware upload, ranging loop
+└── visualizer/
+    ├── visualizer.py       live 3D point cloud renderer
+    ├── requirements.txt
+    └── README.md
 ```
+
+---
+
+## Live 3D Visualisation
+
+The `visualizer/` folder contains a Python script that reads the sensor's data over serial and renders a real-time 3D point cloud — each of the 64 zones projected through the sensor's true 45° field of view and coloured by distance.
+
+```bash
+cd visualizer
+pip install -r requirements.txt
+python visualizer.py --port COM12
+```
+
+See [visualizer/README.md](visualizer/README.md) for details.
 
 ---
 
