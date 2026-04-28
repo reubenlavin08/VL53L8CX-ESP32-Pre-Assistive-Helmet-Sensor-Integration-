@@ -241,6 +241,7 @@ v3 was responsive but visually plainer than the matplotlib version. v4 brings ba
 
 - `visualizer/progress_demo.mp4` — 10-second before/after clip cut from screen captures: 3 seconds of the v1/v2 matplotlib version, 7 seconds of the v3/v4 PyQtGraph version. Shows the rotation responsiveness gain and the new sensor + ray visualisation.
 - `visualizer/progress_demo_v4.mp4` — 5-second focused capture of the v4 view in motion (sensor body + frustum + animated ToF rays at 15 Hz post-firmware bump).
+- `visualizer/progress_demo_v6.mp4` — 10-second capture of the final v6 view: world-frame point memory wrapping around the sensor as it pans, fading trajectory trail, and the live ToF rays at 15 Hz.
 
 ### Things that did NOT need fixing (despite earlier suspicion)
 
