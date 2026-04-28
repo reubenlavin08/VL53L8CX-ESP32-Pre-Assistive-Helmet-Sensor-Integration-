@@ -151,17 +151,54 @@ CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=1000
 
 ---
 
+## Visualiser Issues Encountered and Fixed (v2)
+
+### Issue 1: Points flickering and occasionally disappearing
+**Root cause:** `ax.clear()` was called every frame. This destroys and recreates every matplotlib artist — axes, labels, tick marks, pane backgrounds, grid lines — 10 times per second. When a single redraw took longer than 100 ms (the sensor's frame interval), the serial buffer backed up with unread `DATA:` lines. The next `readline()` then returned a partial or empty line, `parse_data_line` returned `None`, the render was skipped entirely, and the points appeared to vanish.
+
+**Fix:** Create the scatter object once before the loop. Update its data in-place each frame:
+```python
+sc._offsets3d = (xs, ys, zs)   # move points
+sc.set_array(smoothed)          # recolour by distance
+fig.canvas.draw_idle()          # redraw only what changed
+```
+All axis styling (limits, labels, pane colours, view angle) is set once before the loop and never touched again.
+
+---
+
+### Issue 2: Serial buffer backlog — always rendering stale data
+**Root cause:** If matplotlib rendering takes >100 ms, unread frames pile up in the OS serial buffer. The visualiser was always rendering the *oldest* buffered frame, not the current one — meaning the display could be several frames behind reality.
+
+**Fix:** After receiving one valid frame, drain `ser.in_waiting` bytes immediately to discard stale frames and keep only the newest:
+```python
+while ser.in_waiting:
+    newer = ser.readline().decode("utf-8", errors="ignore").strip()
+    parsed = parse_data_line(newer)
+    if parsed is not None:
+        distances = parsed   # always keep the most recent
+```
+
+---
+
+### Issue 3: Raw sensor noise causing jumpy points
+**Cause:** The VL53L8CX returns readings that vary ±10–30 mm frame-to-frame on a static scene. Rendering raw values directly made individual points visibly jump each frame.
+
+**Fix:** Exponential moving average (EMA) per zone:
+```python
+EMA_ALPHA = 0.3
+smoothed = EMA_ALPHA * distances + (1.0 - EMA_ALPHA) * smoothed
+```
+Weight 0.3 on the new frame, 0.7 on the running average. Eliminates noise flicker while still tracking real movement in roughly 3–4 frames (~300–400 ms lag).
+
+---
+
 ## Planned Next Steps
 
-1. **Temporal smoothing** — exponential moving average per zone:  
-   `smoothed[z] = 0.7 × prev[z] + 0.3 × latest[z]`  
-   Reduces flicker and noise in the point cloud.
+1. **Interpolated topographic surface** — bicubic interpolation across the 8×8 grid, rendered as a smooth 3D mesh with viridis colouring and contour lines every 100 mm.
 
-2. **Interpolated topographic surface** — bicubic interpolation across the 8×8 grid, rendered as a smooth 3D mesh with viridis colouring and contour lines every 100 mm.
+2. **Silhouette / proximity detection overlay** — highlight zones below a configurable threshold distance to indicate objects or obstacles.
 
-3. **Silhouette / proximity detection overlay** — highlight zones below a configurable threshold distance to indicate objects or obstacles.
-
-4. **Integration into assistive helmet** — combine with additional sensors (IMU, wider-angle ToF or ultrasonic) for fuller spatial awareness.
+3. **Integration into assistive helmet** — combine with additional sensors (IMU, wider-angle ToF or ultrasonic) for fuller spatial awareness.
 
 ---
 
@@ -172,3 +209,5 @@ CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=1000
 | `0954ae0` | Initial working interface for VL53L8CX on ESP32-S3 |
 | `7d34ae4` | Add hardware photos and update README with images |
 | `e349eb8` | Add streaming data output and 3D point cloud visualiser |
+| `ee2c36d` | Add PROGRESS.md documenting project history and lessons learned |
+| *(next)* | Fix visualiser flicker, buffer backlog, and point noise (v2) |
