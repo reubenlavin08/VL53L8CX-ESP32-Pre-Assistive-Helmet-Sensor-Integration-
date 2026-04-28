@@ -293,13 +293,51 @@ A `GLLinePlotItem` traces the cumulative path of the sensor's origin in world fr
 
 ---
 
-## Planned Next Steps
+## Visualiser v6 — world-frame point memory + fading trail
 
-1. **Interpolated topographic surface** — bicubic interpolation across the 8×8 grid, rendered as a smooth 3D mesh with viridis colouring and contour lines every 100 mm.
+Two visual issues with v5:
 
-2. **Silhouette / proximity detection overlay** — highlight zones below a configurable threshold distance to indicate objects or obstacles.
+- The live point cloud was always pinned in front of the sensor in a 45° cone. Looked the same regardless of how the sensor moved — past observations weren't preserved.
+- The trajectory trail kept growing forever, eventually becoming a thick yellow tangle that obscured the scene.
 
-3. **Integration into assistive helmet** — combine with additional sensors (IMU, wider-angle ToF or ultrasonic) for fuller spatial awareness.
+### Fixes
+
+**Accumulated world-frame cloud.** Each frame, the valid sensor-frame points are transformed into world frame using the v5 pose estimate (`world_p = R_world · sensor_p + t_world`) and pushed into a rolling deque (~6 s × 15 Hz = 90 frames). For rendering, every entry is transformed back into the *current* sensor frame each tick and given an alpha proportional to its age (newest = ~0.35, oldest = ~0). The visual effect: as the sensor pans, old observations stay where they were physically measured and slide off to the side instead of staying glued to the front cone — the cone effectively wraps around the sensor.
+
+**Fading trajectory trail.** The trail is now capped at ~5 s of history (75 points at 15 Hz). Each vertex carries its own alpha — `linspace(0.05, 0.95, n)` from tail to head — so the line fades from invisible at the back to bright yellow at the sensor's current position. No more growing tangle.
+
+**R key clears both** the trail and the accumulated cloud.
+
+### Caveats
+
+The accumulated cloud's quality is bounded by the pose estimator. If the pose drifts (which it will, especially in yaw), past observations smear by the drift amount when the sensor returns near a previously-scanned region. The 6-second cap keeps drift damage local — anything older has faded out by then. With an IMU added later, drift drops sharply and the same code becomes a useful sparse 3D map.
+
+---
+
+## Status — paused on hardware
+
+**v6 is the final visualiser iteration on the current hardware.** With only the VL53L8CX (no IMU, no second sensor, no compass), every avenue for improvement has been pushed as far as the depth data alone allows:
+
+- 15 Hz is the datasheet maximum for 8×8 mode.
+- 64 zones at ±10–30 mm noise is the sensor's resolution and accuracy ceiling.
+- Yaw is unobservable from depth alone, so the v5 pose estimator drifts on rotation around gravity. No firmware or visualiser change can fix this — it is a sensing-physics limit, not a software one.
+- The accumulated world-frame cloud in v6 is bounded by that same drift.
+
+Further visualiser work is **paused until the IMU arrives.** Once the IMU is wired onto the same I2C bus, the next iteration will fuse accelerometer + gyro into the pose estimator (gravity gives absolute pitch + roll, gyro integration plus accel-gravity correction tightens yaw), which unlocks:
+
+- A genuine 3D scan that holds shape over time without drift.
+- Heading-stable trajectory, sufficient for helmet-tracking experiments.
+- The interpolated topographic surface and proximity overlay ideas below — both currently bottlenecked by drift, not by rendering.
+
+## Planned Next Steps (queued for IMU integration)
+
+1. **Sensor fusion** — accelerometer/gyro + ToF, replacing the depth-only Kabsch estimator with a complementary or Madgwick filter.
+
+2. **Interpolated topographic surface** — bicubic interpolation across the 8×8 grid, rendered as a smooth 3D mesh with viridis colouring and contour lines every 100 mm.
+
+3. **Silhouette / proximity detection overlay** — highlight zones below a configurable threshold distance to indicate objects or obstacles.
+
+4. **Integration into assistive helmet** — combine with additional sensors (wider-angle ToF or ultrasonic) for fuller spatial awareness.
 
 ---
 
@@ -317,6 +355,7 @@ A `GLLinePlotItem` traces the cumulative path of the sensor's origin in world fr
 | `cf574b6` | Visualiser v3: rewrite on PyQtGraph + threaded serial reader |
 | `62f33f0` | Visualiser v4: scientific axes + sensor model + animated ToF rays |
 | `20c5d68` | Document v3 + v4 visualiser iterations and add progress demo clip |
-| *(next)*  | Bump VL53L8CX ranging frequency 10 → 15 Hz (firmware) |
-| *(next)*  | Visualiser v5: experimental 6-DOF relative pose estimation (Kabsch) |
-| *(next)*  | Document v5 + 15 Hz bump and add v4 motion demo clip |
+| `568aa5c` | Bump VL53L8CX ranging frequency 10 → 15 Hz (firmware) |
+| `4520f99` | Visualiser v5: experimental 6-DOF relative pose estimation (Kabsch) |
+| `5462d60` | Document v5 + 15 Hz bump and add v4 motion demo clip |
+| *(next)*  | Visualiser v6: world-frame point memory + fading trail |

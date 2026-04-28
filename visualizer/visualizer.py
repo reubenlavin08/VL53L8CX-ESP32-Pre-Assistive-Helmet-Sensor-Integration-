@@ -129,12 +129,15 @@ class PointCloudWindow(QtWidgets.QMainWindow):
         self.smoothed   = None
         self.frame_n    = 0
 
-        self.setWindowTitle("VL53L8CX live point cloud  -  v5 (experimental 6-DOF)")
+        self.setWindowTitle("VL53L8CX live point cloud  -  v6 (world-frame memory)")
         self.resize(1300, 850)
 
         # Experimental 6-DOF relative pose estimator + trail buffer
         self.pose_estimator = RelativePoseEstimator()
-        self.world_trail    = deque(maxlen=int(15 * 30))  # ~30 s at 15 Hz
+        self.world_trail    = deque(maxlen=int(15 * 5))    # ~5 s at 15 Hz
+        # Accumulated world-frame point cloud (each entry: (Nx3 world points, Nx4 RGBA))
+        # Capped at ~6 s so old observations fade out before the pose drift shows.
+        self.world_cloud    = deque(maxlen=int(15 * 6))
 
         # Central layout: GL view + side colour bar
         central = QtWidgets.QWidget()
@@ -338,8 +341,8 @@ class PointCloudWindow(QtWidgets.QMainWindow):
     def _build_trajectory_trail(self):
         self.trail_line = gl.GLLinePlotItem(
             pos=np.zeros((1, 3), dtype=np.float32),
-            color=(1.0, 0.85, 0.3, 0.85),
-            width=2.0, mode="line_strip", antialias=True,
+            color=np.zeros((1, 4), dtype=np.float32),
+            width=2.5, mode="line_strip", antialias=True,
         )
         self.view.addItem(self.trail_line)
 
@@ -350,11 +353,22 @@ class PointCloudWindow(QtWidgets.QMainWindow):
         )
         self.view.addItem(self.trail_head)
 
+        # Accumulated world-frame cloud (re-projected into current sensor frame
+        # each tick, faded by age) — gives the impression of points rotating
+        # around the sensor as it pans.
+        self.world_scatter = gl.GLScatterPlotItem(
+            pos=np.zeros((1, 3)),
+            color=np.zeros((1, 4), dtype=np.float32),
+            size=6, pxMode=True,
+        )
+        self.view.addItem(self.world_scatter)
+
     def keyPressEvent(self, event):
-        # 'R' resets the cumulative pose + clears the trail
+        # 'R' resets the cumulative pose + clears the trail and world cloud
         if event.key() == QtCore.Qt.Key.Key_R:
             self.pose_estimator.reset()
             self.world_trail.clear()
+            self.world_cloud.clear()
             self.status.showMessage("Pose reset.", 2000)
         else:
             super().keyPressEvent(event)
@@ -403,21 +417,58 @@ class PointCloudWindow(QtWidgets.QMainWindow):
 
         # ── Experimental 6-DOF pose: feed sensor-frame points to estimator ─
         valid_mask = ~invalid
-        # Pose estimator works on smoothed sensor-frame points (X, Y_up, Z_depth)
         pose_updated = self.pose_estimator.update(points_sensor, valid_mask)
         if pose_updated:
-            # Append the current world-frame sensor origin to the trail
             self.world_trail.append(self.pose_estimator.world_t.copy())
 
-        # Render the trail back into the current sensor frame and remap to GL axes
+            # Stamp this frame's valid points into the world-frame cloud memory.
+            # world_p = R_world @ sensor_p + t_world  (per row)
+            valid_sensor_pts = points_sensor[valid_mask]
+            world_pts        = (valid_sensor_pts @ self.pose_estimator.world_R.T
+                                + self.pose_estimator.world_t)
+            world_cols       = pt_colors[valid_mask].copy()
+            world_cols[:, 3] = 1.0
+            self.world_cloud.append((world_pts, world_cols))
+
+        # ── Trail with per-vertex alpha fade (tail fades to transparent) ────
         if len(self.world_trail) >= 2:
             local = self.pose_estimator.trail_in_current_frame(np.array(self.world_trail))
             trail_gl = np.column_stack([local[:, 0], local[:, 2], local[:, 1]]).astype(np.float32)
-            self.trail_line.setData(pos=trail_gl)
+            n = len(trail_gl)
+            trail_colors = np.empty((n, 4), dtype=np.float32)
+            trail_colors[:, 0] = 1.00
+            trail_colors[:, 1] = 0.85
+            trail_colors[:, 2] = 0.30
+            trail_colors[:, 3] = np.linspace(0.05, 0.95, n)  # tail -> head
+            self.trail_line.setData(pos=trail_gl, color=trail_colors)
             self.trail_head.setData(pos=trail_gl[-1:])
         else:
-            self.trail_line.setData(pos=np.zeros((1, 3), dtype=np.float32))
+            self.trail_line.setData(pos=np.zeros((1, 3), dtype=np.float32),
+                                    color=np.zeros((1, 4), dtype=np.float32))
             self.trail_head.setData(pos=np.zeros((1, 3), dtype=np.float32))
+
+        # ── Accumulated world-frame cloud, transformed back into current
+        #    sensor frame and faded by age. Old observations slide off to
+        #    the side as the sensor rotates → cone effectively wraps around.
+        if len(self.world_cloud) >= 1:
+            n_frames = len(self.world_cloud)
+            R_inv    = self.pose_estimator.world_R   # so local = (world - t) @ R_world
+            t_w      = self.pose_estimator.world_t
+
+            local_chunks  = []
+            colour_chunks = []
+            for i, (wpts, base_cols) in enumerate(self.world_cloud):
+                age_norm = (n_frames - 1 - i) / max(1, n_frames - 1)  # 0 newest, 1 oldest
+                local = (wpts - t_w) @ R_inv
+                cols = base_cols.copy()
+                cols[:, 3] = (1.0 - age_norm) * 0.35
+                local_chunks.append(local)
+                colour_chunks.append(cols)
+
+            cloud = np.concatenate(local_chunks, axis=0)
+            cols  = np.concatenate(colour_chunks, axis=0).astype(np.float32)
+            cloud_gl = np.column_stack([cloud[:, 0], cloud[:, 2], cloud[:, 1]]).astype(np.float32)
+            self.world_scatter.setData(pos=cloud_gl, color=cols)
 
         self.frame_n += 1
         n_invalid = int(invalid.sum())
