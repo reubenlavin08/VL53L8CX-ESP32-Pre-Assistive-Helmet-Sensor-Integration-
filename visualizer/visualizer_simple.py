@@ -2,15 +2,18 @@
 Minimal VL53L8CX point cloud visualiser — raw data only.
 
 No pose tracking, no trail, no FoV frustum, no rays, no world-frame memory.
-Just opens the serial port, parses DATA: lines, projects 64 zones into 3D,
-and renders them as coloured points. Useful for sanity-checking what the
-sensor actually sees, with nothing in the way.
+Just opens the data source (USB serial OR WiFi TCP), parses DATA: lines,
+projects 64 zones into 3D, and renders them as coloured points.
 
-Usage:
-    python visualizer_simple.py --port COM10 --baud 115200
+Usage (wired serial):
+    python visualizer_simple.py --port COM10
+
+Usage (WiFi TCP):
+    python visualizer_simple.py --host 192.168.1.228
 """
 
 import argparse
+import socket
 import sys
 
 import numpy as np
@@ -56,35 +59,61 @@ def parse_data_line(line):
     return np.asarray(values, dtype=float)
 
 
-class SerialReader(QtCore.QThread):
+class SourceReader(QtCore.QThread):
+    """Reads DATA: lines from either a serial port or a TCP socket."""
     new_frame = QtCore.pyqtSignal(object)
     error = QtCore.pyqtSignal(str)
 
-    def __init__(self, port, baud):
+    def __init__(self, args):
         super().__init__()
-        self.port, self.baud, self._stop = port, baud, False
+        self.args = args
+        self._stop = False
 
     def run(self):
-        try:
-            ser = serial.Serial(self.port, self.baud, timeout=1)
-        except serial.SerialException as exc:
-            self.error.emit(str(exc))
-            return
-        while not self._stop:
-            # Drain to keep only newest frame
-            latest = None
-            line = ser.readline().decode("utf-8", errors="ignore").strip()
-            parsed = parse_data_line(line)
-            if parsed is not None:
-                latest = parsed
-            while ser.in_waiting:
+        if self.args.host:
+            try:
+                sock = socket.create_connection((self.args.host, self.args.tcp_port), timeout=5)
+                sock.settimeout(1.0)
+            except OSError as exc:
+                self.error.emit(f"TCP connect to {self.args.host}:{self.args.tcp_port} failed: {exc}")
+                return
+            f = sock.makefile("rb")
+            try:
+                while not self._stop:
+                    try:
+                        raw = f.readline()
+                    except socket.timeout:
+                        continue
+                    if not raw:
+                        break
+                    line = raw.decode("utf-8", errors="ignore").strip()
+                    parsed = parse_data_line(line)
+                    if parsed is not None:
+                        self.new_frame.emit(parsed)
+            finally:
+                f.close()
+                sock.close()
+        else:
+            try:
+                ser = serial.Serial(self.args.port, self.args.baud, timeout=1)
+            except serial.SerialException as exc:
+                self.error.emit(str(exc))
+                return
+            while not self._stop:
+                # Drain to keep only newest frame
+                latest = None
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
                 parsed = parse_data_line(line)
                 if parsed is not None:
                     latest = parsed
-            if latest is not None:
-                self.new_frame.emit(latest)
-        ser.close()
+                while ser.in_waiting:
+                    line = ser.readline().decode("utf-8", errors="ignore").strip()
+                    parsed = parse_data_line(line)
+                    if parsed is not None:
+                        latest = parsed
+                if latest is not None:
+                    self.new_frame.emit(latest)
+            ser.close()
 
     def stop(self):
         self._stop = True
@@ -161,17 +190,22 @@ class SimpleWindow(QtWidgets.QMainWindow):
 
     def on_serial_error(self, msg):
         QtWidgets.QMessageBox.critical(
-            self, "Serial error",
-            f"Could not open serial port:\n\n{msg}\n\n"
-            "If idf.py monitor or the v6 visualizer is running, close it first."
+            self, "Connection error",
+            f"Could not open data source:\n\n{msg}\n\n"
+            "Close other monitors/visualizers on the same port, or verify the ESP's WiFi IP."
         )
         self.close()
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--port", default="COM10")
+    # Serial source (default)
+    p.add_argument("--port", default="COM10", help="serial port (used when --host not given)")
     p.add_argument("--baud", type=int, default=115200)
+    # WiFi source (alternative)
+    p.add_argument("--host", default=None, help="ESP IP — if given, connect via TCP instead of serial")
+    p.add_argument("--tcp-port", type=int, default=3333)
+    # Display
     p.add_argument("--max-mm", type=int, default=4000)
     args = p.parse_args()
 
@@ -179,7 +213,7 @@ def main():
     win = SimpleWindow(args.max_mm)
     win.show()
 
-    reader = SerialReader(args.port, args.baud)
+    reader = SourceReader(args)
     reader.new_frame.connect(win.update_frame)
     reader.error.connect(win.on_serial_error)
     reader.start()

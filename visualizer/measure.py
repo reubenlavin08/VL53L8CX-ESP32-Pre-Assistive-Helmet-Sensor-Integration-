@@ -2,21 +2,23 @@
 VL53L8CX tuning measurement script.
 
 Captures N frames of paired DATA:/SIGMA: lines from the ESP32 firmware over
-serial, computes per-zone statistics (mean distance, our measured standard
-deviation across frames, valid yield, mean sensor-reported sigma_mm), and
-writes both a stdout summary + a CSV log row per zone per run.
+EITHER a USB serial port OR a WiFi TCP connection, computes per-zone statistics
+(mean distance, our measured standard deviation across frames, valid yield,
+mean sensor-reported sigma_mm), and writes both a stdout summary + a CSV log
+row per zone per run.
 
 The CSV accumulates across runs — one file is your full experiment log.
 
-Usage:
-    python measure.py --port COM12 --baud 115200 \\
-                      --frames 200 \\
-                      --config "baseline-15hz-8x8" \\
-                      --csv measurements.csv
+Usage (wired):
+    python measure.py --port COM10 --frames 200 --config "baseline-15hz-8x8-wired"
+
+Usage (WiFi):
+    python measure.py --host 192.168.1.228 --frames 200 --config "baseline-15hz-8x8-wifi"
 """
 
 import argparse
 import csv
+import socket
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -53,34 +55,63 @@ def parse_sigma_line(line):
     return np.asarray(values, dtype=int)
 
 
-def capture_frames(port, baud, n_frames):
+def open_source(args):
+    """Returns (source_label, line_iterator) for either serial or TCP."""
+    if args.host:
+        sock = socket.create_connection((args.host, args.tcp_port), timeout=5)
+        sock.settimeout(5)
+        label = f"tcp://{args.host}:{args.tcp_port}"
+        # Wrap as a binary file so we can call .readline() like with serial
+        f = sock.makefile("rb")
+        def gen():
+            try:
+                while True:
+                    raw = f.readline()
+                    if not raw:
+                        break
+                    yield raw.decode("utf-8", errors="ignore").strip()
+            finally:
+                f.close()
+                sock.close()
+        return label, gen()
+    else:
+        ser = serial.Serial(args.port, args.baud, timeout=2)
+        ser.reset_input_buffer()
+        label = f"{args.port}@{args.baud}"
+        def gen():
+            try:
+                while True:
+                    yield ser.readline().decode("utf-8", errors="ignore").strip()
+            finally:
+                ser.close()
+        return label, gen()
+
+
+def capture_frames(args, n_frames):
     """Read paired DATA:/SIGMA: lines until we have n_frames complete pairs."""
     distances = []
     sigmas = []
+    label, lines = open_source(args)
+    current_data = None
+    captured = 0
 
-    with serial.Serial(port, baud, timeout=2) as ser:
-        ser.reset_input_buffer()
-        current_data = None
-        captured = 0
-
-        print(f"Capturing {n_frames} frames from {port}@{baud}...")
-        while captured < n_frames:
-            line = ser.readline().decode("utf-8", errors="ignore").strip()
-            if not line:
-                continue
-
-            data = parse_data_line(line)
-            sigma = parse_sigma_line(line)
-
-            if data is not None:
-                current_data = data
-            elif sigma is not None and current_data is not None:
-                distances.append(current_data)
-                sigmas.append(sigma)
-                current_data = None
-                captured += 1
-                if captured % 20 == 0 or captured == n_frames:
-                    print(f"  {captured}/{n_frames}")
+    print(f"Capturing {n_frames} frames from {label}...")
+    for line in lines:
+        if not line:
+            continue
+        data = parse_data_line(line)
+        sigma = parse_sigma_line(line)
+        if data is not None:
+            current_data = data
+        elif sigma is not None and current_data is not None:
+            distances.append(current_data)
+            sigmas.append(sigma)
+            current_data = None
+            captured += 1
+            if captured % 20 == 0 or captured == n_frames:
+                print(f"  {captured}/{n_frames}")
+            if captured >= n_frames:
+                break
 
     return np.array(distances), np.array(sigmas)
 
@@ -166,14 +197,19 @@ def write_csv(csv_path, config, results):
 
 def main():
     p = argparse.ArgumentParser(description="VL53L8CX tuning measurement (precision-only).")
-    p.add_argument("--port",    default="COM12")
+    # Serial source (default)
+    p.add_argument("--port",    default="COM10", help="serial port (used when --host not given)")
     p.add_argument("--baud",    type=int, default=115200)
+    # WiFi source (alternative)
+    p.add_argument("--host",    default=None, help="ESP IP address — if given, use TCP instead of serial")
+    p.add_argument("--tcp-port", type=int, default=3333)
+    # Common
     p.add_argument("--frames",  type=int, default=200)
-    p.add_argument("--config",  required=True, help="label for this run, e.g. 'baseline-15hz-8x8'")
+    p.add_argument("--config",  required=True, help="label for this run, e.g. 'baseline-15hz-8x8-wifi'")
     p.add_argument("--csv",     default="measurements.csv")
     args = p.parse_args()
 
-    distances, sigmas = capture_frames(args.port, args.baud, args.frames)
+    distances, sigmas = capture_frames(args, args.frames)
     results = compute_stats(distances, sigmas)
     print_summary(args.config, results)
     write_csv(args.csv, args.config, results)

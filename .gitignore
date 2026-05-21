@@ -6,3 +6,6 @@ dependencies.lock
 .vscode/
 *.pyc
 __pycache__/
+
+# WiFi credentials — never commit
+main/wifi_credentials.h
