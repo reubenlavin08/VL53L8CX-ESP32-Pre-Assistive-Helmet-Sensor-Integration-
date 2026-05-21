@@ -267,11 +267,15 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 |---|---|---|
 | `GPIO_SDA` / `GPIO_SCL` / `GPIO_PWREN` | 1 / 2 / 5 | any valid GPIO |
 | `SENSOR_RESOLUTION` | `VL53L8CX_RESOLUTION_8X8` | `_4X4` |
-| `RANGING_FREQ_HZ` | `15` | 1–15 Hz (8×8), 1–60 Hz (4×4) |
+| `RANGING_FREQ_HZ` | `8` *(was 15)* | 1–15 Hz (8×8), 1–60 Hz (4×4). Lower Hz → longer auto-integration in CONTINUOUS mode → cleaner data per the √t rule. |
+| `RANGING_MODE` | `VL53L8CX_RANGING_MODE_CONTINUOUS` | `_AUTONOMOUS` to set integration time explicitly |
 | `STREAM_DATA` | `1` | `0` to silence the `DATA:` lines |
+| `STREAM_SIGMA` | `1` | `0` to silence the `SIGMA:` lines (v7+) |
 | `PRINT_GRID` | `0` | `1` for the ASCII 8×8 grid |
 | `PRINT_CLOSEST_ONLY` | `0` | `1` for nearest-zone log only |
 | `MAX_DISTANCE_MM` | `4000` | clamp value for invalid zones |
+
+WiFi + OTA values live in `main/wifi_credentials.h` (gitignored) — see the "Credentials setup" subsection under v7.
 
 </details>
 
@@ -284,8 +288,11 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 | Silent hang after "interface starting" | I²C read timeout = `-1` (infinite) | Already fixed in `sdkconfig.defaults` (`CONFIG_VL53L8CX_I2C_TIMEOUT=y`, value 1000). |
 | 5 V pin reads ~2 V | plugged into native USB port | Use the UART port, or power the sensor from 3.3 V (the SATEL LDO accepts 2.8–5.5 V). |
 | Stack overflow | main stack too small | Already raised to 8192 bytes in `sdkconfig.defaults`. |
-| Visualiser can't open COM12 | `idf.py monitor` is holding it | Close monitor (Ctrl + ]) before launching the Python visualiser. |
-| Build fails | wrong IDF version | Requires ESP-IDF v5.0+. |
+| Visualiser can't open COMxx | `idf.py monitor` is holding it | Close monitor (Ctrl + ]) before launching the Python visualiser. Or use WiFi (`--host`) which doesn't share the port. |
+| COMxx vanishes whenever the ESP resets | Native USB-CDC re-enumerates on reset | Use the **UART port** (CH343 → typically COM12 on Windows). The CH343 stays connected to the host regardless of ESP state. The native USB port (typically COM10) drops every time the ESP reboots. The `restart_tools.ps1` script + desktop shortcut handles the relaunch after each reset. |
+| OTA push fails with HTTP 401 | wrong/missing `X-OTA-Token` header | Verify `OTA_TOKEN` in `wifi_credentials.h` matches the one in `ota_flash.py`. |
+| OTA push fails with timeout / connection refused | ESP not on WiFi, or wrong IP | Re-check the boot log over UART for "Got IP: x.x.x.x". DHCP may have changed it. |
+| Build fails | wrong IDF version | Requires ESP-IDF v5.0+ (developed against v5.4.4). |
 
 </details>
 
@@ -296,15 +303,21 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 ```
 vl53l8cx_esp32/
 ├── main/
-│   ├── main.c                  # sensor init, ULD upload, ranging loop, DATA: streaming
+│   ├── main.c                  # sensor init, ULD upload, ranging loop, DATA:/SIGMA: streaming, WiFi STA, TCP server (3333), OTA HTTP server (80)
+│   ├── wifi_credentials.h      # SSID / password / OTA token (GITIGNORED — never committed)
+│   ├── CMakeLists.txt          # component dependencies (esp_wifi, lwip, app_update, esp_http_server, etc.)
 │   └── idf_component.yml       # pulls rjrp44/vl53l8cx ^4.0.0 automatically
 ├── visualizer/
-│   ├── visualizer.py           # live PyQtGraph 3D scene + scientific overlay
+│   ├── visualizer.py           # v6 — full PyQtGraph 3D scene with Kabsch pose + world-frame memory
+│   ├── visualizer_simple.py    # v7 — stripped-down point cloud, blinker, rays. Serial OR WiFi.
 │   ├── pose_estimator.py       # Kabsch/SVD 6-DOF relative pose, gated and composable
+│   ├── measure.py              # v7 — tuning measurement: per-zone σ + valid yield, CSV log
+│   ├── ota_flash.py            # v7 — push firmware to ESP over WiFi (POST /update)
+│   ├── restart_tools.ps1       # v7 — one-click visualizer + monitor restart
 │   ├── progress_demo*.gif      # inline-renderable demo clips for the README
 │   └── progress_demo*.mp4      # original HD captures (downloadable)
 ├── images/                     # hardware photos + per-version poster screenshots
-├── sdkconfig.defaults          # I²C timeout, raised stack, log levels
+├── sdkconfig.defaults          # I²C timeout, raised stack, two-OTA partition layout, 16 MB flash
 ├── PROGRESS.md                 # full iteration log + every fix and its evidence
 └── README.md                   # you are here
 ```
@@ -325,6 +338,76 @@ This project is paused at a deliberate stopping point. Every remaining issue bel
 - **Sensor cover glass / fingerprints / tilt-induced specular drop matter.** A smudge or a steep angle on a glossy surface drops valid-zone count to a handful, which both starves the live cloud and kills the pose estimator's correspondence count below its 6-point threshold.
 
 The fix for the first four items is the same: **add an IMU**. A 6-axis MPU-6050 / LSM6DSO on the same I²C bus gives gravity (absolute pitch / roll, no drift), gyro rate (yaw integration with accel-gravity correction, far less drift than depth-only), and a hardware-level timing reference. None of these can come from the VL53L8CX alone, no matter how good the algorithm is. The remaining items are sensor-physics ceilings that no software change can move.
+
+---
+
+## v7 — Untethered: WiFi streaming + OTA reflashing
+
+Phase-1 firmware improvements (no algorithm changes — the sensor pipeline itself is unchanged from v6). The point of v7 is to cut the USB cable for two operations: **streaming data** and **flashing firmware**. Both now happen over WiFi.
+
+### What changed
+
+- **Per-zone `range_sigma_mm` is now also streamed.** Each frame the ESP emits a `SIGMA:s0,s1,…,s63\n` line right after the existing `DATA:` line. The sigma values are the ULD's on-chip per-measurement uncertainty estimate (in mm). Hosts can use them as a real-time quality flag and as a sanity check against an externally-computed σ.
+- **Status filter widened from `{5}` to `{5, 6, 9}`.** Status 5 = 100 % confidence; 6 = wrap-around-not-done (still valid at sub-4 m range); 9 = low signal but range valid. The wider filter raises valid yield on dim or angled surfaces. (Per ST UM3109 §5.5.)
+- **WiFi station mode + single-client TCP server on port 3333.** The same `DATA:` / `SIGMA:` lines are written to both UART AND any TCP client that connects. UART keeps working as a fallback.
+- **OTA firmware updates over WiFi.** Two-OTA partition layout. A small HTTP server on port 80 accepts `POST /update` with an `X-OTA-Token` header; the body is streamed into the inactive partition, finalised, and booted into on reboot. After the first manual USB flash, every subsequent flash is wireless.
+- **Credentials never enter the repo.** SSID, password, and OTA token live in `main/wifi_credentials.h`, which is gitignored. The file is created from the template `main/wifi_credentials.h.template` when cloning fresh.
+- **Sensor-init-before-WiFi ordering.** WiFi current spike on boot can brown the sensor's 5V rail; the ranging task is started first and given a 2.5 s head start before the WiFi stack comes up.
+
+### v7 architecture
+
+```mermaid
+flowchart LR
+    A[VL53L8CX SPADs<br/>8×8 zones] -- I²C @ 1 MHz --> B[ESP32-S3<br/>ESP-IDF firmware]
+    B -- USB-serial<br/>DATA: SIGMA:<br/>(fallback) --> C1[Host scripts<br/>serial reader]
+    B -- TCP :3333<br/>DATA: SIGMA: --> C2[Host scripts<br/>TCP reader]
+    B -. HTTP :80<br/>POST /update .-> B
+    C1 --> V[visualizer.py · visualizer_simple.py]
+    C2 --> V
+    C1 --> M[measure.py<br/>tuning stats + CSV]
+    C2 --> M
+    H[ota_flash.py<br/>idf.py build first] -. HTTP POST .-> B
+```
+
+### New host-side tools
+
+| Tool | Purpose |
+|---|---|
+| `visualizer/visualizer_simple.py` | Stripped-down point cloud (no pose, no trail, no FoV frustum). Adds a status-bar blinker pulsing at the framerate + lines from origin to each measured point. Accepts `--port COMxx` OR `--host <ip>`. |
+| `visualizer/measure.py` | Tuning measurement script. Captures N frames, computes per-zone mean / σ / valid yield / mean sensor-sigma. Median σ across zones is the headline metric. Appends CSV — one row per zone per run. Accepts `--port` OR `--host`. |
+| `visualizer/restart_tools.ps1` | One-click PowerShell script that kills any running visualizer + monitor and relaunches both. Companion desktop shortcut (`Restart ESP Tools.lnk`). Workaround for the ESP32-S3 native USB-CDC dropping COM enumeration on every reset. |
+| `visualizer/ota_flash.py` | Pushes `build/vl53l8cx_esp32.bin` to the ESP via `POST http://<ip>/update` with the X-OTA-Token header. Workflow: `idf.py build` then `python visualizer/ota_flash.py` — done in seconds, no cable. |
+
+### Quick start — wired vs wireless
+
+```bash
+# Wired (first time, also the only USB flash needed)
+idf.py -p COM10 flash
+python visualizer/visualizer_simple.py --port COM10        # serial point cloud
+python visualizer/measure.py --port COM10 --frames 200 \
+       --config "baseline-15hz-8x8"
+
+# Wireless (after first flash; no USB needed)
+python visualizer/visualizer_simple.py --host 192.168.1.228
+python visualizer/measure.py --host 192.168.1.228 --frames 200 \
+       --config "baseline-15hz-8x8-wifi"
+idf.py build && python visualizer/ota_flash.py 192.168.1.228   # OTA reflash
+```
+
+### Credentials setup (first-time clone)
+
+The file `main/wifi_credentials.h` is **not in the repo**. Copy the template and fill in your values:
+
+```c
+#pragma once
+#define WIFI_SSID     "<your-network>"
+#define WIFI_PASSWORD "<your-password>"
+#define TCP_PORT      3333
+#define OTA_HTTP_PORT 80
+#define OTA_TOKEN     "<pick-a-random-token>"     // must also live in ota_flash.py
+```
+
+The OTA token is what `ota_flash.py` sends in the `X-OTA-Token` header — keep both copies in sync.
 
 ---
 
