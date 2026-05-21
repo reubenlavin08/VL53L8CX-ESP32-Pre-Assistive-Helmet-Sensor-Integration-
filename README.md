@@ -266,8 +266,8 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 | Define | Default | Options |
 |---|---|---|
 | `GPIO_SDA` / `GPIO_SCL` / `GPIO_PWREN` | 1 / 2 / 5 | any valid GPIO |
-| `SENSOR_RESOLUTION` | `VL53L8CX_RESOLUTION_8X8` | `_4X4` |
-| `RANGING_FREQ_HZ` | `8` *(was 15)* | 1–15 Hz (8×8), 1–60 Hz (4×4). Lower Hz → longer auto-integration in CONTINUOUS mode → cleaner data per the √t rule. |
+| `SENSOR_RESOLUTION` | `VL53L8CX_RESOLUTION_4X4` *(was 8X8 prior to v7)* | `_8X8`. 4×4 = 16 zones with 4× more SPADs per zone (~2× lower noise per zone); 8×8 = 64 zones with finer spatial detail but 4× higher per-zone noise. |
+| `RANGING_FREQ_HZ` | `8` *(was 15 prior to v7)* | 1–15 Hz (8×8), 1–60 Hz (4×4). Lower Hz → longer auto-integration in CONTINUOUS mode → cleaner data per the √t rule. |
 | `RANGING_MODE` | `VL53L8CX_RANGING_MODE_CONTINUOUS` | `_AUTONOMOUS` to set integration time explicitly |
 | `STREAM_DATA` | `1` | `0` to silence the `DATA:` lines |
 | `STREAM_SIGMA` | `1` | `0` to silence the `SIGMA:` lines (v7+) |
@@ -408,6 +408,18 @@ The file `main/wifi_credentials.h` is **not in the repo**. Copy the template and
 ```
 
 The OTA token is what `ota_flash.py` sends in the `X-OTA-Token` header — keep both copies in sync.
+
+### Gotcha if you change the partition table or flash size mid-project
+
+`sdkconfig.defaults` only takes effect when `sdkconfig` is generated **for the first time**. If you change a value in `sdkconfig.defaults` after `sdkconfig` already exists, the change is ignored — the existing `sdkconfig` wins. Symptom (seen during v7 dev): OTA push fails with `esp_ota_get_next_update_partition()` returning NULL because the partition table is still `SINGLE_APP` instead of `TWO_OTA`. Fix:
+
+```bash
+rm sdkconfig          # delete and let it regenerate from sdkconfig.defaults
+idf.py build          # rebuilds sdkconfig + new partitions + ota_data_initial.bin
+idf.py -p COM10 flash # USB-flash one more time to install the new layout
+```
+
+After that one manual flash, OTA pushes work for all subsequent firmware iterations.
 
 ---
 
