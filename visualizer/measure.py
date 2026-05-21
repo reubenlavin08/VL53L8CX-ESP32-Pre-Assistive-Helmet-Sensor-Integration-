@@ -27,7 +27,8 @@ import numpy as np
 import serial
 
 
-TOTAL_ZONES = 64
+# Match the firmware's SENSOR_RESOLUTION: 64 for 8x8, 16 for 4x4.
+TOTAL_ZONES = 16
 INVALID_DISTANCE_MM = 4000   # firmware sentinel for filtered zones
 
 
