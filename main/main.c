@@ -47,7 +47,7 @@
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_4X4        /* was 8X8; 4X4 = 16 zones */
-#define RANGING_FREQ_HZ     8                              /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
+#define RANGING_FREQ_HZ     30                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 
 /* ── Display options ─────────────────────────────────────────────────────── */
