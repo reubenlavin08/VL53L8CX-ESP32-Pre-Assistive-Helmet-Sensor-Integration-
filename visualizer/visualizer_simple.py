@@ -154,6 +154,14 @@ class SimpleWindow(QtWidgets.QMainWindow):
             self.view.addItem(gl.GLLinePlotItem(pos=pts, color=color, width=2, antialias=True))
             self.view.addItem(gl.GLTextItem(pos=lpos, text=label, color=(220, 220, 220, 255)))
 
+        # Rays from sensor origin to each point — visualises per-zone distance
+        self.rays = gl.GLLinePlotItem(
+            pos=np.zeros((TOTAL_ZONES * 2, 3), dtype=np.float32),
+            color=np.zeros((TOTAL_ZONES * 2, 4), dtype=np.float32),
+            width=1.2, mode="lines", antialias=True,
+        )
+        self.view.addItem(self.rays)
+
         # The actual point cloud
         self.scatter = gl.GLScatterPlotItem(
             pos=np.zeros((TOTAL_ZONES, 3)),
@@ -164,6 +172,15 @@ class SimpleWindow(QtWidgets.QMainWindow):
 
         self.status = self.statusBar()
         self.status.setStyleSheet("color: #cccccc; background-color: #0a0a0a;")
+
+        # Blinker — toggles bright/dim each frame so you can see refresh rate
+        self.blink_label = QtWidgets.QLabel("●")
+        self.blink_label.setStyleSheet(
+            "color: #ff00aa; font-size: 22px; padding-left: 8px; padding-right: 8px;"
+        )
+        self.status.addPermanentWidget(self.blink_label)
+        self.blink_state = False
+
         self.status.showMessage("Waiting for data...")
         self.frame_n = 0
 
@@ -179,6 +196,24 @@ class SimpleWindow(QtWidgets.QMainWindow):
         colors = self.cmap.map(norm, mode="float").astype(np.float32)
         colors[invalid, 3] = 0.0
         self.scatter.setData(pos=gl_pts, color=colors)
+
+        # Rays: 64 line segments, each from origin (0,0,0) to its zone's point.
+        # Two vertices per ray: idx 0 = origin (faded), idx 1 = point (brighter).
+        ray_pos = np.zeros((TOTAL_ZONES * 2, 3), dtype=np.float32)
+        ray_pos[1::2] = gl_pts
+        ray_color = np.zeros((TOTAL_ZONES * 2, 4), dtype=np.float32)
+        origin_col = colors.copy(); origin_col[:, 3] *= 0.10
+        end_col    = colors.copy(); end_col[:, 3]    *= 0.55
+        ray_color[0::2] = origin_col
+        ray_color[1::2] = end_col
+        self.rays.setData(pos=ray_pos, color=ray_color)
+
+        # Blinker — toggle bright/dim each frame so refresh rate is visible
+        self.blink_state = not self.blink_state
+        col = "#ff00aa" if self.blink_state else "#3a002a"
+        self.blink_label.setStyleSheet(
+            f"color: {col}; font-size: 22px; padding-left: 8px; padding-right: 8px;"
+        )
 
         self.frame_n += 1
         n_valid = int((~invalid).sum())
