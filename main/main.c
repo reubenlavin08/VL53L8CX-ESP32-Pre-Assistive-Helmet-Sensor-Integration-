@@ -34,10 +34,11 @@
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 
 /* ── Display options ─────────────────────────────────────────────────────── */
-#define PRINT_GRID          0   /* set 1 to print the 8×8 ASCII grid     */
-#define PRINT_CLOSEST_ONLY  0   /* set 1 to only log the nearest zone    */
-#define STREAM_DATA         1   /* set 1 to stream a parseable line/frame */
-#define MAX_DISTANCE_MM     4000 /* clamp invalid zones to this distance  */
+#define PRINT_GRID          0   /* set 1 to print the 8×8 ASCII grid           */
+#define PRINT_CLOSEST_ONLY  0   /* set 1 to only log the nearest zone          */
+#define STREAM_DATA         1   /* set 1 to stream DATA: line/frame            */
+#define STREAM_SIGMA        1   /* set 1 to also stream SIGMA: line/frame      */
+#define MAX_DISTANCE_MM     4000 /* clamp invalid zones to this distance       */
 
 static const char *TAG = "VL53L8CX";
 
@@ -52,14 +53,35 @@ static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resoluti
     printf("DATA:");
     for (int z = 0; z < total; z++) {
         int16_t dist;
+        uint8_t status = results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        /* Accept status 5 (100% valid), 6 (wrap-around not done, ~50% conf),
+         * and 9 (low signal but range valid, ~50% conf). Per ST UM3109 §5.5. */
         if (results->nb_target_detected[z] > 0 &&
-            results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE] == 5) {
+            (status == 5 || status == 6 || status == 9)) {
             dist = results->distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
             if (dist > MAX_DISTANCE_MM) dist = MAX_DISTANCE_MM;
         } else {
             dist = MAX_DISTANCE_MM;
         }
         printf("%d%c", dist, (z == total - 1) ? '\n' : ',');
+    }
+}
+#endif
+
+/* ── Helper: stream the per-zone sensor-reported sigma (mm) ─────────────────
+ *  Format:  SIGMA:<s0>,<s1>,...,<sN>\n
+ *  Emitted for ALL zones (no status filtering) so the host can correlate
+ *  with the DATA: line — invalid zones in DATA: are clamped to MAX_DISTANCE_MM,
+ *  so the host can detect them and ignore the corresponding sigma value.
+ */
+#if STREAM_SIGMA
+static void stream_sigma_line(VL53L8CX_ResultsData *results, uint8_t resolution)
+{
+    int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    printf("SIGMA:");
+    for (int z = 0; z < total; z++) {
+        uint16_t sigma = results->range_sigma_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        printf("%u%c", (unsigned)sigma, (z == total - 1) ? '\n' : ',');
     }
 }
 #endif
@@ -214,6 +236,9 @@ static void ranging_task(void *arg)
 
 #if STREAM_DATA
         stream_distance_line(&results, SENSOR_RESOLUTION);
+#endif
+#if STREAM_SIGMA
+        stream_sigma_line(&results, SENSOR_RESOLUTION);
 #endif
 #if PRINT_CLOSEST_ONLY
         print_closest_zone(&results, SENSOR_RESOLUTION);
