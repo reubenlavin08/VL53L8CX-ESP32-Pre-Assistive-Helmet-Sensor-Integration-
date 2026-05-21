@@ -30,6 +30,9 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_system.h"
+#include "esp_ota_ops.h"
+#include "esp_http_server.h"
 #include "nvs_flash.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
@@ -44,7 +47,7 @@
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8
-#define RANGING_FREQ_HZ     15
+#define RANGING_FREQ_HZ     8                              /* was 15; try 8 first */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 
 /* ── Display options ─────────────────────────────────────────────────────── */
@@ -230,12 +233,119 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
+/* ── OTA: POST /update endpoint ──────────────────────────────────────────── */
+static esp_err_t ota_post_handler(httpd_req_t *req)
+{
+    /* Token check via X-OTA-Token header. Token is stored in
+     * wifi_credentials.h (gitignored). Anyone on the network can probe the
+     * port, so this guards against accidental hijack from other hosts. */
+    char token[64] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-OTA-Token", token, sizeof(token)) != ESP_OK
+        || strcmp(token, OTA_TOKEN) != 0) {
+        httpd_resp_set_status(req, "401 Unauthorized");
+        httpd_resp_sendstr(req, "missing or wrong X-OTA-Token header\n");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA: upload starting (Content-Length=%d)", req->content_len);
+
+    const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
+    if (!next) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "no OTA partition available\n");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "OTA: writing to partition '%s' at offset 0x%lx",
+             next->label, (unsigned long)next->address);
+
+    esp_ota_handle_t handle = 0;
+    esp_err_t err = esp_ota_begin(next, OTA_SIZE_UNKNOWN, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    char buf[1024];
+    int total = 0;
+    int recv;
+    while ((recv = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+        err = esp_ota_write(handle, buf, recv);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed at %d bytes: %s", total, esp_err_to_name(err));
+            esp_ota_abort(handle);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, esp_err_to_name(err));
+            return ESP_FAIL;
+        }
+        total += recv;
+    }
+    if (recv < 0) {
+        ESP_LOGE(TAG, "httpd_req_recv failed at %d bytes", total);
+        esp_ota_abort(handle);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "recv failed mid-stream\n");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "OTA: %d bytes received, finalizing", total);
+
+    err = esp_ota_end(handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(err));
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(next);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    httpd_resp_sendstr(req, "OK — rebooting into new image in 1 s\n");
+    ESP_LOGI(TAG, "OTA: success, rebooting");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+    return ESP_OK;   /* unreachable */
+}
+
+static void start_ota_server(void)
+{
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.server_port = OTA_HTTP_PORT;
+    cfg.recv_wait_timeout = 30;
+    cfg.send_wait_timeout = 30;
+    cfg.stack_size = 8192;
+
+    httpd_handle_t server = NULL;
+    if (httpd_start(&server, &cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start OTA HTTP server");
+        return;
+    }
+    httpd_uri_t ota_uri = {
+        .uri = "/update",
+        .method = HTTP_POST,
+        .handler = ota_post_handler,
+        .user_ctx = NULL,
+    };
+    httpd_register_uri_handler(server, &ota_uri);
+    ESP_LOGI(TAG, "OTA HTTP server listening on port %d (POST /update)", OTA_HTTP_PORT);
+}
+
 /* ── TCP server task — single-client, blocks on accept() between clients ──── */
 static void tcp_server_task(void *arg)
 {
     /* Wait for WiFi connection before opening any sockets */
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT,
                         pdFALSE, pdTRUE, portMAX_DELAY);
+
+    /* Start the OTA HTTP server alongside the TCP data server. */
+    start_ota_server();
 
     int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (listener < 0) {

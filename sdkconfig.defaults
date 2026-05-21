@@ -10,3 +10,10 @@ CONFIG_I2C_ENABLE_DEBUG_LOG=n
 # VL53L8CX — enable I2C timeout so failures print an error instead of hanging
 CONFIG_VL53L8CX_I2C_TIMEOUT=y
 CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=1000
+
+# Two-OTA partition layout (factory + ota_0 + ota_1 not needed — use two_ota):
+CONFIG_PARTITION_TABLE_TWO_OTA=y
+
+# Flash size — ESP32-S3 N16R8 has 16 MB of flash on board
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
