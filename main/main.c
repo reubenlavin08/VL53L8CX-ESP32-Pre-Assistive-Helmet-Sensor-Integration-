@@ -41,13 +41,15 @@
 #include "wifi_credentials.h"
 
 /* ── Pin configuration ───────────────────────────────────────────────────── */
-#define GPIO_SDA    GPIO_NUM_1
-#define GPIO_SCL    GPIO_NUM_2
-#define GPIO_PWREN  GPIO_NUM_5
+#define GPIO_SDA      GPIO_NUM_1
+#define GPIO_SCL      GPIO_NUM_2
+#define GPIO_PWREN    GPIO_NUM_5
+#define BUZZER_GPIO   GPIO_NUM_6     /* active-buzzer test pin */
+#define BUZZER_TEST   1              /* set 0 to silence the periodic beep */
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
-#define RANGING_FREQ_HZ     15                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 — capped at 15 here */
+#define RANGING_FREQ_HZ     10                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 
 /* ── Display options ─────────────────────────────────────────────────────── */
@@ -176,6 +178,28 @@ static void print_closest_zone(VL53L8CX_ResultsData *results, uint8_t resolution
                  min_dist, min_zone / side, min_zone % side);
     } else {
         ESP_LOGI(TAG, "Closest: no valid target");
+    }
+}
+#endif
+
+/* ── Buzzer test task: beeps on/off at 1 Hz ─────────────────────────────── */
+#if BUZZER_TEST
+static void buzzer_task(void *arg)
+{
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << BUZZER_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+    ESP_LOGI(TAG, "Buzzer test on GPIO %d (1 Hz, 200 ms on / 800 ms off)", BUZZER_GPIO);
+    while (1) {
+        gpio_set_level(BUZZER_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(200));
+        gpio_set_level(BUZZER_GPIO, 0);
+        vTaskDelay(pdMS_TO_TICKS(800));
     }
 }
 #endif
