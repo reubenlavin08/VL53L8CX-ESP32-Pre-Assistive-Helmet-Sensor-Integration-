@@ -274,6 +274,11 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 | `PRINT_GRID` | `0` | `1` for the ASCII 8×8 grid |
 | `PRINT_CLOSEST_ONLY` | `0` | `1` for nearest-zone log only |
 | `MAX_DISTANCE_MM` | `4000` | clamp value for invalid zones |
+| `BUZZER_TEST` | `1` | obstacle-alert buzzer task (v8+); `0` to compile out |
+| `BUZZER_GPIO` | `GPIO_NUM_6` | active-buzzer signal pin (v8+) |
+| `OBSTACLE_THRESHOLD_MM` | `600` | buzzer triggers when any zone < this (v8+) |
+| `BEEP_MS` | `50` | beep duration in ms (v8+) |
+| `BEEP_GAP_MIN_MS` / `BEEP_GAP_MAX_MS` | `30` / `400` | beep gap at point-blank / at threshold (v8+) |
 
 WiFi + OTA values live in `main/wifi_credentials.h` (gitignored) — see the "Credentials setup" subsection under v7.
 
@@ -420,6 +425,46 @@ idf.py -p COM10 flash # USB-flash one more time to install the new layout
 ```
 
 After that one manual flash, OTA pushes work for all subsequent firmware iterations.
+
+---
+
+## v8 — First sensor → actuator loop (obstacle alert)
+
+Phase-1 functional milestone: the sensor now drives an output. The helmet now actively *signals* what it sees rather than just streaming numbers.
+
+### What's new
+
+- **Active buzzer on GPIO 6** with a dedicated FreeRTOS task. Drive strength bumped to `GPIO_DRIVE_CAP_3` (~40 mA) so the active buzzer's current draw doesn't collapse the GPIO voltage. Stack 4096 bytes (2048 was overflowing — see "Lessons" below).
+- **Nearest-zone tracker:** every ranging frame, the ranging task scans all 64 (or 16) zones, finds the minimum valid distance, and publishes it as `g_nearest_mm` (atomic 16-bit volatile, no mutex needed on ESP32-S3).
+- **Distance-proportional beep rate:** the buzzer task polls `g_nearest_mm` at 10 Hz and only beeps when something is closer than `OBSTACLE_THRESHOLD_MM` (60 cm default). Beep gap interpolates linearly between `BEEP_GAP_MAX_MS` (slow alert at threshold) and `BEEP_GAP_MIN_MS` (frantic chirping at point-blank). Closer = faster = more urgent. Classic obstacle-alert UX.
+- **Beep duration `BEEP_MS` = 50 ms** — short pulse is audibly quieter than the previous 200 ms while still being noticeable.
+
+### Wiring
+
+| Pin | Connection |
+|---|---|
+| GPIO 6 (board silkscreen `6` on TOP of LEFT header) | Active buzzer `+` |
+| GND | Active buzzer `−` |
+
+The buzzer can sit on the same dev board headers as the sensor — they share nothing.
+
+### Configuration knobs
+
+| Define | Default | Notes |
+|---|---|---|
+| `BUZZER_TEST` | `1` | set `0` to compile out the buzzer task entirely |
+| `BUZZER_GPIO` | `GPIO_NUM_6` | move to another free GPIO if needed |
+| `OBSTACLE_THRESHOLD_MM` | `600` | start beeping at this distance; nothing beyond it counts |
+| `BEEP_MS` | `50` | beep duration (shorter = quieter) |
+| `BEEP_GAP_MIN_MS` | `30` | gap between beeps at point-blank (0 mm) |
+| `BEEP_GAP_MAX_MS` | `400` | gap at threshold distance |
+
+### Lessons from v8 dev
+
+- **Stack-overflow gotcha:** FreeRTOS tasks each get an explicit stack budget at `xTaskCreate(...)`. ESP-IDF's `ESP_LOGI(...)` calls can use 200+ bytes for string formatting alone; plus the `gpio_config_t` struct (~40 B); plus kernel context. **2048 bytes is not enough** even for "trivial" tasks if they log. Default to **4096 bytes** unless you've measured. The chip rebooted in a 2-second loop with the buzzer task at 2048 bytes — every multimeter probe in that period showed the GPIO at 0 V because the pin was only set HIGH for milliseconds at a time before the next reboot.
+- **`xTaskCreate` calls go missing in edits.** If your task never logs its startup message, the first thing to check is whether the `xTaskCreate(...)` actually exists in `app_main`.
+- **ESP32-S3 active-buzzer current draw exceeds default GPIO drive.** Default drive capability is `GPIO_DRIVE_CAP_2` (~20 mA). Active buzzers often pull 25–30 mA. The pin voltage collapses when overloaded. Fix: `gpio_set_drive_capability(BUZZER_GPIO, GPIO_DRIVE_CAP_3)` to bump it to ~40 mA.
+- **AliExpress dev boards labels are usually accurate** — but always verify the silkscreen near the pin (e.g. `IO6`) before assuming. The pins for GPIO 4–7 are at the **TOP** of the LEFT header on the ESP32-S3-DevKitC-1, not the bottom (where 5Vin and GND live).
 
 ---
 
