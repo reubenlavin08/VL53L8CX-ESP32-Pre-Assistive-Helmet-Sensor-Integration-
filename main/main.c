@@ -27,6 +27,7 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "driver/ledc.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
@@ -44,7 +45,7 @@
 #define GPIO_SDA      GPIO_NUM_1
 #define GPIO_SCL      GPIO_NUM_2
 #define GPIO_PWREN    GPIO_NUM_5
-#define BUZZER_GPIO   GPIO_NUM_6     /* active-buzzer test pin */
+#define BUZZER_GPIO   GPIO_NUM_6     /* passive piezo signal pin */
 #define BUZZER_TEST   1              /* set 0 to silence the periodic beep */
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
@@ -182,10 +183,18 @@ static void print_closest_zone(VL53L8CX_ResultsData *results, uint8_t resolution
 }
 #endif
 
-/* ── Buzzer test task: beeps on/off at 1 Hz ─────────────────────────────── */
+/* ── Buzzer test task: 2 kHz PWM tone, 200 ms beep every 5 s ────────────── */
 #if BUZZER_TEST
+#define BUZZER_FREQ_HZ      2000
+#define BUZZER_LEDC_CHANNEL LEDC_CHANNEL_0
+#define BUZZER_LEDC_TIMER   LEDC_TIMER_0
+#define BUZZER_LEDC_MODE    LEDC_LOW_SPEED_MODE
+#define BUZZER_LEDC_RES     LEDC_TIMER_10_BIT
+#define BUZZER_DUTY_50PCT   512
+
 static void buzzer_task(void *arg)
 {
+    /* Simple: drive BUZZER_GPIO HIGH with max drive strength. */
     gpio_config_t cfg = {
         .pin_bit_mask = 1ULL << BUZZER_GPIO,
         .mode = GPIO_MODE_OUTPUT,
@@ -194,13 +203,10 @@ static void buzzer_task(void *arg)
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&cfg);
-    ESP_LOGI(TAG, "Buzzer test on GPIO %d (1 Hz, 200 ms on / 800 ms off)", BUZZER_GPIO);
-    while (1) {
-        gpio_set_level(BUZZER_GPIO, 1);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        gpio_set_level(BUZZER_GPIO, 0);
-        vTaskDelay(pdMS_TO_TICKS(800));
-    }
+    gpio_set_drive_capability(BUZZER_GPIO, GPIO_DRIVE_CAP_3);
+    gpio_set_level(BUZZER_GPIO, 1);
+    ESP_LOGI(TAG, "GPIO %d HIGH (max drive)", BUZZER_GPIO);
+    vTaskDelay(portMAX_DELAY);
 }
 #endif
 
@@ -571,4 +577,9 @@ void app_main(void)
 
     /* TCP server task waits for WiFi internally, then listens. */
     xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 4, NULL);
+
+#if BUZZER_TEST
+    /* Buzzer / GPIO control task. 4096 byte stack — 2048 was overflowing. */
+    xTaskCreate(buzzer_task, "buzzer", 4096, NULL, 2, NULL);
+#endif
 }
