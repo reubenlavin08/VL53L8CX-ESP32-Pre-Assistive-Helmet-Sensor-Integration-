@@ -194,7 +194,7 @@ static void print_closest_zone(VL53L8CX_ResultsData *results, uint8_t resolution
 
 static void buzzer_task(void *arg)
 {
-    /* Simple: drive BUZZER_GPIO HIGH with max drive strength. */
+    /* Active buzzer: idle LOW (silent), 200 ms HIGH beep every 5 s. */
     gpio_config_t cfg = {
         .pin_bit_mask = 1ULL << BUZZER_GPIO,
         .mode = GPIO_MODE_OUTPUT,
@@ -204,9 +204,14 @@ static void buzzer_task(void *arg)
     };
     gpio_config(&cfg);
     gpio_set_drive_capability(BUZZER_GPIO, GPIO_DRIVE_CAP_3);
-    gpio_set_level(BUZZER_GPIO, 1);
-    ESP_LOGI(TAG, "GPIO %d HIGH (max drive)", BUZZER_GPIO);
-    vTaskDelay(portMAX_DELAY);
+    gpio_set_level(BUZZER_GPIO, 0);
+    ESP_LOGI(TAG, "Buzzer on GPIO %d: 200 ms beep every 5 s", BUZZER_GPIO);
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(4800));
+        gpio_set_level(BUZZER_GPIO, 1);
+        vTaskDelay(pdMS_TO_TICKS(200));
+        gpio_set_level(BUZZER_GPIO, 0);
+    }
 }
 #endif
 
