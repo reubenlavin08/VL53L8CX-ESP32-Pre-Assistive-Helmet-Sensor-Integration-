@@ -26,7 +26,7 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 # Sensor geometry (per ST VL53L8CX datasheet).
 # Change ZONES_PER_SIDE to 8 (for 8x8 = 64 zones) or 4 (for 4x4 = 16 zones)
 # to match the firmware's SENSOR_RESOLUTION.
-ZONES_PER_SIDE = 4
+ZONES_PER_SIDE = 8
 TOTAL_ZONES = ZONES_PER_SIDE * ZONES_PER_SIDE
 FOV_DEG_PER_AXIS = 45.0
 ANGLE_PER_ZONE = np.radians(FOV_DEG_PER_AXIS / ZONES_PER_SIDE)
