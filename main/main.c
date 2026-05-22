@@ -45,8 +45,11 @@
 #define GPIO_SDA      GPIO_NUM_1
 #define GPIO_SCL      GPIO_NUM_2
 #define GPIO_PWREN    GPIO_NUM_5
-#define BUZZER_GPIO   GPIO_NUM_6     /* passive piezo signal pin */
-#define BUZZER_TEST   1              /* set 0 to silence the periodic beep */
+#define BUZZER_GPIO         GPIO_NUM_6   /* active buzzer signal pin */
+#define BUZZER_TEST         1            /* set 0 to silence */
+#define OBSTACLE_THRESHOLD_MM 1000       /* beep when any zone closer than this */
+#define BEEP_MS             50           /* short beep = quieter */
+#define BEEP_GAP_MS         200          /* gap between beeps when obstacle present */
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
@@ -73,6 +76,11 @@ static int s_retry_num = 0;
 /* TCP client state — exactly one connected client at a time. */
 static int g_client_sock = -1;
 static SemaphoreHandle_t g_client_mutex = NULL;
+
+/* Nearest valid zone distance in mm, updated by ranging_task each frame.
+ * 32-bit reads/writes are atomic on ESP32-S3, so no mutex needed for a
+ * single int. INT16_MAX = no valid zone yet. */
+static volatile int16_t g_nearest_mm = INT16_MAX;
 
 /* ── Write a line to the TCP client if one is connected. ─────────────────────
  *  On any error, close the socket and clear the slot so the server task can
@@ -194,7 +202,8 @@ static void print_closest_zone(VL53L8CX_ResultsData *results, uint8_t resolution
 
 static void buzzer_task(void *arg)
 {
-    /* Active buzzer: idle LOW (silent), 200 ms HIGH beep every 5 s. */
+    /* Obstacle alert: beep when nearest zone is closer than the threshold,
+     * silent otherwise. Short beep = quieter. */
     gpio_config_t cfg = {
         .pin_bit_mask = 1ULL << BUZZER_GPIO,
         .mode = GPIO_MODE_OUTPUT,
@@ -205,12 +214,18 @@ static void buzzer_task(void *arg)
     gpio_config(&cfg);
     gpio_set_drive_capability(BUZZER_GPIO, GPIO_DRIVE_CAP_3);
     gpio_set_level(BUZZER_GPIO, 0);
-    ESP_LOGI(TAG, "Buzzer on GPIO %d: 200 ms beep every 5 s", BUZZER_GPIO);
+    ESP_LOGI(TAG, "Obstacle alert on GPIO %d: %d ms beep when any zone < %d mm",
+             BUZZER_GPIO, BEEP_MS, OBSTACLE_THRESHOLD_MM);
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(4800));
-        gpio_set_level(BUZZER_GPIO, 1);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        gpio_set_level(BUZZER_GPIO, 0);
+        int16_t nearest = g_nearest_mm;
+        if (nearest > 0 && nearest < OBSTACLE_THRESHOLD_MM) {
+            gpio_set_level(BUZZER_GPIO, 1);
+            vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
+            gpio_set_level(BUZZER_GPIO, 0);
+            vTaskDelay(pdMS_TO_TICKS(BEEP_GAP_MS));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(100));   /* idle, poll 10 Hz */
+        }
     }
 }
 #endif
@@ -534,6 +549,19 @@ static void ranging_task(void *arg)
             continue;
         }
         ++frame_num;
+
+        /* Update nearest-valid-zone for the buzzer task. */
+        int total_zones = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+        int16_t nearest = INT16_MAX;
+        for (int z = 0; z < total_zones; z++) {
+            uint8_t status = results.target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+            if (results.nb_target_detected[z] > 0 &&
+                (status == 5 || status == 6 || status == 9)) {
+                int16_t d = results.distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
+                if (d > 0 && d < nearest) nearest = d;
+            }
+        }
+        g_nearest_mm = nearest;
 
 #if STREAM_DATA
         stream_distance_line(&results, SENSOR_RESOLUTION);
