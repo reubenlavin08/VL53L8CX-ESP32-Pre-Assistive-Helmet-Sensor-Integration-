@@ -47,9 +47,10 @@
 #define GPIO_PWREN    GPIO_NUM_5
 #define BUZZER_GPIO         GPIO_NUM_6   /* active buzzer signal pin */
 #define BUZZER_TEST         1            /* set 0 to silence */
-#define OBSTACLE_THRESHOLD_MM 1000       /* beep when any zone closer than this */
+#define OBSTACLE_THRESHOLD_MM 600        /* start beeping at this distance (60 cm) */
 #define BEEP_MS             50           /* short beep = quieter */
-#define BEEP_GAP_MS         200          /* gap between beeps when obstacle present */
+#define BEEP_GAP_MIN_MS     30           /* gap at point-blank (frantic chirping) */
+#define BEEP_GAP_MAX_MS     400          /* gap at threshold distance (slow alert) */
 
 /* ── Sensor configuration ────────────────────────────────────────────────── */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
@@ -219,10 +220,16 @@ static void buzzer_task(void *arg)
     while (1) {
         int16_t nearest = g_nearest_mm;
         if (nearest > 0 && nearest < OBSTACLE_THRESHOLD_MM) {
+            /* Linear: gap = MIN at distance=0, gap = MAX at distance=threshold. */
+            int gap = BEEP_GAP_MIN_MS +
+                      (int)((BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) *
+                            (int32_t)nearest / OBSTACLE_THRESHOLD_MM);
+            if (gap < BEEP_GAP_MIN_MS) gap = BEEP_GAP_MIN_MS;
+            if (gap > BEEP_GAP_MAX_MS) gap = BEEP_GAP_MAX_MS;
             gpio_set_level(BUZZER_GPIO, 1);
             vTaskDelay(pdMS_TO_TICKS(BEEP_MS));
             gpio_set_level(BUZZER_GPIO, 0);
-            vTaskDelay(pdMS_TO_TICKS(BEEP_GAP_MS));
+            vTaskDelay(pdMS_TO_TICKS(gap));
         } else {
             vTaskDelay(pdMS_TO_TICKS(100));   /* idle, poll 10 Hz */
         }
