@@ -24,24 +24,24 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 
 
 # Sensor geometry (per ST VL53L8CX datasheet).
-# Change ZONES_PER_SIDE to 8 (for 8x8 = 64 zones) or 4 (for 4x4 = 16 zones)
-# to match the firmware's SENSOR_RESOLUTION.
-ZONES_PER_SIDE = 8
-TOTAL_ZONES = ZONES_PER_SIDE * ZONES_PER_SIDE
+# Visualizer auto-detects 8x8 (64 values) vs 4x4 (16 values) on each frame
+# so it works through the full parameter sweep without restart.
 FOV_DEG_PER_AXIS = 45.0
-ANGLE_PER_ZONE = np.radians(FOV_DEG_PER_AXIS / ZONES_PER_SIDE)
 INVALID_CLAMP_MM = 4000   # firmware sentinel
+SUPPORTED_ZONE_COUNTS = (64, 16)
 
 
-def precompute_zone_directions():
+def precompute_zone_directions(total_zones):
     """Unit vectors (X, Y, Z) pointing from sensor into each zone's cone center."""
-    directions = np.zeros((TOTAL_ZONES, 3))
-    centre = (ZONES_PER_SIDE - 1) / 2.0
-    for row in range(ZONES_PER_SIDE):
-        for col in range(ZONES_PER_SIDE):
-            h = (col - centre) * ANGLE_PER_ZONE
-            v = (row - centre) * ANGLE_PER_ZONE
-            directions[row * ZONES_PER_SIDE + col] = (
+    side = int(np.sqrt(total_zones))
+    angle_per_zone = np.radians(FOV_DEG_PER_AXIS / side)
+    directions = np.zeros((total_zones, 3))
+    centre = (side - 1) / 2.0
+    for row in range(side):
+        for col in range(side):
+            h = (col - centre) * angle_per_zone
+            v = (row - centre) * angle_per_zone
+            directions[row * side + col] = (
                 np.sin(h),
                 -np.sin(v),
                 np.cos(h) * np.cos(v),
@@ -56,15 +56,18 @@ def parse_data_line(line):
         values = [int(v) for v in line[5:].split(",")]
     except ValueError:
         return None
-    if len(values) != TOTAL_ZONES:
+    if len(values) not in SUPPORTED_ZONE_COUNTS:
         return None
     return np.asarray(values, dtype=float)
 
 
 class SourceReader(QtCore.QThread):
-    """Reads DATA: lines from either a serial port or a TCP socket."""
+    """Reads DATA: lines from either a serial port or a TCP socket.
+    TCP mode auto-reconnects when the socket drops (e.g. measure.py
+    takes the single client slot during a capture, ESP reboots from OTA)."""
     new_frame = QtCore.pyqtSignal(object)
     error = QtCore.pyqtSignal(str)
+    status = QtCore.pyqtSignal(str)
 
     def __init__(self, args):
         super().__init__()
@@ -73,28 +76,51 @@ class SourceReader(QtCore.QThread):
 
     def run(self):
         if self.args.host:
-            try:
-                sock = socket.create_connection((self.args.host, self.args.tcp_port), timeout=5)
-                sock.settimeout(1.0)
-            except OSError as exc:
-                self.error.emit(f"TCP connect to {self.args.host}:{self.args.tcp_port} failed: {exc}")
-                return
-            f = sock.makefile("rb")
-            try:
-                while not self._stop:
-                    try:
-                        raw = f.readline()
-                    except socket.timeout:
-                        continue
-                    if not raw:
-                        break
-                    line = raw.decode("utf-8", errors="ignore").strip()
-                    parsed = parse_data_line(line)
-                    if parsed is not None:
-                        self.new_frame.emit(parsed)
-            finally:
-                f.close()
-                sock.close()
+            backoff = 1.0
+            while not self._stop:
+                try:
+                    self.status.emit(f"connecting to {self.args.host}:{self.args.tcp_port} ...")
+                    sock = socket.create_connection(
+                        (self.args.host, self.args.tcp_port), timeout=5)
+                    sock.settimeout(1.0)
+                except OSError as exc:
+                    self.status.emit(f"connect failed ({exc}), retrying in {backoff:.0f}s")
+                    for _ in range(int(backoff * 10)):
+                        if self._stop:
+                            return
+                        self.msleep(100)
+                    backoff = min(backoff * 1.5, 5.0)
+                    continue
+                backoff = 1.0
+                self.status.emit("connected")
+                f = sock.makefile("rb")
+                try:
+                    while not self._stop:
+                        try:
+                            raw = f.readline()
+                        except (socket.timeout, TimeoutError):
+                            continue
+                        except OSError as exc:
+                            # Buffered reader wraps socket timeouts as
+                            # "cannot read from timed out object" — same thing,
+                            # different exception type.
+                            if "timed out" in str(exc):
+                                continue
+                            break       # any other OSError = treat as disconnect
+                        if not raw:
+                            break       # remote closed — reconnect
+                        line = raw.decode("utf-8", errors="ignore").strip()
+                        parsed = parse_data_line(line)
+                        if parsed is not None:
+                            self.new_frame.emit(parsed)
+                finally:
+                    try: f.close()
+                    except Exception: pass
+                    try: sock.close()
+                    except Exception: pass
+                if not self._stop:
+                    self.status.emit("socket closed — reconnecting ...")
+                    self.msleep(500)
         else:
             try:
                 ser = serial.Serial(self.args.port, self.args.baud, timeout=1)
@@ -125,7 +151,8 @@ class SimpleWindow(QtWidgets.QMainWindow):
     def __init__(self, max_mm=4000):
         super().__init__()
         self.max_mm = max_mm
-        self.directions = precompute_zone_directions()
+        self.n_zones = 64                                # default; updated on first frame
+        self.directions = precompute_zone_directions(self.n_zones)
         self.cmap = pg.colormap.get("viridis")
 
         self.setWindowTitle("VL53L8CX simple point cloud")
@@ -158,16 +185,16 @@ class SimpleWindow(QtWidgets.QMainWindow):
 
         # Rays from sensor origin to each point — visualises per-zone distance
         self.rays = gl.GLLinePlotItem(
-            pos=np.zeros((TOTAL_ZONES * 2, 3), dtype=np.float32),
-            color=np.zeros((TOTAL_ZONES * 2, 4), dtype=np.float32),
+            pos=np.zeros((self.n_zones * 2, 3), dtype=np.float32),
+            color=np.zeros((self.n_zones * 2, 4), dtype=np.float32),
             width=1.2, mode="lines", antialias=True,
         )
         self.view.addItem(self.rays)
 
         # The actual point cloud
         self.scatter = gl.GLScatterPlotItem(
-            pos=np.zeros((TOTAL_ZONES, 3)),
-            color=np.tile((1.0, 1.0, 1.0, 0.0), (TOTAL_ZONES, 1)),
+            pos=np.zeros((self.n_zones, 3)),
+            color=np.tile((1.0, 1.0, 1.0, 0.0), (self.n_zones, 1)),
             size=14, pxMode=True,
         )
         self.view.addItem(self.scatter)
@@ -185,8 +212,24 @@ class SimpleWindow(QtWidgets.QMainWindow):
 
         self.status.showMessage("Waiting for data...")
         self.frame_n = 0
+        self.conn_state = "initializing"
+
+    def update_status(self, msg):
+        """Show connection state in the status bar when no data is flowing."""
+        self.conn_state = msg
+        if self.frame_n == 0:
+            self.status.showMessage(msg)
 
     def update_frame(self, distances):
+        # Adapt geometry if firmware switched resolution (8x8 ↔ 4x4)
+        if len(distances) != self.n_zones:
+            self.n_zones = len(distances)
+            self.directions = precompute_zone_directions(self.n_zones)
+            self.scatter.setData(
+                pos=np.zeros((self.n_zones, 3)),
+                color=np.tile((1.0, 1.0, 1.0, 0.0), (self.n_zones, 1)),
+            )
+
         invalid = distances >= (INVALID_CLAMP_MM - 1)
 
         # Sensor-frame points -> GL frame (X, depth=sensor Z, up=sensor Y)
@@ -199,11 +242,10 @@ class SimpleWindow(QtWidgets.QMainWindow):
         colors[invalid, 3] = 0.0
         self.scatter.setData(pos=gl_pts, color=colors)
 
-        # Rays: 64 line segments, each from origin (0,0,0) to its zone's point.
-        # Two vertices per ray: idx 0 = origin (faded), idx 1 = point (brighter).
-        ray_pos = np.zeros((TOTAL_ZONES * 2, 3), dtype=np.float32)
+        # Rays: one line segment per zone, origin -> point.
+        ray_pos = np.zeros((self.n_zones * 2, 3), dtype=np.float32)
         ray_pos[1::2] = gl_pts
-        ray_color = np.zeros((TOTAL_ZONES * 2, 4), dtype=np.float32)
+        ray_color = np.zeros((self.n_zones * 2, 4), dtype=np.float32)
         origin_col = colors.copy(); origin_col[:, 3] *= 0.10
         end_col    = colors.copy(); end_col[:, 3]    *= 0.55
         ray_color[0::2] = origin_col
@@ -219,11 +261,17 @@ class SimpleWindow(QtWidgets.QMainWindow):
 
         self.frame_n += 1
         n_valid = int((~invalid).sum())
+        side = int(np.sqrt(self.n_zones))
+        res_label = f"{side}x{side}"
         if n_valid:
             mean = float(np.mean(distances[~invalid]))
-            self.status.showMessage(f"Frame {self.frame_n}  |  valid {n_valid}/64  |  mean {mean:.0f} mm")
+            self.status.showMessage(
+                f"Frame {self.frame_n}  |  {res_label}  |  valid {n_valid}/{self.n_zones}  |  mean {mean:.0f} mm  |  {self.conn_state}"
+            )
         else:
-            self.status.showMessage(f"Frame {self.frame_n}  |  valid 0/64")
+            self.status.showMessage(
+                f"Frame {self.frame_n}  |  {res_label}  |  valid 0/{self.n_zones}  |  {self.conn_state}"
+            )
 
     def on_serial_error(self, msg):
         QtWidgets.QMessageBox.critical(
@@ -253,6 +301,7 @@ def main():
     reader = SourceReader(args)
     reader.new_frame.connect(win.update_frame)
     reader.error.connect(win.on_serial_error)
+    reader.status.connect(win.update_status)
     reader.start()
 
     code = app.exec()

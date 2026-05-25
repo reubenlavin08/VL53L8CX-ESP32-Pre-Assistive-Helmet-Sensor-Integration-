@@ -1,23 +1,24 @@
-/**
+﻿/**
  * VL53L8CX ESP32-S3 Distance Sensor Interface
  *
  * Streams DATA: + SIGMA: lines per frame over BOTH:
  *   - UART (printf / USB-CDC, ~115200 baud)
  *   - TCP (when a client is connected on TCP_PORT over WiFi)
  *
- * Hardware (SATEL-VL53L8CX breakout → ESP32-S3):
- *   SATEL PWREN     → GPIO_PWREN  (+ 10kΩ pullup to 3.3V)
- *   SATEL MCLK_SCL  → GPIO_SCL    (+ 2.2kΩ pullup to 3.3V)
- *   SATEL MOSI_SDA  → GPIO_SDA    (+ 2.2kΩ pullup to 3.3V)
- *   SATEL NCS       → 3.3V        (tie high = I2C mode)
- *   SATEL SPI_I2C_N → GND         (selects I2C mode)
- *   SATEL VDD       → 5V
- *   SATEL GND       → GND
+ * Hardware (SATEL-VL53L8CX breakout â†’ ESP32-S3):
+ *   SATEL PWREN     â†’ GPIO_PWREN  (+ 10kÎ© pullup to 3.3V)
+ *   SATEL MCLK_SCL  â†’ GPIO_SCL    (+ 2.2kÎ© pullup to 3.3V)
+ *   SATEL MOSI_SDA  â†’ GPIO_SDA    (+ 2.2kÎ© pullup to 3.3V)
+ *   SATEL NCS       â†’ 3.3V        (tie high = I2C mode)
+ *   SATEL SPI_I2C_N â†’ GND         (selects I2C mode)
+ *   SATEL VDD       â†’ 5V
+ *   SATEL GND       â†’ GND
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <errno.h>
 
 #include "freertos/FreeRTOS.h"
@@ -41,7 +42,7 @@
 #include "vl53l8cx_api.h"
 #include "wifi_credentials.h"
 
-/* ── Pin configuration ───────────────────────────────────────────────────── */
+/* â”€â”€ Pin configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define GPIO_SDA      GPIO_NUM_1
 #define GPIO_SCL      GPIO_NUM_2
 #define GPIO_PWREN    GPIO_NUM_5
@@ -52,30 +53,37 @@
 #define BEEP_GAP_MIN_MS     30           /* gap at point-blank (frantic chirping) */
 #define BEEP_GAP_MAX_MS     400          /* gap at threshold distance (slow alert) */
 
-/* ── Sensor configuration ────────────────────────────────────────────────── */
+/* â”€â”€ Sensor configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
 #define RANGING_FREQ_HZ     10                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
+#define SHARPENER_PERCENT   5                              /* 0=off, 5=default, 99=max */
+#define TARGET_ORDER        VL53L8CX_TARGET_ORDER_CLOSEST  /* CLOSEST for obstacle avoidance */
+#define STATUS_FILTER_STRICT 1                             /* 1 = accept status 5 only; 0 = accept {5,6,9} */
 
-/* ── Display options ─────────────────────────────────────────────────────── */
+/* â”€â”€ Display options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define PRINT_GRID          0
 #define PRINT_CLOSEST_ONLY  0
 #define STREAM_DATA         1
 #define STREAM_SIGMA        1
+#define STREAM_STATUS       1     /* per-zone raw target_status codes */
 #define MAX_DISTANCE_MM     4000
 
-/* ── WiFi / TCP ──────────────────────────────────────────────────────────── */
+/* â”€â”€ WiFi / TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define MAX_WIFI_RETRY      10
 #define WIFI_CONNECTED_BIT  BIT0
 #define STREAM_BUF_SIZE     512
+#define MAX_TCP_CLIENTS     4         /* visualizer + measure.py + headroom */
 
 static const char *TAG = "VL53L8CX";
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static int s_retry_num = 0;
 
-/* TCP client state — exactly one connected client at a time. */
-static int g_client_sock = -1;
+/* TCP client state â€” fan-out streaming to up to MAX_TCP_CLIENTS clients
+ * simultaneously so the visualizer can stay live while measure.py also
+ * captures. tcp_write iterates over slots; failed sends self-evict. */
+static int g_client_socks[MAX_TCP_CLIENTS];
 static SemaphoreHandle_t g_client_mutex = NULL;
 
 /* Nearest valid zone distance in mm, updated by ranging_task each frame.
@@ -83,27 +91,28 @@ static SemaphoreHandle_t g_client_mutex = NULL;
  * single int. INT16_MAX = no valid zone yet. */
 static volatile int16_t g_nearest_mm = INT16_MAX;
 
-/* ── Write a line to the TCP client if one is connected. ─────────────────────
- *  On any error, close the socket and clear the slot so the server task can
- *  accept a new client.
+/* â”€â”€ Broadcast a line to every connected TCP client. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ *  On any per-client error, close that socket and clear its slot so the
+ *  server task can accept replacements.
  */
 static void tcp_write(const char *buf, size_t len)
 {
     if (g_client_mutex == NULL) return;
     xSemaphoreTake(g_client_mutex, portMAX_DELAY);
-    int fd = g_client_sock;
-    if (fd >= 0) {
-        int sent = send(fd, buf, len, 0);
+    for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+        int fd = g_client_socks[i];
+        if (fd < 0) continue;
+        int sent = send(fd, buf, len, MSG_DONTWAIT);
         if (sent < 0) {
-            ESP_LOGW(TAG, "TCP send failed (errno=%d) — dropping client", errno);
+            ESP_LOGW(TAG, "TCP send failed on client %d (errno=%d) â€” evicting", i, errno);
             close(fd);
-            g_client_sock = -1;
+            g_client_socks[i] = -1;
         }
     }
     xSemaphoreGive(g_client_mutex);
 }
 
-/* ── Helper: stream DATA: line to UART + TCP ─────────────────────────────── */
+/* â”€â”€ Helper: stream DATA: line to UART + TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #if STREAM_DATA
 static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
@@ -114,9 +123,12 @@ static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resoluti
         int16_t dist;
         uint8_t status = results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
         /* Accept status 5 (100% valid), 6 (wrap-around not done, ~50% conf),
-         * and 9 (low signal but range valid, ~50% conf). Per ST UM3109 §5.5. */
-        if (results->nb_target_detected[z] > 0 &&
-            (status == 5 || status == 6 || status == 9)) {
+         * and 9 (low signal but range valid, ~50% conf). Per ST UM3109 Â§5.5.
+         * STRICT mode = status 5 only. */
+        bool status_ok = STATUS_FILTER_STRICT
+                       ? (status == 5)
+                       : (status == 5 || status == 6 || status == 9);
+        if (results->nb_target_detected[z] > 0 && status_ok) {
             dist = results->distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
             if (dist > MAX_DISTANCE_MM) dist = MAX_DISTANCE_MM;
         } else {
@@ -131,7 +143,7 @@ static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resoluti
 }
 #endif
 
-/* ── Helper: stream SIGMA: line to UART + TCP ────────────────────────────── */
+/* â”€â”€ Helper: stream SIGMA: line to UART + TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #if STREAM_SIGMA
 static void stream_sigma_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
@@ -149,7 +161,44 @@ static void stream_sigma_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 }
 #endif
 
-/* ── Helper: full grid + closest (kept for debug) ────────────────────────── */
+/* â”€â”€ Helper: stream STATUS: line to UART + TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * Raw per-zone target_status code (0-255) â€” lets the host see WHICH
+ * failure mode each filtered zone hit, not just "filtered/passed".
+ * Per ST UM3109 Â§5.5:
+ *   0 = ranging data not updated
+ *   1 = signal rate too low on SPAD
+ *   2 = target phase
+ *   3 = sigma estimator too high
+ *   4 = target consistency failed
+ *   5 = range valid (100% confidence)
+ *   6 = wrap-around not performed (~50%)
+ *   7 = rate consistency failed
+ *   8 = signal rate too low
+ *   9 = range valid with low signal (~50%)
+ *   10 = sigma estimator too high (range valid)
+ *   11 = no target detected
+ *   12 = blurred target
+ *   13 = inconsistent data
+ *   255 = no update
+ */
+#if STREAM_STATUS
+static void stream_status_line(VL53L8CX_ResultsData *results, uint8_t resolution)
+{
+    int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    char buf[STREAM_BUF_SIZE];
+    int off = snprintf(buf, sizeof(buf), "STATUS:");
+    for (int z = 0; z < total && off < (int)sizeof(buf) - 1; z++) {
+        uint8_t status = results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%u%c", (unsigned)status, (z == total - 1) ? '\n' : ',');
+    }
+    if (off > (int)sizeof(buf) - 1) off = sizeof(buf) - 1;
+    fputs(buf, stdout);
+    tcp_write(buf, off);
+}
+#endif
+
+/* â”€â”€ Helper: full grid + closest (kept for debug) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void print_distance_grid(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
     int side = (resolution == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
@@ -192,7 +241,7 @@ static void print_closest_zone(VL53L8CX_ResultsData *results, uint8_t resolution
 }
 #endif
 
-/* ── Buzzer test task: 2 kHz PWM tone, 200 ms beep every 5 s ────────────── */
+/* â”€â”€ Buzzer test task: 2 kHz PWM tone, 200 ms beep every 5 s â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #if BUZZER_TEST
 #define BUZZER_FREQ_HZ      2000
 #define BUZZER_LEDC_CHANNEL LEDC_CHANNEL_0
@@ -237,7 +286,7 @@ static void buzzer_task(void *arg)
 }
 #endif
 
-/* ── WiFi event handler ──────────────────────────────────────────────────── */
+/* â”€â”€ WiFi event handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                 int32_t event_id, void *event_data)
 {
@@ -262,7 +311,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
-/* ── WiFi station init ───────────────────────────────────────────────────── */
+/* â”€â”€ WiFi station init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void wifi_init_sta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
@@ -290,7 +339,7 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-/* ── OTA: POST /update endpoint ──────────────────────────────────────────── */
+/* â”€â”€ OTA: POST /update endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static esp_err_t ota_post_handler(httpd_req_t *req)
 {
     /* Token check via X-OTA-Token header. Token is stored in
@@ -364,7 +413,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_sendstr(req, "OK — rebooting into new image in 1 s\n");
+    httpd_resp_sendstr(req, "OK â€” rebooting into new image in 1 s\n");
     ESP_LOGI(TAG, "OTA: success, rebooting");
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
@@ -394,7 +443,7 @@ static void start_ota_server(void)
     ESP_LOGI(TAG, "OTA HTTP server listening on port %d (POST /update)", OTA_HTTP_PORT);
 }
 
-/* ── TCP server task — single-client, blocks on accept() between clients ──── */
+/* â”€â”€ TCP server task â€” single-client, blocks on accept() between clients â”€â”€â”€â”€ */
 static void tcp_server_task(void *arg)
 {
     /* Wait for WiFi connection before opening any sockets */
@@ -442,37 +491,36 @@ static void tcp_server_task(void *arg)
 
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &cli_addr.sin_addr, ip, sizeof(ip));
-        ESP_LOGI(TAG, "TCP client connected from %s", ip);
 
         /* TCP_NODELAY: avoid Nagle so frames go out immediately */
         int nodelay = 1;
         setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
-        /* Publish the fd; close any prior one (defensive) */
+        /* Stash in first empty slot; if all slots full, evict the oldest
+         * (slot 0) to make room. Disconnect detection happens lazily inside
+         * tcp_write() when a send() fails â€” no per-client task needed. */
         xSemaphoreTake(g_client_mutex, portMAX_DELAY);
-        if (g_client_sock >= 0) close(g_client_sock);
-        g_client_sock = client;
+        int slot = -1;
+        for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+            if (g_client_socks[i] < 0) { slot = i; break; }
+        }
+        if (slot < 0) {
+            ESP_LOGW(TAG, "All %d client slots full, evicting slot 0", MAX_TCP_CLIENTS);
+            close(g_client_socks[0]);
+            /* shift remaining down so the oldest is always slot 0 */
+            for (int i = 0; i < MAX_TCP_CLIENTS - 1; i++) {
+                g_client_socks[i] = g_client_socks[i + 1];
+            }
+            slot = MAX_TCP_CLIENTS - 1;
+        }
+        g_client_socks[slot] = client;
         xSemaphoreGive(g_client_mutex);
 
-        /* Block here until the client disconnects (we don't expect any data
-         * from the host — recv just gives us a disconnect signal). */
-        char drain[16];
-        while (1) {
-            ssize_t r = recv(client, drain, sizeof(drain), 0);
-            if (r <= 0) break;     /* 0 = closed by peer, -1 = error */
-        }
-        ESP_LOGI(TAG, "TCP client disconnected");
-
-        xSemaphoreTake(g_client_mutex, portMAX_DELAY);
-        if (g_client_sock == client) {
-            close(client);
-            g_client_sock = -1;
-        }
-        xSemaphoreGive(g_client_mutex);
+        ESP_LOGI(TAG, "TCP client connected from %s (slot %d)", ip, slot);
     }
 }
 
-/* ── Main ranging task ───────────────────────────────────────────────────── */
+/* â”€â”€ Main ranging task â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void ranging_task(void *arg)
 {
     VL53L8CX_Configuration sensor;
@@ -508,7 +556,7 @@ static void ranging_task(void *arg)
 
     uint8_t ret = vl53l8cx_is_alive(&sensor, &is_alive);
     if (ret != VL53L8CX_STATUS_OK || !is_alive) {
-        ESP_LOGE(TAG, "Sensor not detected (ret=%u) — check wiring.", ret);
+        ESP_LOGE(TAG, "Sensor not detected (ret=%u) â€” check wiring.", ret);
         vTaskDelete(NULL);
     }
     ESP_LOGI(TAG, "Sensor detected");
@@ -519,18 +567,22 @@ static void ranging_task(void *arg)
         ESP_LOGE(TAG, "vl53l8cx_init failed (ret=%u)", ret);
         vTaskDelete(NULL);
     }
-    ESP_LOGI(TAG, "ULD ready — version: %s", VL53L8CX_API_REVISION);
+    ESP_LOGI(TAG, "ULD ready â€” version: %s", VL53L8CX_API_REVISION);
 
     ret  = vl53l8cx_set_resolution(&sensor, SENSOR_RESOLUTION);
     ret |= vl53l8cx_set_ranging_mode(&sensor, RANGING_MODE);
     ret |= vl53l8cx_set_ranging_frequency_hz(&sensor, RANGING_FREQ_HZ);
+    ret |= vl53l8cx_set_sharpener_percent(&sensor, SHARPENER_PERCENT);
+    ret |= vl53l8cx_set_target_order(&sensor, TARGET_ORDER);
     if (ret != VL53L8CX_STATUS_OK) {
         ESP_LOGE(TAG, "Sensor configuration failed (ret=%u)", ret);
         vTaskDelete(NULL);
     }
-    ESP_LOGI(TAG, "Configured: %s, %d Hz",
+    ESP_LOGI(TAG, "Configured: %s, %d Hz, sharpener=%d%%, order=%s, filter=%s",
              (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? "8x8" : "4x4",
-             RANGING_FREQ_HZ);
+             RANGING_FREQ_HZ, SHARPENER_PERCENT,
+             (TARGET_ORDER == VL53L8CX_TARGET_ORDER_CLOSEST) ? "CLOSEST" : "STRONGEST",
+             STATUS_FILTER_STRICT ? "{5} strict" : "{5,6,9}");
 
     ret = vl53l8cx_start_ranging(&sensor);
     if (ret != VL53L8CX_STATUS_OK) {
@@ -562,8 +614,10 @@ static void ranging_task(void *arg)
         int16_t nearest = INT16_MAX;
         for (int z = 0; z < total_zones; z++) {
             uint8_t status = results.target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
-            if (results.nb_target_detected[z] > 0 &&
-                (status == 5 || status == 6 || status == 9)) {
+            bool status_ok = STATUS_FILTER_STRICT
+                           ? (status == 5)
+                           : (status == 5 || status == 6 || status == 9);
+            if (results.nb_target_detected[z] > 0 && status_ok) {
                 int16_t d = results.distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
                 if (d > 0 && d < nearest) nearest = d;
             }
@@ -575,6 +629,9 @@ static void ranging_task(void *arg)
 #endif
 #if STREAM_SIGMA
         stream_sigma_line(&results, SENSOR_RESOLUTION);
+#endif
+#if STREAM_STATUS
+        stream_status_line(&results, SENSOR_RESOLUTION);
 #endif
 #if PRINT_CLOSEST_ONLY
         print_closest_zone(&results, SENSOR_RESOLUTION);
@@ -594,6 +651,9 @@ void app_main(void)
     ESP_LOGI(TAG, "VL53L8CX + WiFi interface starting");
 
     g_client_mutex = xSemaphoreCreateMutex();
+    for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
+        g_client_socks[i] = -1;
+    }
 
     /* Start the ranging task FIRST so the sensor can complete its I2C init
      * (about ~1 s of ULD firmware upload) BEFORE WiFi spins up. Otherwise
@@ -612,14 +672,14 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    /* Start WiFi (async — connection completes in the background). */
+    /* Start WiFi (async â€” connection completes in the background). */
     wifi_init_sta();
 
     /* TCP server task waits for WiFi internally, then listens. */
     xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 4, NULL);
 
 #if BUZZER_TEST
-    /* Buzzer / GPIO control task. 4096 byte stack — 2048 was overflowing. */
+    /* Buzzer / GPIO control task. 4096 byte stack â€” 2048 was overflowing. */
     xTaskCreate(buzzer_task, "buzzer", 4096, NULL, 2, NULL);
 #endif
 }

@@ -468,12 +468,104 @@ The buzzer can sit on the same dev board headers as the sensor — they share no
 
 ---
 
-## What's next (queued for IMU integration)
+## v9 — Sensor characterization: 17-config × 3-distance sweep + analysis
 
-1. **Sensor fusion** — accelerometer + gyro on the same I²C bus. Gravity gives absolute pitch / roll; gyro integration plus accel-gravity correction tightens yaw, which is what unlocks a non-drifting 3D scan.
-2. **Interpolated topographic surface** — bicubic interpolation across the 8×8 grid, rendered as a smooth 3D mesh with viridis colouring and contour lines every 100 mm.
-3. **Proximity overlay** — highlight zones below a configurable threshold to flag obstacles in the helmet's line of sight.
-4. **Helmet integration** — wider-angle ToF / ultrasonic for full spatial awareness.
+Phase 1 of the helmet project needed a real answer to "what's the best sensor configuration?" — not a guess. v9 added the firmware + tooling to systematically measure noise behaviour across every tunable knob and three distances, then wrote a Python analysis pipeline to interpret the data.
+
+### What's new
+
+- **Multi-client TCP fan-out** in firmware. Previously the ESP only accepted one connected program at a time, so the visualizer was kicked off whenever `measure.py` connected to capture. Now up to 4 clients can be connected simultaneously and all receive the same data stream — visualizer + measure.py can run together.
+- **`STATUS:` line streamed per frame**, in addition to `DATA:` and `SIGMA:`. Gives the host the **raw ST UM3109 §5.5 status code** for every zone every frame (0 = no update, 5 = valid, 6 = wrap-around uncertain, 9 = low signal valid, etc.), so we can see *which* failure mode each filtered zone hit rather than just "filtered or not".
+- **Compile-time `#define` knobs** in `main.c` for `SHARPENER_PERCENT`, `TARGET_ORDER`, `STATUS_FILTER_STRICT` — driven through `vl53l8cx_set_sharpener_percent()` and `vl53l8cx_set_target_order()` ULD APIs. Patching one line + OTA flash = one experimental config.
+- **PowerShell sweep runner** (`visualizer/run_sweep.ps1` + `run_one_test.ps1`) that auto-patches `main.c`, builds, OTAs, captures, and logs — for **17 configs × 3 distances = 51 captures** unattended.
+- **Retry-up-to-3x logic** on capture failure. Sensor I²C init fails ~20 % of the time after OTA reboot (the firmware has mitigations but it's not fully fixed — see Lessons below). The retry pushes a fresh OTA to force another reboot and tries again.
+- **`measure.py` enhancements**: parses the new `STATUS:` line, writes per-zone-per-frame raw data to `raw_frames/`, computes detection-rate against the firmware buzzer threshold, prints status-code distribution.
+- **Analysis script** (`visualizer/analyze.py`) produces the plots in `visualizer/plots/`: σ-vs-distance trend, config × distance heatmap, knob-impact breakdowns, per-zone σ heatmaps, and per-zone mean-distance maps that reveal **sensor-mount tilt as a diagonal gradient**.
+
+### Test methodology
+
+- **17 configs:** A-series = 8×8 at 10/15 Hz × sharpener {0, 5, 20}. B-series = 4×4 at 10/15/30 Hz × sharpener {0, 5, 20}. C1 = STRONGEST target order (vs CLOSEST default). D1 = strict status filter {5 only} (vs default {5, 6, 9}).
+- **Three distances:** 48 cm, 68 cm, 89 cm — perpendicular to two side-by-side **black foam boards** (worst-case low-return surface, ~76 cm wide × 122 cm tall, raised so the sensor's horizontal FoV stays fully on the boards).
+- **200 frames per config**, all per-zone distance + sigma + status saved to `raw_frames/`.
+- See [`photos/test_rig/`](photos/test_rig/) for rig photos + FoV math + the noted ~5–10° downward sensor tilt.
+
+### Headline findings
+
+| Effect | What the data shows |
+|---|---|
+| **σ scales linearly with distance** | Confirmed across every config — 48/68/89 cm ratios match `σ ∝ d` (which falls out of `N ∝ 1/d²` photons × `σ ∝ 1/√N` shot noise) |
+| **4×4 wins on σ by ~4×** | At 10 Hz: 8×8 = 3.5 mm σ at 48 cm; 4×4 = 0.9 mm. Predicted 2× from 4× SPADs/zone; real is ~4× → integration-time effect on top |
+| **Sharpener does nothing on uniform surfaces** | `sharp=0/5/20` rows match within 0.05 mm at every distance. Sharpener is for edges, not flat panels |
+| **Frequency cost is real** | 4×4: 10 → 15 → 30 Hz tracks 0.9 → 1.1 → 1.5 mm, roughly √(freq) penalty |
+| **STRONGEST ≈ CLOSEST** on single-target scenes | C1 and A2 match within noise (single target, no ambiguity) |
+| **Strict filter ≈ lax filter** on clean targets | D1 and A2 match — black foam at < 1 m has 100 % status-5 anyway |
+| **Sensor-tilt visible in per-zone mean** | At 48 cm, top row mean = 473 mm, bottom row = 501 mm → +28 mm gradient = tilt artifact (sensor pointed ~5–10° down on the rig) |
+
+See [`visualizer/plots/`](visualizer/plots/) for the full set: cross-distance σ trends, knob-impact comparisons, per-zone σ maps, per-zone mean-distance maps.
+
+### v9 architecture
+
+```
+              ┌────────────────────────────────────────────────┐
+              │              run_sweep.ps1 (host)              │
+              │  loop over 17 configs:                         │
+              │   ├─ patch main.c #defines                     │
+              │   ├─ idf.py build                              │
+              │   ├─ curl -X POST /update  (OTA reflash)       │
+              │   ├─ wait for ESP reboot + TCP-3333 alive      │
+              │   └─ measure.py --frames 200 --config <label>  │
+              └──────────┬─────────────────────────────────────┘
+                         │  TCP 3333 (data stream)
+                         ▼
+┌────────────────────────────────────────────────┐
+│              ESP32-S3 firmware                 │
+│ ┌──────────────┐    ┌─────────────────────────┐│
+│ │ ranging_task │ ─► │ tcp_write (broadcasts  )││ ── DATA:…
+│ │  (sensor I²C │    │ to up to 4 clients     )││ ── SIGMA:…
+│ │   @ N Hz)    │    │                        )││ ── STATUS:…
+│ └──────────────┘    └─────────────────────────┘│
+│ +  OTA HTTP server on port 80 (POST /update)   │
+└────────────────────────────────────────────────┘
+                         │  TCP 3333
+              ┌──────────┼───────────────────────┐
+              │          │                       │
+              ▼          ▼                       ▼
+       ┌──────────┐ ┌──────────────────┐ ┌────────────────────┐
+       │ Live     │ │ measure.py       │ │ ... (up to 4)      │
+       │ visual-  │ │ → CSV + raw     │ │                    │
+       │ izer     │ │   per-frame logs│ │                    │
+       └──────────┘ └──────────────────┘ └────────────────────┘
+```
+
+### Files added
+
+- `visualizer/run_sweep.ps1` — outer loop, all 17 configs
+- `visualizer/run_retry.ps1` — re-runs subset (failed configs)
+- `visualizer/run_one_test.ps1` — patch + build + OTA + capture, with 3x retry
+- `visualizer/analyze.py` — load CSVs, generate the 8 plots
+- `visualizer/measurements.csv` — per-zone aggregates (one row per zone per run)
+- `visualizer/measurements.summary.csv` — one row per run (the rank-able file)
+- `visualizer/raw_frames/*.csv` — every frame's distance + sigma + status per zone
+- `visualizer/plots/*.png` — analysis output
+- `photos/test_rig/` — rig photos, FoV math, future-test ideas
+
+### Lessons from v9 dev
+
+- **OTA can leave one partition in a bad state.** ESP-IDF rotates between `ota_0` and `ota_1` on each OTA. If one slot ends up with a corrupted image (no idea exactly why — maybe partial write or flash-wear coincidence), boots alternate working / hanging. **Fix:** USB-flash via `idf.py -p COMx flash` rewrites both slots cleanly. After ~30+ OTA cycles in a row, this got us out of a brick.
+- **`MSG_DONTWAIT` on `send()` is essential for fan-out broadcast.** A slow-reading client otherwise stalls the ranging task for every other client. Per-client failure self-evicts the slot.
+- **PowerShell + UTF-8-no-BOM scripts = silent parse error.** Em-dashes (`—`) in `.ps1` files trip Windows PowerShell 5.1's parser. Stick to ASCII in scripts.
+- **`$ErrorActionPreference = "Stop"` makes Python tracebacks escape the retry loop.** The capture call needs to be wrapped in a `try`/`catch` *and* the EAP momentarily set to `Continue`, or one Python crash kills the whole sweep.
+- **Sensor I²C init flakes ~20 % after a warm reboot.** Likely a power-rail dip from WiFi startup current. Mitigation in firmware (start ranging task before WiFi + 2.5 s wait) helps but doesn't eliminate it. The host-side 3x retry catches the rest.
+
+---
+
+## What's next (queued)
+
+1. **Helmet mount + dynamic testing.** Tape sensor to a real helmet, walk around with it. Reveals problems static testing can't: phantom triggers on head turns, false negatives on dark fabric / glass at angles, real warning-time when approaching a wall.
+2. **Second VL53L8CX (deferred).** Adds peripheral coverage. Requires non-overlapping FoVs OR external-sync pin to avoid VCSEL-to-VCSEL optical interference. SPI bus is cleaner than I²C for two sensors (no address conflict). Hold until single-sensor wearable testing reveals where coverage gaps actually matter.
+3. **Layered alert thresholds.** Three beep patterns at 120 cm / 60 cm / 30 cm instead of binary on/off — much better information density for a blind user.
+4. **Sensor fusion** — accelerometer + gyro on the same I²C bus. Gravity gives absolute pitch / roll; gyro integration plus accel-gravity correction tightens yaw, which is what unlocks a non-drifting 3D scan.
+5. **Phase 2: USB camera + CV.** Object recognition (person vs wall vs glass) on top of the ToF distance signal.
 
 ---
 

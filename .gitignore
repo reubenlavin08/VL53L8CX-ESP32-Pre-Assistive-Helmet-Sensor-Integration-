@@ -7,5 +7,13 @@ dependencies.lock
 *.pyc
 __pycache__/
 
+# Sweep logs — noisy, reproducible from raw data
+visualizer/sweep_*.log
+visualizer/retry_*.log
+visualizer/resume_*.log
+
+# Python venv used by measure.py / visualizer / analyze.py
+visualizer/venv/
+
 # WiFi credentials — never commit
 main/wifi_credentials.h
