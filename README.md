@@ -1,7 +1,7 @@
 <h1 align="center">VL53L8CX × ESP32-S3 — Live 3D Point Cloud</h1>
 
 <p align="center">
-  <em>An 8×8 time-of-flight depth grid streaming over serial at 15 Hz, rendered in real time as a GPU-accelerated 3D point cloud with experimental 6-DOF pose tracking and a world-frame point memory. Foundation for an assistive helmet with IMU fusion next.</em>
+  <em>An 8×8 time-of-flight depth grid streaming over WiFi (and USB-serial), rendered in real time as a GPU-accelerated 3D point cloud, with sensor characterization data and analysis. The foundation for an assistive helmet I'm building, with IMU fusion and a camera planned next.</em>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Sensor-VL53L8CX-1F8AC0?style=flat-square" alt="VL53L8CX"/>
   <img src="https://img.shields.io/badge/Framework-ESP--IDF%20v5.4.4-blue?style=flat-square" alt="ESP-IDF v5.4.4"/>
   <img src="https://img.shields.io/badge/Visualiser-PyQtGraph%20%2B%20OpenGL-44A833?style=flat-square" alt="PyQtGraph + OpenGL"/>
-  <img src="https://img.shields.io/badge/Status-paused%20on%20hardware-yellow?style=flat-square" alt="Status"/>
+  <img src="https://img.shields.io/badge/Status-Phase%201%20%E2%80%94%20wearable%20testing-brightgreen?style=flat-square" alt="Status"/>
 </p>
 
 ---
@@ -470,24 +470,33 @@ The buzzer can sit on the same dev board headers as the sensor — they share no
 
 ## v9 — Sensor characterization: 17-config × 3-distance sweep + analysis
 
-Phase 1 of the helmet project needed a real answer to "what's the best sensor configuration?" — not a guess. v9 added the firmware + tooling to systematically measure noise behaviour across every tunable knob and three distances, then wrote a Python analysis pipeline to interpret the data.
+Going into Phase 1 of the helmet I realised I had no principled answer to "which sensor configuration should I actually fly?" The previous versions used whatever defaults made the visualizer look good. For an obstacle-avoidance device I needed a real basis for picking resolution, frame rate, sharpener, target order, and the status filter. v9 is the firmware + tooling + analysis I built to settle that empirically.
 
-### What's new
+### My test rig
 
-- **Multi-client TCP fan-out** in firmware. Previously the ESP only accepted one connected program at a time, so the visualizer was kicked off whenever `measure.py` connected to capture. Now up to 4 clients can be connected simultaneously and all receive the same data stream — visualizer + measure.py can run together.
-- **`STATUS:` line streamed per frame**, in addition to `DATA:` and `SIGMA:`. Gives the host the **raw ST UM3109 §5.5 status code** for every zone every frame (0 = no update, 5 = valid, 6 = wrap-around uncertain, 9 = low signal valid, etc.), so we can see *which* failure mode each filtered zone hit rather than just "filtered or not".
-- **Compile-time `#define` knobs** in `main.c` for `SHARPENER_PERCENT`, `TARGET_ORDER`, `STATUS_FILTER_STRICT` — driven through `vl53l8cx_set_sharpener_percent()` and `vl53l8cx_set_target_order()` ULD APIs. Patching one line + OTA flash = one experimental config.
-- **PowerShell sweep runner** (`visualizer/run_sweep.ps1` + `run_one_test.ps1`) that auto-patches `main.c`, builds, OTAs, captures, and logs — for **17 configs × 3 distances = 51 captures** unattended.
-- **Retry-up-to-3x logic** on capture failure. Sensor I²C init fails ~20 % of the time after OTA reboot (the firmware has mitigations but it's not fully fixed — see Lessons below). The retry pushes a fresh OTA to force another reboot and tries again.
-- **`measure.py` enhancements**: parses the new `STATUS:` line, writes per-zone-per-frame raw data to `raw_frames/`, computes detection-rate against the firmware buzzer threshold, prints status-code distribution.
-- **Analysis script** (`visualizer/analyze.py`) produces the plots in `visualizer/plots/`: σ-vs-distance trend, config × distance heatmap, knob-impact breakdowns, per-zone σ heatmaps, and per-zone mean-distance maps that reveal **sensor-mount tilt as a diagonal gradient**.
+<p align="center">
+  <img src="photos/test_rig/rig_wide_full_setup.jpg" width="48%" alt="Full test rig — two black foam boards on a music stand, sensor on breadboard on top of a keyboard"/>
+  &nbsp;
+  <img src="photos/test_rig/rig_close_sensor_and_board.jpg" width="48%" alt="Close-up — sensor on breadboard with foam board in front"/>
+</p>
+<p align="center"><em>Two black foam boards (~76 × 122 cm total) raised on a music stand, sensor mounted on a breadboard sitting on top of a digital keyboard at 34.5″ above the floor. Black foam is a worst-case low-IR-reflectance surface — anything that worked here is a baseline for everything brighter.</em></p>
+
+### What I added for the sweep
+
+- **Multi-client TCP fan-out** in the firmware. The previous firmware accepted exactly one TCP client at a time, so I couldn't run my visualizer and `measure.py` simultaneously — connecting one kicked the other off. I rewrote the broadcast layer to hold up to 4 client sockets and `send()` to each per frame with `MSG_DONTWAIT`. A slow client self-evicts when its `send()` returns negative instead of stalling the ranging task.
+- **`STATUS:` line streamed per frame**, alongside the existing `DATA:` and `SIGMA:` lines. This gives me the raw ST UM3109 §5.5 status code (0 = no update, 5 = valid, 6 = wrap-around uncertain, 9 = low signal valid, etc.) for every zone every frame. Before this, I only knew whether a zone passed my filter — now I can see *which* failure mode it hit if it didn't.
+- **Compile-time `#define` knobs** in `main.c` for `SHARPENER_PERCENT`, `TARGET_ORDER`, `STATUS_FILTER_STRICT`, plus the existing `SENSOR_RESOLUTION` and `RANGING_FREQ_HZ`. Each one wires into the corresponding ULD API call (`vl53l8cx_set_sharpener_percent()`, `vl53l8cx_set_target_order()`). One config = one line edit in `main.c` + one OTA flash.
+- **PowerShell sweep runner** (`visualizer/run_sweep.ps1` + `run_one_test.ps1`) that loops over a hardcoded list of 17 configs, patches `main.c`, builds, OTAs, waits for the ESP to come back online, runs `measure.py` for 200 frames, and moves on. 17 configs × 3 distances = 51 captures, unattended.
+- **3× retry-on-capture-failure** logic. The ESP's sensor I²C init fails about 20 % of the time after a warm reboot — my best guess is a power-rail dip from the WiFi startup current. When it fails, no `DATA:` lines come out and `measure.py` times out. My retry loop catches that, re-pushes the OTA to force another fresh boot, and tries again. Three attempts catches almost everything (0.2³ ≈ 1 % failure rate).
+- **`measure.py` enhancements**: parses the new `STATUS:` line, writes per-zone-per-frame raw data to `raw_frames/`, computes detection-rate against the firmware buzzer threshold, prints the status-code distribution at the end of each run.
+- **Analysis script** (`visualizer/analyze.py`) generates the plots in `visualizer/plots/` — σ-vs-distance scaling, config × distance heatmap, knob-impact breakdowns, per-zone σ heatmaps, per-zone mean-distance maps.
 
 ### Test methodology
 
 - **17 configs:** A-series = 8×8 at 10/15 Hz × sharpener {0, 5, 20}. B-series = 4×4 at 10/15/30 Hz × sharpener {0, 5, 20}. C1 = STRONGEST target order (vs CLOSEST default). D1 = strict status filter {5 only} (vs default {5, 6, 9}).
-- **Three distances:** 48 cm, 68 cm, 89 cm — perpendicular to two side-by-side **black foam boards** (worst-case low-return surface, ~76 cm wide × 122 cm tall, raised so the sensor's horizontal FoV stays fully on the boards).
-- **200 frames per config**, all per-zone distance + sigma + status saved to `raw_frames/`.
-- See [`photos/test_rig/`](photos/test_rig/) for rig photos + FoV math + the noted ~5–10° downward sensor tilt.
+- **Three distances:** 48 cm, 68 cm, 89 cm — perpendicular to the foam-board target.
+- **200 frames per config**, all per-zone distance + sigma + status written to `raw_frames/` so I can re-analyze later without re-running anything.
+- See [`photos/test_rig/test_rig_notes.md`](photos/test_rig/test_rig_notes.md) for the FoV math, the noted ~5–10° downward sensor tilt I eyeballed during setup, and the rest of the rig context.
 
 ### Results
 
@@ -495,36 +504,36 @@ Phase 1 of the helmet project needed a real answer to "what's the best sensor co
 
 <p align="center"><img src="visualizer/plots/layer1_sigma_vs_distance.png" width="850" alt="Fig 1 — sigma vs distance"/></p>
 
-**What it shows:** Median per-zone σ (cross-frame standard deviation over 200 frames) plotted against target distance for every config. The dashed black line is the theoretical `σ ∝ d` prediction anchored at the A1 baseline.
+**What this is:** Median per-zone σ (cross-frame standard deviation over 200 frames) vs target distance, one line per config. The dashed black line is the theoretical `σ ∝ d` prediction anchored at the A1 baseline.
 
-**Why it matters:** All 17 configs track the linear prediction. This confirms the noise floor is **shot-noise-dominated** (N photons per measurement scales as 1/d² for a target filling the sensor's view, and Poisson statistics give σ ∝ 1/√N → σ ∝ d). This is the physical floor — no firmware tuning can beat it on the same hardware. The clean separation between the orange (8×8) and blue (4×4) families is the second-biggest finding here: at every distance, 4×4 is roughly 4× tighter than 8×8.
+**What I take from it:** All 17 of my configs track the linear prediction cleanly. That confirms the noise floor is **shot-noise-dominated** — N photons per measurement scales as 1/d² for a target filling the sensor's view, and Poisson statistics give σ ∝ 1/√N, so σ ∝ d. This is the physical floor; no firmware tuning of mine can beat it on the same hardware. The clean separation between the orange (8×8) and blue (4×4) families is the second-biggest signal in this plot — at every distance I tested, 4×4 sits at roughly a quarter of the 8×8 noise.
 
 #### Figure 2 — Cross-config noise comparison
 
 <p align="center"><img src="visualizer/plots/layer1_heatmap.png" width="500" alt="Fig 2 — heatmap"/></p>
 
-**What it shows:** Same data, ordered by config so you can spot patterns. Dark = noisier (worse), light = tighter (better).
+**What this is:** Same dataset as Fig 1, reshaped as a heatmap so I can spot patterns by row. Dark = noisier (worse), light = tighter (better).
 
-**Why it matters:** Two clean clusters emerge: the orange 8×8 block at the top (σ = 3–8 mm) and the pale 4×4 block in the middle (σ = 0.9–3 mm). Within each block, rows are nearly identical across the three sharpener values (0/5/20) — confirming the sharpener has no measurable effect on this surface. The C1 (STRONGEST target order) and D1 (strict status filter) rows look indistinguishable from A2 (their CLOSEST / lax counterpart), telling us those knobs only matter when the scene has ambiguity (multiple targets per zone, or partial-quality reads) — irrelevant for a flat foam board at short range.
+**What I take from it:** Two clean clusters jump out — the orange 8×8 block at the top (σ = 3–8 mm) and the pale 4×4 block in the middle (σ = 0.9–3 mm). Within each block, my rows are nearly identical across the three sharpener values (0/5/20), confirming the sharpener has no measurable effect on a uniform surface. My C1 (STRONGEST target order) and D1 (strict status filter) rows match A2 (CLOSEST / lax) within noise — those two knobs only matter when there's actual scene ambiguity (multiple targets per zone, partial-quality reads), which my flat foam board doesn't provide.
 
 #### Figure 3 — Isolated knob-impact studies
 
 <p align="center"><img src="visualizer/plots/layer1_knob_impact.png" width="950" alt="Fig 3 — knob impact panels"/></p>
 
-**What it shows:** Three one-factor-at-a-time comparisons, each varying one knob while holding the others fixed. Panel (a): resolution. Panel (b): ranging frequency. Panel (c): edge-sharpener.
+**What this is:** Three one-factor-at-a-time studies. Each panel varies one knob with the others held fixed, so I can attribute the effect cleanly. Panel (a) = resolution; panel (b) = ranging frequency; panel (c) = edge-sharpener.
 
-**Why it matters:**
-- **(a) Resolution dominates everything else.** 4×4 buys you ~4× better σ at every distance. The reason: each 4×4 zone aggregates 4× more SPADs than an 8×8 zone, AND the firmware can spend ~4× longer integrating per zone (same total budget, fewer zones). Combined effect is much larger than the naive shot-noise prediction of 2× from SPAD count alone.
-- **(b) Frequency costs noise.** 10 → 15 → 30 Hz roughly tracks √(freq) scaling — exactly what you'd expect from less integration time per frame. Useful tradeoff knob: higher frame rate for faster reaction, lower for tighter accuracy.
-- **(c) Sharpener does nothing here.** All three sharpener values overlap within noise. The sharpener is a post-processing edge enhancement — it only matters when the scene has actual edges (doorframes, object boundaries). A uniform flat board has no edges to enhance, so it's a no-op.
+**What I take from it:**
+- **(a) Resolution dominates every other knob.** 4×4 buys me ~4× tighter σ at every distance I tested. Each 4×4 zone aggregates 4× more SPADs than an 8×8 zone, AND the firmware can spend ~4× longer integrating per zone (same total budget, fewer zones). The combined effect is much larger than the naïve 2× shot-noise prediction from SPAD count alone.
+- **(b) Frequency has a real noise cost.** My 10 → 15 → 30 Hz points track roughly √(freq) — exactly what I'd predict from less integration time per frame. Useful trade-off knob: I pay σ for faster reaction time.
+- **(c) Sharpener is a no-op on this surface.** All three sharpener values overlap. The sharpener is a post-processing edge enhancement; on a uniform flat board with no edges to enhance there's nothing for it to do. I'd expect this to look different on doorways or furniture corners, but my static rig can't tell.
 
 #### Figure 4 — Sensor self-calibration check
 
 <p align="center"><img src="visualizer/plots/layer1_our_vs_sensor_sigma.png" width="600" alt="Fig 4 — measured vs reported sigma"/></p>
 
-**What it shows:** The sensor reports its own confidence estimate (`range_sigma_mm`) for every reading. This plot compares the sensor's self-reported sigma (x-axis) against our empirically-measured cross-frame stdev (y-axis), with the dashed 1:1 line as the "perfect agreement" reference.
+**What this is:** The sensor reports its own per-reading confidence estimate (`range_sigma_mm`). This plot puts the sensor's self-reported sigma on the x-axis against my empirically-measured cross-frame stdev on the y-axis. The dashed line is 1:1 (perfect agreement).
 
-**Why it matters:** Points hugging the 1:1 line means the sensor's confidence number is trustworthy and can be used directly for downstream filtering (e.g. "ignore any zone whose reported sigma > 50 mm"). Our data sits very close to 1:1 across all configs, so we know we can lean on `range_sigma_mm` without doing our own stdev calculation at runtime — useful when running on the ESP with no time for batch statistics.
+**What I take from it:** My points hug the 1:1 line across every config. That tells me the sensor's confidence number is trustworthy and I can use it directly for downstream filtering (e.g. "ignore any zone whose reported sigma > 50 mm") without computing my own running stdev at runtime. Important for the helmet: on the ESP I won't have time to do batch statistics per frame, so being able to lean on `range_sigma_mm` from a single measurement is a big win.
 
 #### Figure 5 — Per-zone spatial σ maps
 
@@ -534,9 +543,9 @@ Phase 1 of the helmet project needed a real answer to "what's the best sensor co
 <p align="center"><img src="visualizer/plots/layer2_per_zone_sigma_89cm.png" width="850" alt="Fig 5b — per-zone sigma at 89cm"/></p>
 <p align="center"><em>at d = 89 cm</em></p>
 
-**What they show:** Each square of the heatmap is the cross-frame σ for one specific zone (8×8 grid for A1/A2/D1, 4×4 grid for B2). Compared at two distances side by side.
+**What this is:** Each square is the cross-frame σ for one specific zone of the array (8×8 for A1/A2/D1, 4×4 for B2). I show the same configs at two distances so I can see how the spatial pattern changes with range.
 
-**Why they matter:** Zones aren't equal. Even on a flat uniform target you can see σ vary by ~50 % across the FoV — the corners are usually noisier than the center because the optical return is weaker at oblique angles (cosine of the angle to the surface). For the obstacle-avoidance application this means: when fusing zones, **weight the center zones more** than the edges, or just drop the corner zones from the alert logic. The 4×4 config (top-right) is consistently tighter at every individual cell, not just on average.
+**What I take from it:** Zones aren't equal. Even on a flat uniform target, my σ varies by ~50 % across the FoV — the corners are noisier than the center because the optical return is weaker at oblique angles (cosine fall-off of the surface). For the obstacle-avoidance use case this tells me I should **weight my center zones more heavily** than the edges when fusing, or just drop the corner zones from the alert logic entirely. The 4×4 panel (top-right) is tighter at every single cell, not just on average.
 
 #### Figure 6 — Mount-tilt diagnostic
 
@@ -546,20 +555,32 @@ Phase 1 of the helmet project needed a real answer to "what's the best sensor co
 <p align="center"><img src="visualizer/plots/layer2_per_zone_mean_A1_89cm.png" width="700" alt="Fig 6b — per-zone mean at 89cm"/></p>
 <p align="center"><em>at d = 89 cm</em></p>
 
-**What they show:** Per-zone **mean** distance over 200 frames (vs Fig 5 which shows per-zone σ). At 48 cm the target is ~480 mm; at 89 cm it's ~890 mm. Color = mean reading per zone, annotations are the values.
+**What this is:** Per-zone **mean** distance over my 200 frames (vs Fig 5 which shows per-zone σ). At 48 cm the target is at ~480 mm; at 89 cm it's at ~890 mm. Color = mean reading per zone; annotations are the exact values.
 
-**Why they matter:** The clean **top-to-bottom gradient** (~28 mm at 48 cm, ~50 mm at 89 cm) directly visualizes the sensor's mount tilt. Top rows read closer than bottom rows because the sensor is angled slightly down: those zones look at the upper part of the board head-on while the bottom zones look at the lower part on a longer slant path. This validates the ~5–10° downward tilt the rig was eyeballed at, and tells us that **before fusing zones for an "object at X distance" estimate, we need to apply a per-zone geometric correction** based on the known mount angle. (For the helmet, this also means the IMU pitch reading from Phase 3 is what will let us correctly de-bias.)
+**What I take from it:** The clean **top-to-bottom gradient** (~28 mm at 48 cm, ~50 mm at 89 cm) directly visualises my sensor's mount tilt. Top rows read closer than bottom rows because the sensor on my rig was angled slightly down — those upper-row zones look at the upper part of the board head-on, while the lower-row zones look at the lower part on a longer slant path. This confirms the ~5–10° downward tilt I had eyeballed at setup, and tells me that **before I can compute a meaningful "nearest object" distance I need a per-zone geometric correction** that accounts for the actual mount angle. For the helmet that compensation has to come either from a known fixed mount geometry (good enough for v1) or from a live IMU pitch reading once I add the IMU later.
 
-### Implications for helmet config selection
+### My tentative config picks (provisional — see Limitations below)
 
-- **Pick 4×4 over 8×8** unless you genuinely need the spatial detail for edge detection (and even then, only after dynamic testing shows it matters).
-- **Pick 10 Hz** as the default frame rate — buys ~2× better σ vs 30 Hz, still fast enough to react at walking speed.
-- **Don't bother with the sharpener** until you're working with edge-rich scenes (doorways, furniture corners).
-- **Leave target order on CLOSEST** — safer default for obstacle avoidance and zero cost on simple scenes.
-- **Leave status filter on lax {5, 6, 9}** — at short range on most surfaces you get 100 % status-5 anyway; lax is more forgiving when surfaces get harder (dark, glass, oblique).
-- **De-bias zone geometry** before computing "nearest distance" if the sensor mount tilts more than a few degrees relative to the ground.
+- **4×4 over 8×8** for the helmet, unless I find a use case that genuinely needs the spatial detail. 4× lower noise floor is too big to give up.
+- **10 Hz** as the default frame rate — buys ~2× better σ vs 30 Hz, still fast enough to react at walking speed.
+- **Skip the sharpener** until I'm working with edge-rich scenes (doorways, furniture corners). Currently a no-op on my test surfaces.
+- **Keep target order on CLOSEST** — safer default for obstacle avoidance, zero cost on simple scenes. Out-of-the-box default is STRONGEST per ST UM3109 §4.9, so this is an explicit override I'm carrying.
+- **Keep status filter on lax {5, 6, 9}** — I get 100 % status-5 at short range on most surfaces anyway, and the lax filter is more forgiving when surfaces get harder.
+- **Apply per-zone geometric correction** before computing "nearest distance" if the sensor mount tilts more than a few degrees off the ground plane.
 
-The full raw data behind every plot is in [`visualizer/raw_frames/`](visualizer/raw_frames/) (51 CSVs, 200 frames × 64 or 16 zones × distance + sigma + status). To regenerate the plots from scratch: `python analyze.py` inside the `visualizer/venv`.
+### Limitations of this analysis
+
+The static foam-board sweep tells me the sensor's **physical noise floor**, but it doesn't tell me which configuration will actually be best on a moving helmet in real environments. The bottleneck in wearable use is rarely shot noise — it's:
+
+- **Ambient sunlight** saturating the SPADs (my room had indirect daylight; outdoor noon is a different game)
+- **Surfaces I didn't test:** glass, polished floors, dark fabric at oblique angles, mirrors
+- **Motion noise** during head turns (none of my data is moving)
+- **Geometric coverage gaps** — the things I've already noticed while wearing the helmet (missed pullup bar above sensor height, missed low obstacles near my body that read as far slant distances)
+- **Edge-rich scenes** where the sharpener might actually matter (the sweep didn't include any)
+
+So my "best-config" picks above are **provisional**. They're the right defaults to start dynamic wearable testing with, not a final decision. The next phase of this project is to wear the helmet, walk through real environments, and let those constraints reveal which knobs need re-tuning.
+
+The full raw data behind every plot lives in [`visualizer/raw_frames/`](visualizer/raw_frames/) (51 CSVs, 200 frames × 64 or 16 zones × distance + sigma + status — nothing aggregated, nothing thrown away). To regenerate the plots from scratch: `python analyze.py` inside `visualizer/venv`.
 
 ### v9 architecture
 
@@ -609,21 +630,33 @@ The full raw data behind every plot is in [`visualizer/raw_frames/`](visualizer/
 
 ### Lessons from v9 dev
 
-- **OTA can leave one partition in a bad state.** ESP-IDF rotates between `ota_0` and `ota_1` on each OTA. If one slot ends up with a corrupted image (no idea exactly why — maybe partial write or flash-wear coincidence), boots alternate working / hanging. **Fix:** USB-flash via `idf.py -p COMx flash` rewrites both slots cleanly. After ~30+ OTA cycles in a row, this got us out of a brick.
-- **`MSG_DONTWAIT` on `send()` is essential for fan-out broadcast.** A slow-reading client otherwise stalls the ranging task for every other client. Per-client failure self-evicts the slot.
-- **PowerShell + UTF-8-no-BOM scripts = silent parse error.** Em-dashes (`—`) in `.ps1` files trip Windows PowerShell 5.1's parser. Stick to ASCII in scripts.
-- **`$ErrorActionPreference = "Stop"` makes Python tracebacks escape the retry loop.** The capture call needs to be wrapped in a `try`/`catch` *and* the EAP momentarily set to `Continue`, or one Python crash kills the whole sweep.
-- **Sensor I²C init flakes ~20 % after a warm reboot.** Likely a power-rail dip from WiFi startup current. Mitigation in firmware (start ranging task before WiFi + 2.5 s wait) helps but doesn't eliminate it. The host-side 3x retry catches the rest.
+- **OTA can leave one partition in a bad state.** ESP-IDF rotates between `ota_0` and `ota_1` on each OTA. After ~30+ cycles in a row I hit a state where one slot booted cleanly and the other hung. **My fix:** USB-flash via `idf.py -p COM10 flash` rewrites bootloader + both slots + `ota_data_initial` cleanly. Once I did that one manual recovery flash, the next dozens of OTAs worked fine.
+- **`MSG_DONTWAIT` on `send()` is essential for fan-out broadcast.** Without it, a slow-reading client stalls the ranging task for every other client. Per-client failure now self-evicts the slot in my `tcp_write` loop.
+- **PowerShell + UTF-8-no-BOM scripts = silent parse error.** Em-dashes (`—`) in `.ps1` files trip Windows PowerShell 5.1's parser with a misleading "missing closing brace" error pointing at the wrong line. Stuck to ASCII after I burned an hour chasing that.
+- **`$ErrorActionPreference = "Stop"` makes Python tracebacks escape my retry loop.** I had to wrap the `measure.py` call in a `try`/`catch` AND momentarily set EAP to `Continue`, or one Python crash would kill the whole sweep instead of triggering the next retry attempt.
+- **Sensor I²C init flakes ~20 % after a warm reboot.** Likely a power-rail dip from WiFi startup current. My firmware mitigation (start the ranging task first, give it a 2.5 s head start before WiFi comes up) helps but doesn't eliminate it. My host-side 3× retry catches the remainder.
+
+### Refinements I added after the initial sweep (preparing for dynamic testing)
+
+These came up immediately after the static sweep, while I was getting the sensor ready to actually wear:
+
+- **Firmware-side mount-rotation compensation** (`MOUNT_ROTATION_DEG` in `main.c`). The sensor on my helmet sits rotated 90° from "natural" body orientation. Rather than fix it in every host script independently, I added a `rotated_zone()` helper in firmware and threaded it through all three stream functions (`DATA:` / `SIGMA:` / `STATUS:`). The chip now emits zones in body-frame regardless of how the breakout board is physically oriented on the helmet — single source of truth, every downstream consumer (visualizer, `measure.py`, future slant-compensation logic) sees correct orientation automatically. Supports 0 / 90 / 180 / 270 by changing one `#define`.
+- **Visualizer frame-rate decoupling.** The old reader thread emitted a Qt signal for every frame it received from the TCP stream. If the GUI thread couldn't keep up, Qt's signal queue accumulated indefinitely — after a few thousand frames the visualizer lagged badly and eventually froze. I switched the reader to write the latest frame into a shared variable and the GUI to render via a 30 Hz `QTimer`. Older frames now get silently overwritten; no queue accumulation, no lag growth.
+- **Visualizer auto-reconnect** with a backoff. The old version died on any socket timeout. The new one catches `socket.timeout` and `OSError` ("cannot read from timed out object", which the buffered file reader raises differently), closes the socket, and reconnects. This matters during the OTA cycle — every flash drops the connection, and now the visualizer comes back automatically when the ESP reboots.
 
 ---
 
 ## What's next (queued)
 
-1. **Helmet mount + dynamic testing.** Tape sensor to a real helmet, walk around with it. Reveals problems static testing can't: phantom triggers on head turns, false negatives on dark fabric / glass at angles, real warning-time when approaching a wall.
-2. **Second VL53L8CX (deferred).** Adds peripheral coverage. Requires non-overlapping FoVs OR external-sync pin to avoid VCSEL-to-VCSEL optical interference. SPI bus is cleaner than I²C for two sensors (no address conflict). Hold until single-sensor wearable testing reveals where coverage gaps actually matter.
-3. **Layered alert thresholds.** Three beep patterns at 120 cm / 60 cm / 30 cm instead of binary on/off — much better information density for a blind user.
-4. **Sensor fusion** — accelerometer + gyro on the same I²C bus. Gravity gives absolute pitch / roll; gyro integration plus accel-gravity correction tightens yaw, which is what unlocks a non-drifting 3D scan.
-5. **Phase 2: USB camera + CV.** Object recognition (person vs wall vs glass) on top of the ToF distance signal.
+I'm in the middle of preparing for dynamic wearable testing. The static sweep gave me good defaults; the next steps are about validating them in real use.
+
+1. **Wall-stare tilt calibration.** I'll stand still facing a flat wall at known distance for ~20 s. From the per-row mean distance pattern, I can solve for the actual sensor pitch angle on the helmet (vs the eyeballed 5–10°). That feeds into the next item.
+2. **Per-row slant compensation in firmware.** Each zone's elevation angle is fixed by the array geometry. With the helmet mounted at ~195 cm, I'll convert each zone's slant distance to horizontal forward distance (`forward = slant × cos(zone_elevation)`) and alert on the forward distance, not the slant. Fixes the failure mode I've already seen: a chair 50 cm in front of my body at 50 cm tall reports a 130 cm slant distance and never triggers the alert.
+3. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`). Per ST UM3109 §4.10, this lets the sensor report up to 2 distinct peaks per zone — helps when a thin obstacle (like a pullup bar in a doorway) sits in front of open space rather than a close wall. ST also notes a fundamental 600 mm minimum separation between targets to be resolved as distinct, so this only helps when the gap behind is large enough.
+4. **Dynamic wearable testing** once 1–3 are in. Real hallways, doorways, furniture, lighting changes — to see which of my provisional config picks survive contact with reality and which don't.
+5. **(Future)** IMU integration for live pitch/roll compensation, second VL53L8CX for peripheral coverage (only if the single sensor proves insufficient), layered alert thresholds (120 / 60 / 30 cm), Phase 2 camera + CV.
+
+Full living version of the next-steps list is in [`todo.md`](todo.md).
 
 ---
 

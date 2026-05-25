@@ -214,6 +214,25 @@ class SimpleWindow(QtWidgets.QMainWindow):
         self.frame_n = 0
         self.conn_state = "initializing"
 
+        # Frame-rate decoupling: reader thread writes to self.latest_frame,
+        # this timer renders the most recent one at 30 Hz. Older frames are
+        # silently overwritten -- no Qt signal queue accumulation.
+        self.latest_frame = None
+        self._render_timer = QtCore.QTimer()
+        self._render_timer.timeout.connect(self._render_latest)
+        self._render_timer.start(33)  # ~30 Hz
+
+    def receive_frame(self, distances):
+        """Called from reader thread via signal — just stash the latest."""
+        self.latest_frame = distances
+
+    def _render_latest(self):
+        """Called at fixed 30 Hz from the GUI thread."""
+        if self.latest_frame is not None:
+            distances = self.latest_frame
+            self.latest_frame = None
+            self.update_frame(distances)
+
     def update_status(self, msg):
         """Show connection state in the status bar when no data is flowing."""
         self.conn_state = msg
@@ -299,7 +318,7 @@ def main():
     win.show()
 
     reader = SourceReader(args)
-    reader.new_frame.connect(win.update_frame)
+    reader.new_frame.connect(win.receive_frame)  # save-latest, no render-per-frame
     reader.error.connect(win.on_serial_error)
     reader.status.connect(win.update_status)
     reader.start()

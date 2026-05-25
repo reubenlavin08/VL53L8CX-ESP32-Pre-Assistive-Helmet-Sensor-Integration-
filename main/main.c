@@ -59,7 +59,17 @@
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 #define SHARPENER_PERCENT   5                              /* 0=off, 5=default, 99=max */
 #define TARGET_ORDER        VL53L8CX_TARGET_ORDER_CLOSEST  /* CLOSEST for obstacle avoidance */
-#define STATUS_FILTER_STRICT 1                             /* 1 = accept status 5 only; 0 = accept {5,6,9} */
+#define STATUS_FILTER_STRICT 0                             /* 1 = accept status 5 only; 0 = accept {5,6,9} */
+
+/* Sensor is physically mounted rotated N degrees CW from "natural" body
+ * orientation (top of FoV = head up, bottom = ground). Stream functions
+ * remap zone indices so the transmitted grid is always in body-frame:
+ *   output row 0 = top of FoV (looking up)
+ *   output row N-1 = bottom of FoV (looking down)
+ *   output col 0 = left of body
+ *   output col N-1 = right of body
+ * If the rendered view is wrong, flip this to 90, 180, 270, or 0. */
+#define MOUNT_ROTATION_DEG  270
 
 /* â”€â”€ Display options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define PRINT_GRID          0
@@ -112,24 +122,56 @@ static void tcp_write(const char *buf, size_t len)
     xSemaphoreGive(g_client_mutex);
 }
 
+/* ── Mount-rotation helper ───────────────────────────────────────────────────
+ * Given an output zone index `out_z` in [0..total), return the sensor's
+ * native zone index to read for that output position, based on
+ * MOUNT_ROTATION_DEG. Lets the firmware emit zones in body-frame regardless
+ * of how the sensor PCB is physically oriented on the helmet.
+ */
+static inline int rotated_zone(int out_z, int side)
+{
+    int r_out = out_z / side;
+    int c_out = out_z % side;
+    int r_src, c_src;
+    switch (MOUNT_ROTATION_DEG) {
+        case 90:   /* 90 CW: body(r, c) reads sensor(side-1-c, r) */
+            r_src = side - 1 - c_out;
+            c_src = r_out;
+            break;
+        case 180:
+            r_src = side - 1 - r_out;
+            c_src = side - 1 - c_out;
+            break;
+        case 270:  /* 90 CCW */
+            r_src = c_out;
+            c_src = side - 1 - r_out;
+            break;
+        default:   /* 0 -> identity */
+            return out_z;
+    }
+    return r_src * side + c_src;
+}
+
 /* â”€â”€ Helper: stream DATA: line to UART + TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #if STREAM_DATA
 static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
     int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    int side  = (resolution == VL53L8CX_RESOLUTION_8X8) ? 8  : 4;
     char buf[STREAM_BUF_SIZE];
     int off = snprintf(buf, sizeof(buf), "DATA:");
     for (int z = 0; z < total && off < (int)sizeof(buf) - 1; z++) {
+        int src = rotated_zone(z, side);
         int16_t dist;
-        uint8_t status = results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        uint8_t status = results->target_status[src * VL53L8CX_NB_TARGET_PER_ZONE];
         /* Accept status 5 (100% valid), 6 (wrap-around not done, ~50% conf),
          * and 9 (low signal but range valid, ~50% conf). Per ST UM3109 Â§5.5.
          * STRICT mode = status 5 only. */
         bool status_ok = STATUS_FILTER_STRICT
                        ? (status == 5)
                        : (status == 5 || status == 6 || status == 9);
-        if (results->nb_target_detected[z] > 0 && status_ok) {
-            dist = results->distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        if (results->nb_target_detected[src] > 0 && status_ok) {
+            dist = results->distance_mm[src * VL53L8CX_NB_TARGET_PER_ZONE];
             if (dist > MAX_DISTANCE_MM) dist = MAX_DISTANCE_MM;
         } else {
             dist = MAX_DISTANCE_MM;
@@ -148,10 +190,12 @@ static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resoluti
 static void stream_sigma_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
     int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    int side  = (resolution == VL53L8CX_RESOLUTION_8X8) ? 8  : 4;
     char buf[STREAM_BUF_SIZE];
     int off = snprintf(buf, sizeof(buf), "SIGMA:");
     for (int z = 0; z < total && off < (int)sizeof(buf) - 1; z++) {
-        uint16_t sigma = results->range_sigma_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        int src = rotated_zone(z, side);
+        uint16_t sigma = results->range_sigma_mm[src * VL53L8CX_NB_TARGET_PER_ZONE];
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%u%c", (unsigned)sigma, (z == total - 1) ? '\n' : ',');
     }
@@ -185,10 +229,12 @@ static void stream_sigma_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 static void stream_status_line(VL53L8CX_ResultsData *results, uint8_t resolution)
 {
     int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
+    int side  = (resolution == VL53L8CX_RESOLUTION_8X8) ? 8  : 4;
     char buf[STREAM_BUF_SIZE];
     int off = snprintf(buf, sizeof(buf), "STATUS:");
     for (int z = 0; z < total && off < (int)sizeof(buf) - 1; z++) {
-        uint8_t status = results->target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        int src = rotated_zone(z, side);
+        uint8_t status = results->target_status[src * VL53L8CX_NB_TARGET_PER_ZONE];
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%u%c", (unsigned)status, (z == total - 1) ? '\n' : ',');
     }

@@ -4,7 +4,7 @@
 - **Board**: 2× black foam board, edge-to-edge ≈ 30" wide × 48" tall
 - **Board raised**: bottom now at ~8" above floor (top at ~56")
 - **Sensor**: ESP32-S3 + SATEL-VL53L8 breakout, mounted on breadboard on top of Casio keyboard music-rest area
-- **Sensor height**: 34.5" above floor
+- **Sensor height**: 34.5" above floor *(during the desk-rig sweep; helmet-mounted height ≈ 195 cm)*
 - **Sensor tilt**: eyeballed **5–10° downward** (not perfectly level — to factor in during per-zone analysis)
 - **Surface**: matte black foam (worst-case low-return reflectance)
 - **Lighting**: indoor, indirect daylight from window behind sensor

@@ -52,3 +52,23 @@
 - Min-zone-count: require ≥2 adjacent zones below threshold to reduce single-pixel false alerts
 - IMU-adaptive threshold: scale alert distance with walking speed
 - CV-adaptive (Phase 2): different beep pattern for person vs wall vs static obstacle
+
+## Adaptive geometric calibration (Phase 3 — when IMU is installed)
+
+Right now the per-zone slant→forward distance correction assumes a fixed sensor
+height (195 cm) and a fixed level head orientation. In reality the head pitches
+up/down constantly during walking, and the sensor tilt relative to the floor
+changes with it.
+
+Once an IMU is on the helmet:
+- Live pitch reading → real-time correction to each zone's elevation angle
+- Forward distance = slant × cos(zone_elevation + sensor_pitch)
+- Eliminates the constant fudge factor; alert distances stay accurate even
+  when the user looks down at their feet or up at a sign
+
+Until the IMU arrives:
+- Possibility: use the iPhone's built-in 9-DOF IMU as a stand-in. Apps like
+  SensorLog or Phyphox stream IMU data over UDP/WiFi to a host. Mount iPhone
+  next to sensor on helmet, parse the stream, fuse with ToF distances.
+  Practical for prototyping if a real IMU breakout (e.g. BNO085) isn't on hand.
+  Trade-offs: extra bulk, battery drain on phone, ~50 ms WiFi latency.
