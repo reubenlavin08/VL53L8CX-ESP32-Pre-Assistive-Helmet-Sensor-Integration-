@@ -89,14 +89,16 @@ def plot_sigma_vs_distance(df):
     ax.plot(dists, a1_48 * dists / 48, 'k--', alpha=0.4,
             label='σ ∝ distance (theory)', linewidth=1.5)
 
-    ax.set_xlabel('Distance to target (cm)')
-    ax.set_ylabel('Median measured σ (mm)')
-    ax.set_title('σ vs distance — all 17 configs on black foam')
-    ax.legend(ncol=2, fontsize=8, loc='upper left')
+    ax.set_xlabel('Target distance d (cm)')
+    ax.set_ylabel('Median per-zone σ (mm), 200-frame cross-frame stdev')
+    ax.set_title('Fig 1. Distance noise scaling across all 17 sensor configurations\n'
+                 '(black foam target, n = 200 frames per (config, distance) cell)',
+                 fontsize=11)
+    ax.legend(ncol=2, fontsize=7.5, loc='upper left', title='Config (res / freq / sharpener)', title_fontsize=8)
     ax.grid(True, alpha=0.3)
     ax.set_xticks([48, 68, 89])
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / "layer1_sigma_vs_distance.png", dpi=120)
+    plt.savefig(PLOT_DIR / "layer1_sigma_vs_distance.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 
@@ -106,61 +108,66 @@ def plot_heatmap(df):
     pivot = pivot.reindex(sorted(pivot.index, key=lambda s: (s[0], int(s[1:]))))
     fig, ax = plt.subplots(figsize=(7, 9))
     sns.heatmap(pivot, annot=True, fmt='.2f', cmap='YlOrRd',
-                ax=ax, cbar_kws={'label': 'σ (mm)'})
-    ax.set_xlabel('Distance (cm)')
+                ax=ax, cbar_kws={'label': 'Median per-zone σ (mm)'})
+    ax.set_xlabel('Target distance d (cm)')
     ax.set_ylabel('Config')
-    ax.set_title('Median σ heatmap\n(darker = noisier)')
+    ax.set_title('Fig 2. Cross-config noise comparison\n'
+                 '(median σ per (config, distance), black foam, n=200)',
+                 fontsize=11)
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / "layer1_heatmap.png", dpi=120)
+    plt.savefig(PLOT_DIR / "layer1_heatmap.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 
 def plot_knob_impact(df):
-    """Three subplots showing what each knob actually does."""
-    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
+    """Three subplots isolating the effect of each tunable knob (one-at-a-time)."""
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
 
-    # 1. Resolution comparison @ 10Hz, sharp=5 across distances
+    # (a) Resolution comparison @ 10Hz, sharp=5 across distances
     ax = axes[0]
     cmp = df[(df['freq_hz'] == 10) & (df['sharpener'] == 5) & (df['order_flag'] == 'closest')]
     for res, g in cmp.groupby('resolution'):
         g = g.sort_values('distance_cm')
         ax.plot(g['distance_cm'], g['our_sigma_mm'], 'o-', label=res, markersize=10, linewidth=2)
-    ax.set_xlabel('Distance (cm)')
-    ax.set_ylabel('σ (mm)')
-    ax.set_title('Resolution effect (10 Hz, sharp=5)')
-    ax.legend()
+    ax.set_xlabel('Target distance d (cm)')
+    ax.set_ylabel('Median σ (mm)')
+    ax.set_title('(a) Resolution effect\n(held: f = 10 Hz, sharpener = 5)', fontsize=10)
+    ax.legend(title='Zone grid')
     ax.grid(True, alpha=0.3)
     ax.set_xticks([48, 68, 89])
 
-    # 2. Frequency effect @ 4x4, sharp=5 (4x4 covers 10/15/30)
+    # (b) Frequency effect @ 4x4, sharp=5
     ax = axes[1]
     cmp = df[(df['resolution'] == '4x4') & (df['sharpener'] == 5) & (df['order_flag'] == 'closest')]
     for f, g in cmp.groupby('freq_hz'):
         g = g.sort_values('distance_cm')
         ax.plot(g['distance_cm'], g['our_sigma_mm'], 'o-', label=f"{f} Hz", markersize=10, linewidth=2)
-    ax.set_xlabel('Distance (cm)')
-    ax.set_ylabel('σ (mm)')
-    ax.set_title('Frequency effect (4×4, sharp=5)')
-    ax.legend()
+    ax.set_xlabel('Target distance d (cm)')
+    ax.set_ylabel('Median σ (mm)')
+    ax.set_title('(b) Ranging frequency effect\n(held: 4×4 grid, sharpener = 5)', fontsize=10)
+    ax.legend(title='Frame rate')
     ax.grid(True, alpha=0.3)
     ax.set_xticks([48, 68, 89])
 
-    # 3. Sharpener effect @ 8x8, 10Hz
+    # (c) Sharpener effect @ 8x8, 10Hz
     ax = axes[2]
     cmp = df[(df['resolution'] == '8x8') & (df['freq_hz'] == 10) & (df['order_flag'] == 'closest')]
     for s, g in cmp.groupby('sharpener'):
         g = g.sort_values('distance_cm')
         ax.plot(g['distance_cm'], g['our_sigma_mm'], 'o-',
-                label=f"sharp={s}", markersize=10, linewidth=2)
-    ax.set_xlabel('Distance (cm)')
-    ax.set_ylabel('σ (mm)')
-    ax.set_title('Sharpener effect (8×8, 10 Hz)')
-    ax.legend()
+                label=f"{s}%", markersize=10, linewidth=2)
+    ax.set_xlabel('Target distance d (cm)')
+    ax.set_ylabel('Median σ (mm)')
+    ax.set_title('(c) Edge-sharpener effect\n(held: 8×8 grid, f = 10 Hz)', fontsize=10)
+    ax.legend(title='Sharpener %')
     ax.grid(True, alpha=0.3)
     ax.set_xticks([48, 68, 89])
 
+    fig.suptitle('Fig 3. Isolated knob-impact studies (one-factor-at-a-time, '
+                 'black foam target, n = 200 frames per point)',
+                 fontsize=12, y=1.02)
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / "layer1_knob_impact.png", dpi=120)
+    plt.savefig(PLOT_DIR / "layer1_knob_impact.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 
@@ -172,14 +179,16 @@ def plot_our_vs_sensor_sigma(df):
     # 1:1 reference line
     lim = max(df['our_sigma_mm'].max(), df['sensor_sigma_mm'].max()) * 1.05
     ax.plot([0, lim], [0, lim], 'k--', alpha=0.4, label='1:1')
-    ax.set_xlabel("Sensor's self-reported sigma_mm")
-    ax.set_ylabel("Our measured σ (cross-frame std)")
-    ax.set_title("Trust check: does the sensor know its own noise?")
-    ax.legend(fontsize=7, ncol=2)
+    ax.set_xlabel("Sensor's self-reported sigma_mm (median across zones)")
+    ax.set_ylabel("Empirical σ (cross-frame stdev, median across zones, mm)")
+    ax.set_title("Fig 4. Sensor self-calibration check\n"
+                 "(does range_sigma_mm reported by the sensor match the actual cross-frame variability?)",
+                 fontsize=11)
+    ax.legend(fontsize=7, ncol=2, title='Config', title_fontsize=8)
     ax.grid(True, alpha=0.3)
     ax.set_xlim(0, lim); ax.set_ylim(0, lim)
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / "layer1_our_vs_sensor_sigma.png", dpi=120)
+    plt.savefig(PLOT_DIR / "layer1_our_vs_sensor_sigma.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 
@@ -211,11 +220,14 @@ def plot_per_zone_sigma(distance_cm, targets):
         zone_sigma = np.nanstd(dists, axis=0, ddof=1).reshape(side, side)
         sns.heatmap(zone_sigma, annot=True, fmt='.1f', cmap='YlOrRd',
                     ax=ax, cbar_kws={'label': 'σ (mm)'})
-        ax.set_title(f"{short} — per-zone σ @ {distance_cm} cm")
-        ax.set_xlabel('column (left → right)')
-        ax.set_ylabel('row (top → bottom)')
+        ax.set_title(f"{short} — per-zone σ", fontsize=11)
+        ax.set_xlabel('Column (left → right)')
+        ax.set_ylabel('Row (top → bottom)')
+    fig.suptitle(f'Fig 5. Per-zone σ spatial maps at d = {distance_cm} cm '
+                 f'(4 representative configs, n = 200 frames each)',
+                 fontsize=12, y=1.00)
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / f"layer2_per_zone_sigma_{distance_cm}cm.png", dpi=120)
+    plt.savefig(PLOT_DIR / f"layer2_per_zone_sigma_{distance_cm}cm.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 
@@ -233,19 +245,19 @@ def plot_per_zone_mean(distance_cm, target='A1'):
 
     fig, ax = plt.subplots(figsize=(9, 8))
     sns.heatmap(zone_mean, annot=True, fmt='.0f', cmap='viridis',
-                ax=ax, cbar_kws={'label': 'mean distance (mm)'})
+                ax=ax, cbar_kws={'label': 'Mean reported distance (mm)'})
     # Annotate: vertical gradient = sensor tilt evidence
     top_row_mean = np.nanmean(zone_mean[0, :])
     bot_row_mean = np.nanmean(zone_mean[-1, :])
     gradient = bot_row_mean - top_row_mean
-    ax.set_title(f"{target} per-zone mean distance @ {distance_cm} cm  (target at ~{distance_cm*10} mm)\n"
-                 f"top-row mean = {top_row_mean:.0f} mm, bottom-row mean = {bot_row_mean:.0f} mm "
-                 f"→ vertical gradient = {gradient:+.0f} mm\n"
-                 f"(positive gradient = top rows see closer = sensor tilted DOWN, consistent with your 5-10° tilt)")
-    ax.set_xlabel('column (left → right)')
-    ax.set_ylabel('row (top → bottom)')
+    ax.set_title(f"Fig 6. Per-zone mean distance ({target}) at d = {distance_cm} cm — mount-tilt diagnostic\n"
+                 f"Top-row mean = {top_row_mean:.0f} mm | Bottom-row mean = {bot_row_mean:.0f} mm | "
+                 f"vertical Δ = {gradient:+.0f} mm  →  consistent with ~5–10° downward sensor tilt",
+                 fontsize=10)
+    ax.set_xlabel('Column (left → right)')
+    ax.set_ylabel('Row (top → bottom)')
     plt.tight_layout()
-    plt.savefig(PLOT_DIR / f"layer2_per_zone_mean_{target}_{distance_cm}cm.png", dpi=120)
+    plt.savefig(PLOT_DIR / f"layer2_per_zone_mean_{target}_{distance_cm}cm.png", dpi=120, bbox_inches='tight')
     plt.close()
 
 

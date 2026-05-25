@@ -489,19 +489,77 @@ Phase 1 of the helmet project needed a real answer to "what's the best sensor co
 - **200 frames per config**, all per-zone distance + sigma + status saved to `raw_frames/`.
 - See [`photos/test_rig/`](photos/test_rig/) for rig photos + FoV math + the noted ~5–10° downward sensor tilt.
 
-### Headline findings
+### Results
 
-| Effect | What the data shows |
-|---|---|
-| **σ scales linearly with distance** | Confirmed across every config — 48/68/89 cm ratios match `σ ∝ d` (which falls out of `N ∝ 1/d²` photons × `σ ∝ 1/√N` shot noise) |
-| **4×4 wins on σ by ~4×** | At 10 Hz: 8×8 = 3.5 mm σ at 48 cm; 4×4 = 0.9 mm. Predicted 2× from 4× SPADs/zone; real is ~4× → integration-time effect on top |
-| **Sharpener does nothing on uniform surfaces** | `sharp=0/5/20` rows match within 0.05 mm at every distance. Sharpener is for edges, not flat panels |
-| **Frequency cost is real** | 4×4: 10 → 15 → 30 Hz tracks 0.9 → 1.1 → 1.5 mm, roughly √(freq) penalty |
-| **STRONGEST ≈ CLOSEST** on single-target scenes | C1 and A2 match within noise (single target, no ambiguity) |
-| **Strict filter ≈ lax filter** on clean targets | D1 and A2 match — black foam at < 1 m has 100 % status-5 anyway |
-| **Sensor-tilt visible in per-zone mean** | At 48 cm, top row mean = 473 mm, bottom row = 501 mm → +28 mm gradient = tilt artifact (sensor pointed ~5–10° down on the rig) |
+#### Figure 1 — Distance noise scaling
 
-See [`visualizer/plots/`](visualizer/plots/) for the full set: cross-distance σ trends, knob-impact comparisons, per-zone σ maps, per-zone mean-distance maps.
+<p align="center"><img src="visualizer/plots/layer1_sigma_vs_distance.png" width="850" alt="Fig 1 — sigma vs distance"/></p>
+
+**What it shows:** Median per-zone σ (cross-frame standard deviation over 200 frames) plotted against target distance for every config. The dashed black line is the theoretical `σ ∝ d` prediction anchored at the A1 baseline.
+
+**Why it matters:** All 17 configs track the linear prediction. This confirms the noise floor is **shot-noise-dominated** (N photons per measurement scales as 1/d² for a target filling the sensor's view, and Poisson statistics give σ ∝ 1/√N → σ ∝ d). This is the physical floor — no firmware tuning can beat it on the same hardware. The clean separation between the orange (8×8) and blue (4×4) families is the second-biggest finding here: at every distance, 4×4 is roughly 4× tighter than 8×8.
+
+#### Figure 2 — Cross-config noise comparison
+
+<p align="center"><img src="visualizer/plots/layer1_heatmap.png" width="500" alt="Fig 2 — heatmap"/></p>
+
+**What it shows:** Same data, ordered by config so you can spot patterns. Dark = noisier (worse), light = tighter (better).
+
+**Why it matters:** Two clean clusters emerge: the orange 8×8 block at the top (σ = 3–8 mm) and the pale 4×4 block in the middle (σ = 0.9–3 mm). Within each block, rows are nearly identical across the three sharpener values (0/5/20) — confirming the sharpener has no measurable effect on this surface. The C1 (STRONGEST target order) and D1 (strict status filter) rows look indistinguishable from A2 (their CLOSEST / lax counterpart), telling us those knobs only matter when the scene has ambiguity (multiple targets per zone, or partial-quality reads) — irrelevant for a flat foam board at short range.
+
+#### Figure 3 — Isolated knob-impact studies
+
+<p align="center"><img src="visualizer/plots/layer1_knob_impact.png" width="950" alt="Fig 3 — knob impact panels"/></p>
+
+**What it shows:** Three one-factor-at-a-time comparisons, each varying one knob while holding the others fixed. Panel (a): resolution. Panel (b): ranging frequency. Panel (c): edge-sharpener.
+
+**Why it matters:**
+- **(a) Resolution dominates everything else.** 4×4 buys you ~4× better σ at every distance. The reason: each 4×4 zone aggregates 4× more SPADs than an 8×8 zone, AND the firmware can spend ~4× longer integrating per zone (same total budget, fewer zones). Combined effect is much larger than the naive shot-noise prediction of 2× from SPAD count alone.
+- **(b) Frequency costs noise.** 10 → 15 → 30 Hz roughly tracks √(freq) scaling — exactly what you'd expect from less integration time per frame. Useful tradeoff knob: higher frame rate for faster reaction, lower for tighter accuracy.
+- **(c) Sharpener does nothing here.** All three sharpener values overlap within noise. The sharpener is a post-processing edge enhancement — it only matters when the scene has actual edges (doorframes, object boundaries). A uniform flat board has no edges to enhance, so it's a no-op.
+
+#### Figure 4 — Sensor self-calibration check
+
+<p align="center"><img src="visualizer/plots/layer1_our_vs_sensor_sigma.png" width="600" alt="Fig 4 — measured vs reported sigma"/></p>
+
+**What it shows:** The sensor reports its own confidence estimate (`range_sigma_mm`) for every reading. This plot compares the sensor's self-reported sigma (x-axis) against our empirically-measured cross-frame stdev (y-axis), with the dashed 1:1 line as the "perfect agreement" reference.
+
+**Why it matters:** Points hugging the 1:1 line means the sensor's confidence number is trustworthy and can be used directly for downstream filtering (e.g. "ignore any zone whose reported sigma > 50 mm"). Our data sits very close to 1:1 across all configs, so we know we can lean on `range_sigma_mm` without doing our own stdev calculation at runtime — useful when running on the ESP with no time for batch statistics.
+
+#### Figure 5 — Per-zone spatial σ maps
+
+<p align="center"><img src="visualizer/plots/layer2_per_zone_sigma_48cm.png" width="850" alt="Fig 5a — per-zone sigma at 48cm"/></p>
+<p align="center"><em>at d = 48 cm</em></p>
+
+<p align="center"><img src="visualizer/plots/layer2_per_zone_sigma_89cm.png" width="850" alt="Fig 5b — per-zone sigma at 89cm"/></p>
+<p align="center"><em>at d = 89 cm</em></p>
+
+**What they show:** Each square of the heatmap is the cross-frame σ for one specific zone (8×8 grid for A1/A2/D1, 4×4 grid for B2). Compared at two distances side by side.
+
+**Why they matter:** Zones aren't equal. Even on a flat uniform target you can see σ vary by ~50 % across the FoV — the corners are usually noisier than the center because the optical return is weaker at oblique angles (cosine of the angle to the surface). For the obstacle-avoidance application this means: when fusing zones, **weight the center zones more** than the edges, or just drop the corner zones from the alert logic. The 4×4 config (top-right) is consistently tighter at every individual cell, not just on average.
+
+#### Figure 6 — Mount-tilt diagnostic
+
+<p align="center"><img src="visualizer/plots/layer2_per_zone_mean_A1_48cm.png" width="700" alt="Fig 6a — per-zone mean at 48cm"/></p>
+<p align="center"><em>at d = 48 cm</em></p>
+
+<p align="center"><img src="visualizer/plots/layer2_per_zone_mean_A1_89cm.png" width="700" alt="Fig 6b — per-zone mean at 89cm"/></p>
+<p align="center"><em>at d = 89 cm</em></p>
+
+**What they show:** Per-zone **mean** distance over 200 frames (vs Fig 5 which shows per-zone σ). At 48 cm the target is ~480 mm; at 89 cm it's ~890 mm. Color = mean reading per zone, annotations are the values.
+
+**Why they matter:** The clean **top-to-bottom gradient** (~28 mm at 48 cm, ~50 mm at 89 cm) directly visualizes the sensor's mount tilt. Top rows read closer than bottom rows because the sensor is angled slightly down: those zones look at the upper part of the board head-on while the bottom zones look at the lower part on a longer slant path. This validates the ~5–10° downward tilt the rig was eyeballed at, and tells us that **before fusing zones for an "object at X distance" estimate, we need to apply a per-zone geometric correction** based on the known mount angle. (For the helmet, this also means the IMU pitch reading from Phase 3 is what will let us correctly de-bias.)
+
+### Implications for helmet config selection
+
+- **Pick 4×4 over 8×8** unless you genuinely need the spatial detail for edge detection (and even then, only after dynamic testing shows it matters).
+- **Pick 10 Hz** as the default frame rate — buys ~2× better σ vs 30 Hz, still fast enough to react at walking speed.
+- **Don't bother with the sharpener** until you're working with edge-rich scenes (doorways, furniture corners).
+- **Leave target order on CLOSEST** — safer default for obstacle avoidance and zero cost on simple scenes.
+- **Leave status filter on lax {5, 6, 9}** — at short range on most surfaces you get 100 % status-5 anyway; lax is more forgiving when surfaces get harder (dark, glass, oblique).
+- **De-bias zone geometry** before computing "nearest distance" if the sensor mount tilts more than a few degrees relative to the ground.
+
+The full raw data behind every plot is in [`visualizer/raw_frames/`](visualizer/raw_frames/) (51 CSVs, 200 frames × 64 or 16 zones × distance + sigma + status). To regenerate the plots from scratch: `python analyze.py` inside the `visualizer/venv`.
 
 ### v9 architecture
 
