@@ -56,8 +56,8 @@
 #define BEEP_GAP_MAX_MS     400          /* gap at threshold distance (slow alert) */
 
 /* â”€â”€ Sensor configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-#define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
-#define RANGING_FREQ_HZ     15                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
+#define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_4X4        /* 16 zones (4× tighter σ, wider angular per zone) */
+#define RANGING_FREQ_HZ     20                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 #define SHARPENER_PERCENT   5                              /* 0=off, 5=default, 99=max */
 #define TARGET_ORDER        VL53L8CX_TARGET_ORDER_CLOSEST  /* CLOSEST for obstacle avoidance */
@@ -120,6 +120,16 @@ static volatile int16_t g_nearest_mm = INT16_MAX;
  * obstacle is still in view. */
 static volatile bool g_alert_active = false;
 
+/* Most-urgent alerting zone this frame, used for beep-rate interpolation:
+ *   urgency_ratio = g_urgency_forward / g_urgency_threshold  (0..1)
+ *   0   = obstacle at body (fastest beep)
+ *   1   = obstacle exactly at its row's threshold (slowest beep)
+ * Comparing zones by ratio (not absolute mm) means a lower-row obstacle at
+ * 50 cm forward (high urgency, 50/90 = 0.56) beeps faster than an upper-row
+ * obstacle at 50 cm forward (lower urgency, 50/60 = 0.83). */
+static volatile int16_t g_urgency_forward   = 0;
+static volatile int16_t g_urgency_threshold = 1;   /* 1 to avoid div-by-zero */
+
 /* Per-row forward-distance threshold (mm). Output rows are body-frame after
  * the rotation remap: row 0 = top of view (overhead/head), row 7 = bottom
  * (body/waist). Larger thresholds for lower rows give the alert time to
@@ -130,15 +140,19 @@ static volatile bool g_alert_active = false;
  * Setting row 7 threshold to 1200 mm means the alert fires while obstacle
  * is still ~100 cm forward — comfortably in view, comfortably actionable.
  */
-static const int16_t g_row_threshold_mm[MAX_GRID_SIDE] = {
-    600,    /* row 0 — overhead / well above head */
-    600,    /* row 1 — head height */
-    600,    /* row 2 — face / upper head */
-    600,    /* row 3 — center (optical axis area, head/shoulder) */
-    700,    /* row 4 — shoulder */
-    800,    /* row 5 — upper chest */
-    850,    /* row 6 — chest */
-    900,    /* row 7 — belly button / waist (capped at 900 — 1200 was catching helmet rim) */
+/* Per-row alert thresholds. Non-const because we pick 4x4 vs 8x8 set at
+ * runtime (preprocessor can't evaluate the ULD's casted resolution macros).
+ * Initialised in compute_row_cos_table() once we know `side`. */
+static int16_t g_row_threshold_mm[MAX_GRID_SIDE];
+static const int16_t g_row_threshold_8x8[MAX_GRID_SIDE] = {
+    600, 600, 600, 600, 700, 800, 850, 900,
+};
+static const int16_t g_row_threshold_4x4[MAX_GRID_SIDE] = {
+    600,    /* 4x4 row 0 — top of FoV (head + above) */
+    600,    /* 4x4 row 1 — upper middle (head/chest area) */
+    800,    /* 4x4 row 2 — lower middle (chest/waist area) */
+    950,    /* 4x4 row 3 — bottom (waist/floor area) */
+    0, 0, 0, 0,  /* unused at 4x4 */
 };
 
 /* Per-row cosine table: forward_distance = slant_distance * g_row_cos[row]
@@ -149,6 +163,11 @@ static float g_row_cos[MAX_GRID_SIDE];
 /* Latest frame's forward-distance grid (rotation + slant compensation applied),
  * 64 zones max. -1 = invalid. Read by /api/status web handler. */
 static volatile int16_t g_latest_forward[MAX_GRID_SIDE * MAX_GRID_SIDE];
+/* Latest frame's raw per-zone status code (0-255), in body-frame order.
+ * Exposed via /api/status so the viewer can show WHY a zone is invalid
+ * (status 7 = rate-consistency fail, 11 = no target detected, etc. per
+ * ST UM3109 §5.5). */
+static volatile uint8_t g_latest_status[MAX_GRID_SIDE * MAX_GRID_SIDE];
 static volatile int     g_latest_grid_side = 0;
 
 static void compute_row_cos_table(int side)
@@ -163,6 +182,12 @@ static void compute_row_cos_table(int side)
                           * deg_per_zone * (float)M_PI / 180.0f;
         float elev_rad  = alpha_rad + pitch_rad;
         g_row_cos[r]    = cosf(elev_rad);
+    }
+
+    /* Pick the per-row threshold set for this resolution */
+    const int16_t *src = (side == 8) ? g_row_threshold_8x8 : g_row_threshold_4x4;
+    for (int r = 0; r < MAX_GRID_SIDE; r++) {
+        g_row_threshold_mm[r] = src[r];
     }
 }
 
@@ -377,17 +402,19 @@ static void buzzer_task(void *arg)
     gpio_set_level(BUZZER_GPIO, 0);
     ESP_LOGI(TAG, "Obstacle alert on GPIO %d: %d ms beep when any zone < %d mm",
              BUZZER_GPIO, BEEP_MS, OBSTACLE_THRESHOLD_MM);
-    /* Use the LARGEST row threshold (row 7 at 1200 mm) as the beep-rate scale
-     * — at distance 0 the gap is BEEP_GAP_MIN_MS (frantic), at 1200 mm it's
-     * BEEP_GAP_MAX_MS (slow). */
-    const int beep_scale_mm = g_row_threshold_mm[MAX_GRID_SIDE - 1];
+    /* Beep rate is set by urgency RATIO (forward / row_threshold), not by
+     * absolute forward distance. A row-7 obstacle at 50 cm forward (0.55
+     * ratio) is more urgent than a row-0 obstacle at 50 cm forward (0.83
+     * ratio) — so the row-7 one beeps faster, matching how close the
+     * obstacle is to "actionable proximity" for that body region. */
     while (1) {
-        int16_t nearest = g_nearest_mm;
-        bool    alert   = g_alert_active;
-        if (alert && nearest > 0) {
+        bool alert = g_alert_active;
+        if (alert) {
+            int16_t uf = g_urgency_forward;
+            int16_t ut = g_urgency_threshold;
+            if (ut < 1) ut = 1;
             int gap = BEEP_GAP_MIN_MS +
-                      (int)((BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) *
-                            (int32_t)nearest / beep_scale_mm);
+                      (int)((int32_t)(BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) * uf / ut);
             if (gap < BEEP_GAP_MIN_MS) gap = BEEP_GAP_MIN_MS;
             if (gap > BEEP_GAP_MAX_MS) gap = BEEP_GAP_MAX_MS;
             gpio_set_level(BUZZER_GPIO, 1);
@@ -609,6 +636,9 @@ static const char VIEWER_HTML[] =
 "alert <span id='alt'>?</span> &middot; valid <span id='vc'>?</span>/<span id='vt'>?</span> &middot; row thresholds (cm): <span id='thrs'>?</span>"
 "</div>"
 "<div class='grid' id='grid'></div>"
+"<div class='meta' style='font-size:2.8vw;line-height:1.6'>"
+"Status codes (ST UM3109 §5.5): 0=no update, 4=consistency fail, 5=valid, 6=wrap-around, 7=rate inconsistent, 8=signal too low, 9=valid low-signal, 10=sigma too high, 11=no target, 255=no update"
+"</div>"
 "<script>"
 "const grid=document.getElementById('grid');"
 "const fmt=mm=>Math.round(mm/10);"
@@ -621,7 +651,7 @@ static const char VIEWER_HTML[] =
 "document.getElementById('thrs').textContent=d.row_thresholds_mm.map(fmt).join(', ');"
 "const side=d.side;document.getElementById('vt').textContent=side*side;"
 "let nval=0;if(grid.children.length!==side*side){grid.style.gridTemplateColumns='repeat('+side+',1fr)';grid.innerHTML='';for(let i=0;i<side*side;i++){const e=document.createElement('div');e.className='cell';grid.appendChild(e);}}"
-"for(let i=0;i<side*side;i++){const z=d.grid[i];const e=grid.children[i];const row=Math.floor(i/side);const thr=d.row_thresholds_mm[row];if(z<0){e.textContent='-';e.style.background='#222';e.style.color='#555';}else{nval++;e.textContent=fmt(z);const f=Math.min(1,z/(1.5*thr));e.style.background='hsl('+(f*120)+',70%,30%)';e.style.color='#fff';}}"
+"for(let i=0;i<side*side;i++){const z=d.grid[i];const e=grid.children[i];const row=Math.floor(i/side);const thr=d.row_thresholds_mm[row];if(z<0){const s=d.status?d.status[i]:'?';e.textContent='s'+s;e.style.background='#2a1212';e.style.color='#c66';}else{nval++;e.textContent=fmt(z);const f=Math.min(1,z/(1.5*thr));e.style.background='hsl('+(f*120)+',70%,30%)';e.style.color='#fff';}}"
 "document.getElementById('vc').textContent=nval;"
 "}catch(e){document.getElementById('val').textContent='ERR';document.getElementById('card').className='card dead';}"
 "}setInterval(tick,200);tick();"
@@ -643,11 +673,20 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     bool alert = g_alert_active;
 
     /* JSON includes per-row thresholds so the viewer can colour each row
-     * against its own threshold. */
+     * against its own threshold. urgency_pct = forward / row_threshold × 100
+     * for the most-urgent alerting zone (0 = at body, 100 = at threshold). */
+    int urgency_pct = 0;
+    if (g_urgency_threshold > 0 && alert) {
+        urgency_pct = (int)((int32_t)g_urgency_forward * 100 / g_urgency_threshold);
+        if (urgency_pct < 0)   urgency_pct = 0;
+        if (urgency_pct > 100) urgency_pct = 100;
+    } else {
+        urgency_pct = -1;   /* sentinel: no alert */
+    }
     char buf[2560];
     int off = snprintf(buf, sizeof(buf),
-        "{\"nearest_mm\":%d,\"alert\":%s,\"side\":%d,\"row_thresholds_mm\":[",
-        (int)nearest, alert ? "true" : "false", side);
+        "{\"nearest_mm\":%d,\"alert\":%s,\"urgency_pct\":%d,\"side\":%d,\"row_thresholds_mm\":[",
+        (int)nearest, alert ? "true" : "false", urgency_pct, side);
     for (int r = 0; r < side && off < (int)sizeof(buf) - 8; r++) {
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%s%d", r ? "," : "", (int)g_row_threshold_mm[r]);
@@ -656,6 +695,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     for (int i = 0; i < total && off < (int)sizeof(buf) - 8; i++) {
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%s%d", i ? "," : "", (int)g_latest_forward[i]);
+    }
+    off += snprintf(buf + off, sizeof(buf) - off, "],\"status\":[");
+    for (int i = 0; i < total && off < (int)sizeof(buf) - 8; i++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%u", i ? "," : "", (unsigned)g_latest_status[i]);
     }
     off += snprintf(buf + off, sizeof(buf) - off, "]}");
 
@@ -888,8 +932,11 @@ static void ranging_task(void *arg)
          * Forward distance = slant * cos(row_elevation + mount_pitch). */
         int side        = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
         int total_zones = side * side;
-        int16_t nearest_forward = INT16_MAX;
-        bool    any_alert       = false;
+        int16_t nearest_forward    = INT16_MAX;
+        bool    any_alert          = false;
+        int16_t urgency_forward    = 0;       /* most-urgent zone, for beep rate */
+        int16_t urgency_threshold  = 1;
+        bool    have_urgency       = false;
         for (int z_out = 0; z_out < total_zones; z_out++) {
             int z_src = rotated_zone(z_out, side);
             int r_out = z_out / side;
@@ -898,22 +945,36 @@ static void ranging_task(void *arg)
                            ? (status == 5)
                            : (status == 5 || status == 6 || status == 9);
             int16_t forward_for_grid = -1;
+            g_latest_status[z_out] = status;
             if (results.nb_target_detected[z_src] > 0 && status_ok) {
                 int16_t slant = results.distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
                 if (slant > 0) {
                     int16_t forward = (int16_t)((float)slant * g_row_cos[r_out]);
                     forward_for_grid = forward;
                     if (forward < nearest_forward) nearest_forward = forward;
-                    /* Per-row threshold check: only the top index of the row
-                     * matters (r_out is the same for all columns in a row),
-                     * but we apply it per-zone for correctness. */
-                    if (forward < g_row_threshold_mm[r_out]) any_alert = true;
+                    int16_t row_thresh = g_row_threshold_mm[r_out];
+                    if (forward < row_thresh) {
+                        any_alert = true;
+                        /* Compare urgency ratios as cross-products to avoid floats:
+                         *   forward/row_thresh < urgency_forward/urgency_threshold
+                         *   ⇔  forward * urgency_threshold < urgency_forward * row_thresh
+                         */
+                        if (!have_urgency ||
+                            (int32_t)forward * urgency_threshold
+                                < (int32_t)urgency_forward * row_thresh) {
+                            urgency_forward   = forward;
+                            urgency_threshold = row_thresh;
+                            have_urgency      = true;
+                        }
+                    }
                 }
             }
             g_latest_forward[z_out] = forward_for_grid;
         }
         g_nearest_mm        = nearest_forward;
         g_alert_active      = any_alert;
+        g_urgency_forward   = urgency_forward;
+        g_urgency_threshold = urgency_threshold;
         g_latest_grid_side  = side;
 
 #if STREAM_DATA

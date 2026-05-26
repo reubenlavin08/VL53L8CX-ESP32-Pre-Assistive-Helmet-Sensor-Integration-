@@ -766,6 +766,8 @@ After v10 the helmet is wearable and the alerts work for the upper 2/3 of body c
 
 Living list of all open work, hardware notes, and recurring pitfalls is in [`todo.md`](todo.md).
 
+Full research synthesis behind the current parameter picks — including a re-analysis of my v9 data through a wearable-latency lens, plus ST documentation deep-dive, academic literature review, and commercial-device market survey — is in [`docs/research-optimal-config.md`](docs/research-optimal-config.md). Headline finding: **no peer-reviewed work exists on a head-mounted VL53L8CX ETA for the visually impaired**, so several of the open questions on the helmet are genuinely unstudied and the project will generate new data along the way.
+
 ---
 
 ## A note on process

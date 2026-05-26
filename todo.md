@@ -27,6 +27,22 @@ Living list of work for this project. Append-only during sessions; check items o
    - Specifically test: pullup bar / overhead doorframe, chair near body, dark fabric, glass at angle, lighting changes (indoor → outdoor).
    - Decide based on real use whether a 2nd sensor is needed.
 
+## Research synthesis (2026-05-26)
+
+Did a full Phase-1 data re-analysis (latency-focused wearable lens) + spawned 3 background research agents (ST docs, academic literature, market survey). All findings written up in [`docs/research-optimal-config.md`](docs/research-optimal-config.md).
+
+Key conclusions baked into firmware:
+- 4×4 @ 20 Hz currently (Phase 1 says 30 Hz is better; 60 Hz worth testing)
+- CONTINUOUS mode, sharpener 5, TARGET_ORDER CLOSEST (defensible at our <100 ms budget per ST)
+- Per-row thresholds 60/60/80/95 cm (4×4) — our innovation, not in literature
+- Ratio-based beep urgency (forward / row_threshold) — our innovation
+
+What's empirically open (publishable contributions):
+- No published paper has tested VL53L8CX on a head-mounted ETA for visually impaired
+- No paper has measured detection latency vs frame rate for moving pedestrian
+- No paper has characterised ground-plane false-positives for downward-pitched head mount
+- No published outdoor / direct-sun VL53L8CX wearable data
+
 ## Live test snapshots
 
 - **2026-05-25:** Bumped `MOUNT_PITCH_DEG` 13° → 20° based on user re-measurement after physical mount adjustment. Should be re-verified with another wall-stare capture when convenient. Compensation table at 20° pitch on 8x8: row 0 cos = 0.98 (top, basically unchanged), row 7 cos = 0.74 (bottom, ~26% reduction).
