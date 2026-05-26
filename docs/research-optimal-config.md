@@ -174,9 +174,71 @@ Things no published source has tested for this device class — opportunities to
 
 ## Recipes worth borrowing
 
-- **ETH median-of-center-4-pixels-per-column filter** (`Matrix_ToF_Drones`) — published de-noising for a moving multi-zone ToF. Direct relevance even though they were on a drone, not a helmet.
-- **Ghaffari multi-sensor 90° offset belt mount** — different form factor but the dual-sensor coverage strategy informs eventual 2nd-sensor placement.
-- **Biped's stereo drop-off detection** — they can detect 30 cm drops. We should be able to do similar via per-row distance discontinuity in the lower rows.
+- **ETH cluster-based obstacle detection** (`Matrix_ToF_Drones/Firmware/src/tof_driver/ToF_process.c`, verified 2026-05-26): status-filter {5,9} + binarize at distance threshold + 8-connected DFS island detection + reject clusters smaller than `MIN_PIXEL_NUMBER`. The min-cluster-size step is what makes them resilient to single-pixel spikes. Their distance bands: REACT 1.4m → SLOW 0.7m → STOP 0.4m → FEAR 0.15m (drone, but layered structure is the pattern).
+- **Nature Comms 2025 vibrotactile pattern**: 3 coin motors (2.7×10 mm) on forehead + temples, 200 Hz vs 150 Hz buzz frequency to encode <3m vs >3m. Achieves 100% collision avoidance at 320 ms total end-to-end latency. Frequency-coded distance > on/off pattern.
+- **PMC10708878 head-mounted ETA pattern**: 9 ultrasonic sensors arranged in 3 rows on head, IMU quaternion to compensate head turns, single audio beep with 0.5 s re-arm. 1.5 m alert threshold for pedestrian use.
+- **Biped's stereo drop-off detection** — 30 cm drop detection via per-row distance discontinuity. Doable on lower ToF rows.
+- **AV multi-return LIDAR analogy**: first-return = CLOSEST, multi-return = NB_TARGET_PER_ZONE>1. Multi-return is the standard mechanism for "seeing past" partial obstructions (vegetation in forestry, doorframe in our use case). Combined with a min-cluster-size rule it's the well-trodden path.
+
+---
+
+## Source verification update — 2026-05-26
+
+After the first research pass, I verified the most load-bearing claims against primary sources. Outcomes:
+
+### Verified TRUE (read primary source)
+- **UM3109 ST claims** — all quotes in Phase 2A above. Cross-checked against the local PDF I downloaded.
+- **ETH `Matrix_ToF_Drones` repo exists and uses VL53L5CX.** Fetched `Firmware/src/tof_driver/ToF_process.c` directly. Saved at `docs/research-sources/ETH_ToF_process.c`.
+- **Nature Communications 2025 paper** (`s41467-025-58085-x`) — real, March 2025, open access. Uses Synexens CS30 (not VL53L8CX), 6 FPS, 320 ms latency, 3 vibrotactile motors at 150/200 Hz, 100% collision avoidance.
+- **PMC10708878** — real, head-mounted ultrasonic ETA, 9× HC-SR04 + 1× MaxSonar-EZ1 + IMU, 1.5 m alert threshold.
+
+### Verified FALSE — corrections to retract
+- ~~"ETH `Matrix_ToF_Drones` uses **median of center 4 pixels per column** to reject motion noise."~~ **FALSE.** I read the source code. There is no median filter anywhere in `ToF_process.c`. The actual ETH algorithm is DFS island detection + `MIN_PIXEL_NUMBER` cluster threshold (see "Recipes worth borrowing" above). The original research agent fabricated the median claim — possibly hallucinated from the median being a common motion-noise technique elsewhere.
+
+### Could not verify (treat as unconfirmed)
+- ~~Ghaffari et al. 2025 Cogent Engineering~~ — **NOW VERIFIED 2026-05-26 via PDF supplied by user.** See `docs/research-sources/Ghaffari_2025_summary.md` for full notes. Important corrections to prior claims:
+  - 2× **VL53L5CX** (not L8CX), at 90° azimuth offset, belt-mounted at ~1m height. Confirmed.
+  - **NB_TARGET_PER_ZONE is NOT enabled.** The earlier claim that "every wearable VL53L5/8CX paper uses ≥2 targets" is wrong — Ghaffari uses single-target. Doorway/multi-target remains unstudied in the wearable literature.
+  - Wrist haptics chosen because **pilot found head haptics uncomfortable** — relevant warning for our helmet-rim haptic plan.
+  - Indoor/outdoor split via `n` parameter (127 cm range indoor, 300 cm outdoor). Proportional PWM feedback, not binary alerts.
+- **"AN5912" (VL53L5CX app note) and "AN6066" (VL53L8CX calibration app note)** — searched ST's site directly. **Neither document number appears in ST's catalog.** Likely fabricated by the prior research agent. Real VL53L8CX-specific app notes are AN5897 (PCB thermal), AN5945 (SATEL connection), AN6271 (water/liquid). UM3109 remains the authoritative user manual.
+
+### Headline finding still holds
+"No published peer-reviewed work on a head-mounted VL53L8CX wearable ETA for visually-impaired users." The Nature Comms 2025 paper is the closest analog (head-glasses-mounted, but uses Synexens CS30 not VL53L8CX). The helmet project is still in a real gap.
+
+### Pattern lesson
+Earlier research agent hallucinated three specific things (AN5912, AN6066, ETH median filter) with plausible-sounding numbers/labels. Going forward: **a claim about a specific document number or specific algorithm only counts after primary-source verification.** Web search of titles + abstracts is not enough.
+
+---
+
+## Below-chest coverage — what other people do (2026-05-26)
+
+The single-sensor head-mounted helmet cannot see floor-to-chest within ~3 m due to FoV physics (see Recurring failure modes). The literature shows three approaches:
+
+### 1. Move the sensor lower (Ghaffari solution)
+**Mount on belt or chest at ~1 m, wide FoV.** At 1 m height + 65° vertical FoV, an obstacle 3.7 cm tall is detectable at 1.5 m forward (Ghaffari 2025). Trade-off: loses the head-height vantage that catches overhanging branches, signs, low ceilings, doorways from above.
+
+### 2. Stack two ToF sensors with combined vertical FoV (GuideTouch solution)
+**arXiv 2601.13813** — "GuideTouch": 2× VL53L5CX **vertically aligned at 30° relative angle** = combined 90° vertical FoV. Single shoulder/torso enclosure. Detects obstacles at knee level (30 cm) AND head level (160 cm) from 50 cm distance. Direct relevance to our project: this is the head + chest two-sensor configuration. We could use one helmet-mounted (current) + one chest-mounted with downward pitch, combined FoV covers floor to head.
+
+### 3. Multi-row ultrasonic array (PMC10708878 solution)
+**9× HC-SR04 in 3 rows on head + 1× MaxSonar-EZ1, IMU for head-turn compensation, audio beep with 0.5 s re-arm, 1.5 m alert threshold, <90 g total, ~$50 BOM.** Each ultrasonic has 15° cone — much narrower than ToF zones — but mounting 3 rows gives top/middle/bottom coverage from one head location. Decision tree classifier (98.68%) for obstacle-vs-noise. Limitation: ultrasonic misses soft/angled targets reliably.
+
+### 4. Separation of concerns across multiple devices (literature pattern)
+Several reviews mention three-device approaches: **cane = drop-offs/holes, handheld = far large obstacles, glasses = overhead.** WeWALK SmartCane 2 uses TDK SmartSonic ultrasonic at cane handle for multi-height. Trade-off: more cognitive load on user, more devices to charge/maintain.
+
+### What none of them solve
+**Indoor close-quarters without alert flooding.** Every paper either:
+- (a) accepts more false positives indoors (safety-first, like Nature Comms 2025 explicitly states), or
+- (b) reduces alert range indoors (Ghaffari: 127 cm indoor vs 300 cm outdoor via `n` param), or
+- (c) requires the user to manually toggle modes (most ultrasonic devices).
+
+There is **no published indoor-clutter-aware alert suppression algorithm** for these devices. This is a real open opportunity: a software classifier that recognises "currently in a tight indoor space" and de-prioritises non-collision-course obstacles. Could fuse with IMU walking-speed + heading rate to flag "user is moving slowly and turning" = "in tight space" = "raise threshold for alert suppression."
+
+### Recommended path for our helmet (synthesizing the above)
+Phase 1.5 (before camera): **add a second VL53L8CX at chest/sternum, pitched ~30° down.** Wire to same ESP32 via I²C address bridge (need a `LPn` toggle since both default to 0x29). Combined coverage replicates GuideTouch but at higher resolution (each 8×8 instead of analog). Total BOM <$25 incremental.
+
+Alternative if cost/wiring matters: **one HC-SR04 at chest pointed straight down at ~45° forward angle** — covers floor + ankle level at <1 m forward. Single output, easy ADC read or echo timing on a GPIO. Misses everything ultrasonic misses (carpet, soft furnishings, low-reflectivity dark surfaces) but catches the geometric gap.
 
 ---
 
@@ -205,6 +267,12 @@ Things no published source has tested for this device class — opportunities to
 - [Basnet et al. MDPI Sensors 2026](https://www.mdpi.com/1424-8220/26/4/1140)
 - [PMC10708878 — head-mounted ultrasonic ETA](https://pmc.ncbi.nlm.nih.gov/articles/PMC10708878/)
 - [PMC10007677 — wearable obstacle detection review](https://pmc.ncbi.nlm.nih.gov/articles/PMC10007677/)
+
+### Phase 2D — new sources (2026-05-26 verification pass)
+- [Nature Communications 2025 — wearable obstacle avoidance for visually impaired](https://www.nature.com/articles/s41467-025-58085-x) — PMC mirror: [PMC11933268](https://pmc.ncbi.nlm.nih.gov/articles/PMC11933268/)
+- [LIDAR Magazine — Multiple Return Multiple Data](https://lidarmag.com/2017/04/29/multiple-return-multiple-data/)
+- [LIDARvisor — What is Multi-Return LiDAR](https://lidarvisor.com/what-is-multi-return-lidar/)
+- ETH `Matrix_ToF_Drones/Firmware/src/tof_driver/ToF_process.c` — saved at `docs/research-sources/ETH_ToF_process.c`
 
 ### Phase 2C — market survey
 - [Sunu Band](https://sunu.io/pages/faq), [WeWALK Smart Cane V2](https://www.tdk.com/en/featured_stories/entry_084-WeWALK-Smart-Cane-2.html), [iGlasses](https://www.rehabmart.com/pdfs/ambutech_iglasses.pdf), [BuzzClip](https://imerciv.com/), [IIT-Delhi SmartCane](https://assistech.iitd.ac.in/smartcane.php), [Biped NOA](https://biped.ai/en/user-manual), [.lumen Glasses](https://newatlas.com/wearables/dotlumen-ai-glasses-blind-independence/), [STRAP](https://www.strap.tech/), [Glide](https://glidance.io/product/), [OrCam](https://www.orcam.com/en/myeye2/specification/), [Envision](https://www.letsenvision.com/glasses/home), [ARx AI](https://arx.vision/products/arx-ai-gen1-5), [BrainPort](https://www.wicab.com/brainport-vision-pro), [Eyeronman](https://www.asme.org/topics-resources/content/wearables-help-the-blind-walk)

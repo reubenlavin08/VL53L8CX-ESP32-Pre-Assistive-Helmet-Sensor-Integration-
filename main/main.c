@@ -57,7 +57,7 @@
 
 /* â”€â”€ Sensor configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_4X4        /* 16 zones (4× tighter σ, wider angular per zone) */
-#define RANGING_FREQ_HZ     20                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
+#define RANGING_FREQ_HZ     30                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 #define SHARPENER_PERCENT   5                              /* 0=off, 5=default, 99=max */
 #define TARGET_ORDER        VL53L8CX_TARGET_ORDER_CLOSEST  /* CLOSEST for obstacle avoidance */

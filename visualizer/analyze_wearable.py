@@ -83,6 +83,22 @@ def main():
     base['score_fast_cm'] = base['react_cm_fast'] + base['noise_band_cm']
     base['score_slow_cm'] = base['react_cm_slow'] + base['noise_band_cm']
 
+    # === Reaction-time floor — the elephant in the room ===
+    # At ANY sensor frequency, the human reaction floor is:
+    #   floor = ALERT_REACTION_S * walk_speed
+    # At 1.5 m/s and 0.5 s reaction, that's 75 cm. No sensor knob can beat this.
+    # Going from 20→30→60 Hz only shaves a few cm off frame latency —
+    # which is small compared to the 75 cm reaction floor.
+    # Conclusion: the meaningful knobs are (a) trigger-earlier thresholds,
+    # (b) faster modality (haptic ~150 ms vs audio ~200 ms — needs verification),
+    # (c) walking speed itself.
+    REACTION_FLOOR_FAST_CM = ALERT_REACTION_S * WALK_MS_HIGH * 100
+    REACTION_FLOOR_SLOW_CM = ALERT_REACTION_S * WALK_MS_LOW  * 100
+    print(f"\n=== REACTION-TIME FLOOR (un-beatable by sensor tuning) ===")
+    print(f"  Fast walk ({WALK_MS_HIGH} m/s): {REACTION_FLOOR_FAST_CM:.0f} cm")
+    print(f"  Slow walk ({WALK_MS_LOW} m/s): {REACTION_FLOOR_SLOW_CM:.0f} cm")
+    print(f"  Sensor knobs only affect the 'extra' blind zone on top of this floor.\n")
+
     base = base[['short','resolution','freq_hz','our_sigma_mm','frame_ms',
                  'blind_cm_fast','noise_band_cm','react_cm_fast','score_fast_cm']]
     print(base.to_string(index=False))
