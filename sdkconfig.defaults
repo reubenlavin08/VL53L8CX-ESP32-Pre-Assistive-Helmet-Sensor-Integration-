@@ -1,10 +1,11 @@
 # Increase main task stack — VL53L8CX ULD needs at least 7168 bytes
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# Log level — verbose globally to diagnose OTA failures. Can drop back to
-# INFO once OTA write failures are understood. Costs a few % CPU + flash.
-CONFIG_LOG_DEFAULT_LEVEL_VERBOSE=y
-CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
+# Log level. Verbose was used for OTA diagnosis (see 2026-05-25) and
+# revealed verbose logging itself was throttling OTA to UART speed (~15 KB/s
+# vs ~150 KB/s clean). Back to INFO. The OTA handler's per-chunk heap log
+# stays at INFO level so we keep that data without the throttle.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
 # I2C driver
 CONFIG_I2C_ENABLE_DEBUG_LOG=n

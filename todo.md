@@ -73,6 +73,18 @@ Living list of work for this project. Append-only during sessions; check items o
 - Bar in doorway with **open space behind it** (gap > 60 cm) → NB=2 + CLOSEST will resolve the bar separately. Worth trying.
 - Bar with **wall close behind it** (gap < 60 cm) → multi-target won't help, sensor fundamentally can't separate them. Need a different approach (different mount angle, second sensor aimed slightly upward, etc.).
 
+## OTA root-cause finding (2026-05-25 evening, RESUME HERE TOMORROW)
+
+Spent the evening debugging "OTA fails mid-stream" with serial captures over COM10. Real cause found:
+
+- **Verbose logging was throttling OTA to UART speed.** With `CONFIG_LOG_DEFAULT_LEVEL_VERBOSE`, every OTA chunk produced ~400 B of UART log output. At 115200 baud (= ~11 KB/s ceiling), log writes blocked the OTA task, slowing the whole transfer to ~15 KB/s. A 930 KB OTA then took 60+ seconds and curl's `--max-time 90` would clip the tail.
+- **Heap was healthy throughout.** Free heap stable at 237 KB, min-free 229 KB unchanged — disproves my earlier heap-fragmentation hypothesis.
+- **`esp_ota_write` was succeeding on every chunk.** No actual partition-corruption issue this session. (Earlier "mid-stream drops at 65 KB" were probably real partition corruption from a different cause — USB flash recovered each time. Need fresh data to confirm if it recurs.)
+
+**Resolution:** Reverted `sdkconfig.defaults` to `CONFIG_LOG_DEFAULT_LEVEL_INFO`, kept the OTA-handler heap-progress logs (they're at INFO level, no throttle penalty). USB-flashed the new firmware. **Verify in the morning** that OTA now completes in <10 s instead of 60+.
+
+If OTA still flakes after this change: the diagnostics (`/api/health` for live heap, per-64 KB heap reports, verbose can be re-enabled selectively per ESP-IDF tag via `esp_log_level_set("ota", ESP_LOG_VERBOSE)` without slowing the whole system) are all in place.
+
 ## Recurring bugs / pitfalls (don't repeat)
 
 - ESP I²C sensor init fails ~20% of the time on warm reboot. Mitigation: host-side 3× retry in `run_one_test.ps1`.
