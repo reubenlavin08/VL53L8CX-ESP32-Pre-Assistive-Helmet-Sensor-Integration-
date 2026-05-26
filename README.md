@@ -1,15 +1,15 @@
 <h1 align="center">VL53L8CX × ESP32-S3 — Live 3D Point Cloud</h1>
 
 <p align="center">
-  <em>An 8×8 time-of-flight depth grid streaming over WiFi (and USB-serial), rendered in real time as a GPU-accelerated 3D point cloud, with sensor characterization data and analysis. The foundation for an assistive helmet I'm building, with IMU fusion and a camera planned next.</em>
+  <em>A helmet-mounted obstacle warning device for the visually impaired, built around an 8×8 time-of-flight depth grid on an ESP32-S3. Streams over WiFi, alerts via a buzzer based on body-frame distance, and serves its own iPhone-friendly web viewer so I can debug while wearing it.</em>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/MCU-ESP32--S3-E7352C?style=flat-square" alt="ESP32-S3"/>
   <img src="https://img.shields.io/badge/Sensor-VL53L8CX-1F8AC0?style=flat-square" alt="VL53L8CX"/>
   <img src="https://img.shields.io/badge/Framework-ESP--IDF%20v5.4.4-blue?style=flat-square" alt="ESP-IDF v5.4.4"/>
-  <img src="https://img.shields.io/badge/Visualiser-PyQtGraph%20%2B%20OpenGL-44A833?style=flat-square" alt="PyQtGraph + OpenGL"/>
-  <img src="https://img.shields.io/badge/Status-Phase%201%20%E2%80%94%20wearable%20testing-brightgreen?style=flat-square" alt="Status"/>
+  <img src="https://img.shields.io/badge/Viewer-iPhone%20Safari%20%E2%86%92%20ESP%20HTTP-44A833?style=flat-square" alt="Phone viewer"/>
+  <img src="https://img.shields.io/badge/Status-v10%20wearable%20testing-brightgreen?style=flat-square" alt="Status"/>
 </p>
 
 ---
@@ -646,17 +646,125 @@ These came up immediately after the static sweep, while I was getting the sensor
 
 ---
 
+## v10 — Wearable: helmet mount, body-frame alerts, phone-direct viewer
+
+v9 proved what the sensor could do on a desk. v10 was about actually wearing the thing and getting it to behave like an obstacle-warning device for someone moving through real space. This iteration is much more about the *system* than the sensor — calibrating the mount, converting raw sensor readings into body-relative distances, deciding what's worth alerting on, and giving myself a way to debug the rig while walking around.
+
+### What changed
+
+**Firmware-side mount-rotation compensation.** The sensor PCB on my helmet sits rotated 90° from its "natural" orientation. Rather than fix that in every host script, I added a `MOUNT_ROTATION_DEG` constant (270°) and a `rotated_zone()` helper that remaps zone indices inside the firmware's stream functions. Every downstream consumer — visualizer, `measure.py`, slant-compensation logic, the new phone viewer — now sees zones in body frame automatically.
+
+**Wall-stare tilt calibration.** I wrote `visualizer/calibrate_tilt.py`: wear the helmet, stand still facing a flat wall at a known distance, capture 200 frames, fit the sensor's actual mount pitch from the per-row mean distance pattern. The fit said **~13° pitch down** on the first iteration. After repositioning the mount I re-measured and the current value is **20° down**. The calibration also revealed a small roll component (the gradient across columns was non-zero, suggesting the sensor isn't perfectly aligned with body axes) — small enough to ignore for v1.
+
+**Per-row slant→forward compensation.** With pitch known, each row of the rotated 8×8 grid has a known elevation angle. The firmware now precomputes a per-row cosine table at boot and converts each zone's slant distance to body-frame forward distance: `forward = slant × cos(zone_elevation + mount_pitch)`. The buzzer now alerts on **forward distance**, not slant. Fixes the failure mode I saw before: a chair 50 cm in front of my body but 50 cm tall reads a 130 cm slant distance — without this compensation the buzzer never triggers because the slant is past threshold.
+
+**Per-row alert thresholds.** Single global threshold of 60 cm didn't work because the bottom rows' field of view exits the body-near region before an obstacle can reach 60 cm forward. By the time a chair-height obstacle is 60 cm forward of my body, it's already outside the sensor's downward cone — the firmware has no ray pointing at it. Fix: each row gets its own threshold, scaled for how soon obstacles leave its FoV.
+
+| Row | Body region | Threshold (cm) |
+|---|---|---|
+| 0 | Overhead | 60 |
+| 1 | Head | 60 |
+| 2 | Upper head | 60 |
+| 3 | Head / shoulder (optical axis area) | 60 |
+| 4 | Shoulder | 70 |
+| 5 | Upper chest | 80 |
+| 6 | Chest | 85 |
+| 7 | Belly button / waist | 90 |
+
+Bottom rows fire while obstacles are still in view; top rows still use the tight 60 cm so overhead obstacles don't chirp the buzzer when I look around in a room with normal ceilings.
+
+**Phone-direct web viewer.** Earlier I tried Spacedesk (mirror laptop screen to iPhone) for viewing the data while wearing the helmet. It didn't work across rooms and was laggy when it did. Switched approach entirely — the ESP itself now serves a tiny HTML viewer on `GET /`. The page polls `GET /api/status` every 200 ms for JSON containing nearest forward distance, the per-row thresholds, alert state, and the full 64-zone grid. Phone opens `http://192.168.1.228/` in Safari, sees live data, no laptop in the loop. Works anywhere on the same WiFi.
+
+The big number is the nearest forward distance (in cm). Background colour flips green→yellow→red. Each cell in the 8×8 grid is coloured against its own row's threshold (so the bottom row goes red at a different distance than the top row). The viewer pulls the threshold table from the JSON, so when I change thresholds in firmware I don't have to edit the viewer.
+
+**Bootloader rollback.** During wearable testing I bricked the ESP a few times — one of the OTA partitions would end up with a half-written image, the ESP would boot into it, and hang. Enabled `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` in `sdkconfig.defaults` and added a confirmation task that waits for WiFi + first sensor frame to succeed, then calls `esp_ota_mark_app_valid_cancel_rollback()`. If the new image fails to confirm (because the app crashed or WiFi never came up), the bootloader auto-reverts to the previous slot on the next boot. No more rescue USB-flashes for bad-boot bricks.
+
+**OTA diagnostics.** Separately from the bricks-on-boot, I also kept seeing OTA writes drop mid-stream at the ~65 KB mark after many sequential OTAs. Couldn't reproduce reliably enough to fix the root cause yet, but I added enough instrumentation to diagnose next time it happens: verbose ESP-IDF logging (`CONFIG_LOG_DEFAULT_LEVEL_VERBOSE`), per-64-KB heap reporting inside the OTA handler, a new `GET /api/health` endpoint that returns free heap + min-free heap + uptime so I can monitor heap fragmentation over a session from the phone. My current hypothesis is heap fragmentation after long uptime, but I don't have data yet.
+
+**Visualizer fixes.** The PyQt visualizer was accumulating Qt signal queue items when rendering couldn't keep up with the 15 Hz stream — after a few thousand frames it lagged badly and eventually froze. Decoupled the rates: reader thread writes to a shared "latest frame" variable, GUI renders at fixed 30 Hz via a `QTimer`, intermediate frames silently overwritten. Also added auto-reconnect with backoff so the visualizer survives ESP reboots during OTA cycles instead of dying.
+
+### The hard physics finding
+
+While testing, I confirmed something I'd suspected from the FoV math: **one head-mounted sensor cannot cover both above-head obstacles and belly-button-at-60-cm obstacles**. The numbers:
+
+- Sensor at ~186 cm helmet height, pitched 20° down, 45° vertical FoV
+- Cone reaches from 2.5° above horizontal to 42.5° below horizontal
+- For an obstacle 60 cm forward of my body at belly button height (~120 cm): requires a ray at 47.7° below horizontal — outside the cone
+- To cover from "slightly above head" down to "belly button at 60 cm" requires ~61° of vertical FoV; the sensor has 45°
+
+Three ways out:
+1. **Bump pitch to 25–30°** — catches belly button, loses everything above horizontal
+2. **Mount sensor lower (chest level)** — catches belly button as near-horizontal, loses overhead
+3. **Add a second sensor aimed down** — keeps the head-mount for overhead, dedicated second sensor for lower body. This is the real fix and it's on the todo list.
+
+I'm running v10 with pitch 20° (keeps top-of-FoV overhead detection while extending lower coverage to chest), and accepting the belly-button-and-below blind spot at close range until I add the second sensor. The per-row thresholds make the most of what the sensor CAN see.
+
+### v10 architecture
+
+```
+                ┌─────────────────────────────────────────┐
+                │           ESP32-S3 firmware             │
+                │                                         │
+   ┌────────┐   │  ┌──────────────┐    ┌──────────────┐   │
+   │ VL53L8 │──►│  │ ranging_task │    │ HTTP server  │   │
+   │  CX    │I²C│  │              │    │  port 80     │   │
+   └────────┘   │  │ -rotation    │    │              │   │
+                │  │ -slant comp  │    │ GET /        │──►── HTML viewer
+                │  │ -per-row     │    │ GET /api/    │──►── JSON status
+                │  │  threshold   │    │  status      │      (nearest, alert,
+                │  │              │    │ GET /api/    │       grid, thresholds)
+                │  │ → g_alert    │    │  health      │──►── JSON diagnostics
+                │  │ → g_nearest  │    │ POST /update │◄──── OTA reflash
+                │  │ → g_grid     │    │              │
+                │  └──────┬───────┘    └──────────────┘   │
+                │         │                               │
+                │         ▼                               │
+                │  ┌──────────────┐    ┌──────────────┐   │
+                │  │ buzzer_task  │    │ tcp_server   │   │
+                │  │              │    │  port 3333   │──►── raw DATA/SIGMA/
+                │  │ beep if      │    │ (4 clients,  │     STATUS lines
+                │  │  any zone <  │    │  broadcast)  │     (for measure.py
+                │  │  row thresh  │    │              │      and analysis)
+                │  └──────────────┘    └──────────────┘   │
+                └─────────────────────────────────────────┘
+                          │                  │
+                          ▼                  ▼
+                     active buzzer      iPhone Safari or
+                     on GPIO 6          laptop visualizer
+```
+
+### Lessons from v10 dev
+
+- **The slant→forward conversion is meaningless if you ignore the FoV.** I spent time chasing why "body-level obstacles aren't detected" when the math was already doing what I asked. The math was correct — the obstacles just weren't in the sensor's cone. Always sanity-check whether the sensor can even *see* a thing before debugging why it doesn't *react* to it.
+- **Mirror-via-screen-share doesn't scale to "walk around with a phone".** Spacedesk worked great when I was sitting next to my laptop, fell over when I walked into another room. The fix wasn't a better mirror tool; it was a different architecture (ESP serves the viewer directly).
+- **Per-row thresholds are a clean way to encode "what each row is looking at".** Cleaner than a single global threshold + heuristics. Easier to tune empirically by walking around with the viewer and watching which cells fire.
+- **Bootloader rollback is a one-config-line fix worth doing on any OTA-equipped device.** I should have enabled it on day one of v7. Cost: zero. Benefit: no more bricked partitions from interrupted/bad OTA writes.
+- **Heap monitoring matters once you have multiple long-running tasks.** `/api/health` is two lines of code and gives me forever-running insight into whether memory is leaking or fragmenting.
+
+### Files added/changed in v10
+
+- `main/main.c` — rotation helper, slant-cos table, per-row thresholds, `g_alert_active` flag, OTA rollback confirm task, viewer HTML embedded, `/api/status` + `/api/health` JSON endpoints, OTA diagnostic logging
+- `sdkconfig.defaults` — `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`, `CONFIG_LOG_DEFAULT_LEVEL_VERBOSE=y`
+- `main/CMakeLists.txt` — added `esp_timer` requirement
+- `visualizer/calibrate_tilt.py` — wall-stare tilt-angle fitter
+- `visualizer/visualizer_simple.py` — frame-rate decoupling, auto-reconnect with backoff, adaptive 8×8/4×4 zone count
+- `visualizer/raw_frames/wall-tilt-calib-h185cm-d81cm_*.csv` — calibration capture
+- `photos/test_rig/test_rig_notes.md` — updated with helmet-mount height
+- `todo.md` — living list of where this project is going
+
+---
+
 ## What's next (queued)
 
-I'm in the middle of preparing for dynamic wearable testing. The static sweep gave me good defaults; the next steps are about validating them in real use.
+After v10 the helmet is wearable and the alerts work for the upper 2/3 of body coverage. Next steps are filling in the bottom 1/3 and graduating from a prototype to something I'd trust.
 
-1. **Wall-stare tilt calibration.** I'll stand still facing a flat wall at known distance for ~20 s. From the per-row mean distance pattern, I can solve for the actual sensor pitch angle on the helmet (vs the eyeballed 5–10°). That feeds into the next item.
-2. **Per-row slant compensation in firmware.** Each zone's elevation angle is fixed by the array geometry. With the helmet mounted at ~195 cm, I'll convert each zone's slant distance to horizontal forward distance (`forward = slant × cos(zone_elevation)`) and alert on the forward distance, not the slant. Fixes the failure mode I've already seen: a chair 50 cm in front of my body at 50 cm tall reports a 130 cm slant distance and never triggers the alert.
-3. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`). Per ST UM3109 §4.10, this lets the sensor report up to 2 distinct peaks per zone — helps when a thin obstacle (like a pullup bar in a doorway) sits in front of open space rather than a close wall. ST also notes a fundamental 600 mm minimum separation between targets to be resolved as distinct, so this only helps when the gap behind is large enough.
-4. **Dynamic wearable testing** once 1–3 are in. Real hallways, doorways, furniture, lighting changes — to see which of my provisional config picks survive contact with reality and which don't.
-5. **(Future)** IMU integration for live pitch/roll compensation, second VL53L8CX for peripheral coverage (only if the single sensor proves insufficient), layered alert thresholds (120 / 60 / 30 cm), Phase 2 camera + CV.
+1. **Second VL53L8CX aimed downward** — fixes the belly-button-and-below blind spot. SPI bus (cleaner than I²C for two sensors — no address conflict). Independent calibration, independent per-row thresholds, fused into a single body-frame alert.
+2. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`) — helps thin obstacles in open doorways (pullup bar with open space behind). Per ST UM3109 §4.10, this only resolves targets separated by ≥ 600 mm — so it won't help bars with a wall right behind them, but doorways usually have several metres of room beyond.
+3. **Bird's-eye-view mode for the phone viewer** — top-down body-centered radar display instead of the sensor-grid layout. Becomes more useful once the second sensor is in (one fused view of all obstacles around me, not two separate per-sensor grids).
+4. **IMU on the helmet** — gravity-anchored pitch/roll so the slant→forward correction adapts when I look up/down instead of assuming level head. Cheaper interim path: iPhone IMU streamed over WiFi UDP (Phyphox app).
+5. **Phase 2 — USB camera + CV** — classify what the ToF is detecting (person vs wall vs glass) so the alert pattern can encode object type, not just distance.
 
-Full living version of the next-steps list is in [`todo.md`](todo.md).
+Living list of all open work, hardware notes, and recurring pitfalls is in [`todo.md`](todo.md).
 
 ---
 

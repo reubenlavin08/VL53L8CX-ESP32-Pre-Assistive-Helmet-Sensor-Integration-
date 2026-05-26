@@ -8,15 +8,16 @@ Living list of work for this project. Append-only during sessions; check items o
 - [x] **README first-person rewrite.** v9 now in first person; earlier sections were already mostly first-person (only remaining "you/your" are reader-addressed instructional bits, which is correct README style).
 - [x] **Embed test rig photos in README.** `rig_wide_full_setup.jpg` + `rig_close_sensor_and_board.jpg` now inline at top of v9 section.
 - [x] **"Limitations of this analysis" subsection added to README** with explicit caveats about ambient light, untested surfaces, motion noise, and coverage gaps.
-- [ ] **Helmet-mount tilt calibration via wall stare.** Wear the helmet, stand facing a flat wall at known distance, capture N frames. From the per-row mean distance, solve for actual sensor pitch angle. Then bake that into the slant-compensation math. Better than eyeballing the mount angle.
+- [x] **Helmet-mount tilt calibration via wall stare** (done 2026-05-25). Sensor at 73", wall at 32", 200-frame capture. Fit gave **~13° pitch down** (dominant) plus a small ~few-degree roll that I'm ignoring as second-order for now. Calibration script lives at `visualizer/calibrate_tilt.py`; raw capture in `visualizer/raw_frames/wall-tilt-calib-h185cm-d81cm_*.csv`.
 
 ## Queued (in order)
 
-1. [ ] **Per-row slant compensation in firmware.**
-   - Assumption: sensor at 195 cm helmet height, mounted level.
-   - For each row r of the rotated 8×8 grid, precompute the zone's elevation angle below horizontal.
-   - Convert reported slant distance to forward distance: `forward = slant × cos(zone_elevation)`.
-   - Alert on forward distance, not slant. Fixes the "chair at 50 cm forward reads 130 cm slant and never triggers" problem.
+1. [~] **Per-row slant compensation in firmware** — IMPLEMENTED, awaiting flash.
+   - `MOUNT_PITCH_DEG = 13.0f` in `main.c`, anchored by the wall-stare calibration.
+   - `compute_row_cos_table()` builds the per-row cosine table at sensor init.
+   - Nearest-distance loop now iterates body-frame zones and multiplies slant by `g_row_cos[row]` before comparing to threshold.
+   - Practical effect at 13° pitch (8x8): top rows barely change (cos ~0.99), bottom row reads 84% of slant (cos = 0.84). Floor-near obstacles in lower rows now trigger sooner.
+   - Raw `DATA:` stream is unaffected (still slant) — analysis tools see what the sensor sees.
 2. [ ] **Multi-target per zone (`VL53L8CX_NB_TARGET_PER_ZONE = 2`).**
    - Enables sensor to detect both the pullup bar AND the wall behind it as separate targets per zone.
    - Combined with `TARGET_ORDER = CLOSEST`, the bar wins.
@@ -25,6 +26,19 @@ Living list of work for this project. Append-only during sessions; check items o
    - Walk hallways, doorways, around furniture.
    - Specifically test: pullup bar / overhead doorframe, chair near body, dark fabric, glass at angle, lighting changes (indoor → outdoor).
    - Decide based on real use whether a 2nd sensor is needed.
+
+## Live test snapshots
+
+- **2026-05-25:** Bumped `MOUNT_PITCH_DEG` 13° → 20° based on user re-measurement after physical mount adjustment. Should be re-verified with another wall-stare capture when convenient. Compensation table at 20° pitch on 8x8: row 0 cos = 0.98 (top, basically unchanged), row 7 cos = 0.74 (bottom, ~26% reduction).
+- **2026-05-25:** ESP-direct web viewer live at `http://192.168.1.228/`. Phone-friendly. Shows nearest forward distance + 8×8 grid with red=close, green=far. Polls `/api/status` every 200 ms.
+
+## Dynamic-testing findings (live observations during wearable testing)
+
+- **2026-05-25: chest-and-below obstacles invisible at close range.** Confirmed by walking-around test. Sensor at 186 cm helmet height + 13° pitch + 22.5° half-FoV means bottom edge of view is 35.5° below horizontal. Belly button (~120 cm body) at 60 cm forward needs 47.7° down → outside cone. Chest (~140 cm) needs 37.5° down → also outside. Slant compensation can't fix this — it's the FoV geometry. **Vertical angular range needed to cover "slightly-above-head + belly-button at 60 cm" = ~61°, but sensor only has 45° vertical FoV. One head-mounted sensor cannot cover both ends.** Options:
+  - Bump `MOUNT_PITCH_DEG` to **20°** (recommended single-sensor compromise): top of FoV at 2.5° above horizontal (keeps a bit of head-height coverage), bottom at 42.5° (catches down to lower chest at 60 cm). Belly button still uncovered.
+  - Bump to 25–30° to catch belly button, lose all above-horizontal coverage.
+  - Mount sensor lower on body (chest). Belly button becomes near-horizontal. Loses overhead.
+  - Add second VL53L8CX aimed downward (already on future-ideas list — this is the real fix).
 
 ## Future ideas (no commitment, log only)
 
@@ -62,7 +76,7 @@ Living list of work for this project. Append-only during sessions; check items o
 ## Recurring bugs / pitfalls (don't repeat)
 
 - ESP I²C sensor init fails ~20% of the time on warm reboot. Mitigation: host-side 3× retry in `run_one_test.ps1`.
-- OTA can leave one partition in a corrupted state after many cycles. Fix: USB-flash via `idf.py -p COM10 flash` rewrites both slots cleanly.
+- ~~OTA can leave one partition in a corrupted state after many cycles.~~ **FIXED** with `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` + `esp_ota_mark_app_valid_cancel_rollback()` call in `ota_rollback_confirm_task` (waits for WiFi + first sensor frame, then confirms). Bad OTAs now auto-revert to the previous slot instead of bricking.
 - PowerShell em-dashes (`—`) in `.ps1` files trip Windows PS 5.1 parser. Stick to ASCII.
 - Reader-thread Qt signal queue accumulation makes the visualizer lag after thousands of frames. Fixed: GUI polls latest frame at 30 Hz via QTimer, drops intermediate.
 

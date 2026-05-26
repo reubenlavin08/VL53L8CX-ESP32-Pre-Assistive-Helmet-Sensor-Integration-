@@ -20,6 +20,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,6 +34,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_ota_ops.h"
 #include "esp_http_server.h"
 #include "nvs_flash.h"
@@ -55,7 +57,7 @@
 
 /* â”€â”€ Sensor configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_8X8        /* 64 zones (finer spatial detail) */
-#define RANGING_FREQ_HZ     10                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
+#define RANGING_FREQ_HZ     15                             /* 1-60 Hz at 4X4, 1-15 Hz at 8X8 */
 #define RANGING_MODE        VL53L8CX_RANGING_MODE_CONTINUOUS
 #define SHARPENER_PERCENT   5                              /* 0=off, 5=default, 99=max */
 #define TARGET_ORDER        VL53L8CX_TARGET_ORDER_CLOSEST  /* CLOSEST for obstacle avoidance */
@@ -70,6 +72,15 @@
  *   output col N-1 = right of body
  * If the rendered view is wrong, flip this to 90, 180, 270, or 0. */
 #define MOUNT_ROTATION_DEG  270
+
+/* Optical-axis pitch below horizontal when helmet is worn level (degrees).
+ * Measured by wall-stare calibration on 2026-05-25 with sensor at 73",
+ * wall at 32". Used to convert slant distance per zone to body-frame
+ * forward distance for the obstacle-alert logic (so a floor obstacle close
+ * to the body triggers the alert even though its slant distance is large).
+ * Raw DATA: stream is NOT affected -- that stays as raw slant. */
+#define MOUNT_PITCH_DEG     20.0f
+#define MAX_GRID_SIDE       8
 
 /* â”€â”€ Display options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define PRINT_GRID          0
@@ -96,10 +107,64 @@ static int s_retry_num = 0;
 static int g_client_socks[MAX_TCP_CLIENTS];
 static SemaphoreHandle_t g_client_mutex = NULL;
 
-/* Nearest valid zone distance in mm, updated by ranging_task each frame.
- * 32-bit reads/writes are atomic on ESP32-S3, so no mutex needed for a
- * single int. INT16_MAX = no valid zone yet. */
+/* Nearest valid zone FORWARD distance in mm (i.e. slant distance projected
+ * onto the body's horizontal forward axis using the per-row cosine table),
+ * updated by ranging_task each frame. 32-bit reads/writes are atomic on
+ * ESP32-S3, so no mutex needed. INT16_MAX = no valid zone yet. */
 static volatile int16_t g_nearest_mm = INT16_MAX;
+
+/* True if any zone's forward distance is below its row's threshold this
+ * frame. Buzzer fires on this flag, not on a single global threshold,
+ * because lower rows need larger thresholds — their FoV exits BEFORE the
+ * obstacle reaches body proximity, so the alert has to fire while the
+ * obstacle is still in view. */
+static volatile bool g_alert_active = false;
+
+/* Per-row forward-distance threshold (mm). Output rows are body-frame after
+ * the rotation remap: row 0 = top of view (overhead/head), row 7 = bottom
+ * (body/waist). Larger thresholds for lower rows give the alert time to
+ * fire before the obstacle exits FoV.
+ *
+ * Logic: row 7 with 20° pitch looks at 32–42° below horizontal, exits the
+ * FoV at horizontal ~70 cm forward for belly-button-height obstacles.
+ * Setting row 7 threshold to 1200 mm means the alert fires while obstacle
+ * is still ~100 cm forward — comfortably in view, comfortably actionable.
+ */
+static const int16_t g_row_threshold_mm[MAX_GRID_SIDE] = {
+    600,    /* row 0 — overhead / well above head */
+    600,    /* row 1 — head height */
+    600,    /* row 2 — face / upper head */
+    600,    /* row 3 — center (optical axis area, head/shoulder) */
+    700,    /* row 4 — shoulder */
+    800,    /* row 5 — upper chest */
+    850,    /* row 6 — chest */
+    900,    /* row 7 — belly button / waist (capped at 900 — 1200 was catching helmet rim) */
+};
+
+/* Per-row cosine table: forward_distance = slant_distance * g_row_cos[row]
+ * Built once at startup from MOUNT_PITCH_DEG + each row's elevation offset
+ * from the optical axis. Row index is in body-frame (post-rotation). */
+static float g_row_cos[MAX_GRID_SIDE];
+
+/* Latest frame's forward-distance grid (rotation + slant compensation applied),
+ * 64 zones max. -1 = invalid. Read by /api/status web handler. */
+static volatile int16_t g_latest_forward[MAX_GRID_SIDE * MAX_GRID_SIDE];
+static volatile int     g_latest_grid_side = 0;
+
+static void compute_row_cos_table(int side)
+{
+    float deg_per_zone = 45.0f / (float)side;
+    float pitch_rad    = MOUNT_PITCH_DEG * (float)M_PI / 180.0f;
+    for (int r = 0; r < side; r++) {
+        /* alpha_row: elevation of this row's center relative to optical axis.
+         * Row 0 (top of body view) = looking UP from optical axis = negative.
+         * Row N-1 (bottom) = looking DOWN from optical axis = positive. */
+        float alpha_rad = ((float)r - (side - 1) / 2.0f)
+                          * deg_per_zone * (float)M_PI / 180.0f;
+        float elev_rad  = alpha_rad + pitch_rad;
+        g_row_cos[r]    = cosf(elev_rad);
+    }
+}
 
 /* â”€â”€ Broadcast a line to every connected TCP client. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *  On any per-client error, close that socket and clear its slot so the
@@ -312,13 +377,17 @@ static void buzzer_task(void *arg)
     gpio_set_level(BUZZER_GPIO, 0);
     ESP_LOGI(TAG, "Obstacle alert on GPIO %d: %d ms beep when any zone < %d mm",
              BUZZER_GPIO, BEEP_MS, OBSTACLE_THRESHOLD_MM);
+    /* Use the LARGEST row threshold (row 7 at 1200 mm) as the beep-rate scale
+     * — at distance 0 the gap is BEEP_GAP_MIN_MS (frantic), at 1200 mm it's
+     * BEEP_GAP_MAX_MS (slow). */
+    const int beep_scale_mm = g_row_threshold_mm[MAX_GRID_SIDE - 1];
     while (1) {
         int16_t nearest = g_nearest_mm;
-        if (nearest > 0 && nearest < OBSTACLE_THRESHOLD_MM) {
-            /* Linear: gap = MIN at distance=0, gap = MAX at distance=threshold. */
+        bool    alert   = g_alert_active;
+        if (alert && nearest > 0) {
             int gap = BEEP_GAP_MIN_MS +
                       (int)((BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) *
-                            (int32_t)nearest / OBSTACLE_THRESHOLD_MM);
+                            (int32_t)nearest / beep_scale_mm);
             if (gap < BEEP_GAP_MIN_MS) gap = BEEP_GAP_MIN_MS;
             if (gap > BEEP_GAP_MAX_MS) gap = BEEP_GAP_MAX_MS;
             gpio_set_level(BUZZER_GPIO, 1);
@@ -331,6 +400,36 @@ static void buzzer_task(void *arg)
     }
 }
 #endif
+
+/* OTA rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE, a
+ * freshly OTAed image boots in "pending_verify" state. We must call
+ * esp_ota_mark_app_valid_cancel_rollback() before the next boot, or the
+ * bootloader auto-reverts to the previous slot. Confirm only after WiFi is
+ * up AND the sensor has produced at least one frame -- proving both
+ * subsystems work. Prevents bricked-partition recovery cycles. */
+static void ota_rollback_confirm_task(void *arg)
+{
+    xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT,
+                        pdFALSE, pdTRUE, portMAX_DELAY);
+    int settle_ms = 0;
+    while (g_nearest_mm == INT16_MAX && settle_ms < 15000) {
+        vTaskDelay(pdMS_TO_TICKS(250));
+        settle_ms += 250;
+    }
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (running && esp_ota_get_state_partition(running, &state) == ESP_OK) {
+        if (state == ESP_OTA_IMG_PENDING_VERIFY) {
+            esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            ESP_LOGI(TAG, "OTA confirm: image healthy, rollback cancelled (%s)",
+                     esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "OTA confirm: image already marked valid (state=%d)",
+                     (int)state);
+        }
+    }
+    vTaskDelete(NULL);
+}
 
 /* â”€â”€ WiFi event handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
@@ -399,33 +498,50 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "OTA: upload starting (Content-Length=%d)", req->content_len);
+    ESP_LOGI(TAG, "OTA: upload starting (Content-Length=%d, free_heap=%lu B, min_free=%lu B)",
+             req->content_len,
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)esp_get_minimum_free_heap_size());
 
     const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
     if (!next) {
+        ESP_LOGE(TAG, "OTA: esp_ota_get_next_update_partition returned NULL");
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "no OTA partition available\n");
         return ESP_FAIL;
     }
-    ESP_LOGI(TAG, "OTA: writing to partition '%s' at offset 0x%lx",
-             next->label, (unsigned long)next->address);
+    ESP_LOGI(TAG, "OTA: target partition '%s' at offset 0x%lx, size 0x%lx",
+             next->label, (unsigned long)next->address, (unsigned long)next->size);
 
     esp_ota_handle_t handle = 0;
     esp_err_t err = esp_ota_begin(next, OTA_SIZE_UNKNOWN, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "esp_ota_begin failed: %s (free_heap=%lu)", esp_err_to_name(err),
+                 (unsigned long)esp_get_free_heap_size());
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, esp_err_to_name(err));
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "OTA: esp_ota_begin OK (handle=%lu, free_heap=%lu)",
+             (unsigned long)handle, (unsigned long)esp_get_free_heap_size());
 
     char buf[1024];
     int total = 0;
     int recv;
+    int next_heap_log_at = 0;   /* log heap every 64 KB */
     while ((recv = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+        if (total >= next_heap_log_at) {
+            ESP_LOGI(TAG, "OTA: progress %d B  free_heap=%lu  min_free=%lu",
+                     total,
+                     (unsigned long)esp_get_free_heap_size(),
+                     (unsigned long)esp_get_minimum_free_heap_size());
+            next_heap_log_at += 64 * 1024;
+        }
         err = esp_ota_write(handle, buf, recv);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "esp_ota_write failed at %d bytes: %s", total, esp_err_to_name(err));
+            ESP_LOGE(TAG, "esp_ota_write FAILED at %d bytes: %s  free_heap=%lu",
+                     total, esp_err_to_name(err),
+                     (unsigned long)esp_get_free_heap_size());
             esp_ota_abort(handle);
             httpd_resp_set_status(req, "500 Internal Server Error");
             httpd_resp_sendstr(req, esp_err_to_name(err));
@@ -434,14 +550,16 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         total += recv;
     }
     if (recv < 0) {
-        ESP_LOGE(TAG, "httpd_req_recv failed at %d bytes", total);
+        ESP_LOGE(TAG, "httpd_req_recv FAILED at %d bytes  (errno=%d, free_heap=%lu)",
+                 total, errno, (unsigned long)esp_get_free_heap_size());
         esp_ota_abort(handle);
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req, "recv failed mid-stream\n");
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "OTA: %d bytes received, finalizing", total);
+    ESP_LOGI(TAG, "OTA: %d bytes received, finalizing (free_heap=%lu)",
+             total, (unsigned long)esp_get_free_heap_size());
 
     err = esp_ota_end(handle);
     if (err != ESP_OK) {
@@ -466,27 +584,126 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     return ESP_OK;   /* unreachable */
 }
 
+/* ── Minimal phone-friendly HTML viewer served at GET / ─────────────────────
+ * Polls /api/status every 200 ms, shows the nearest forward distance as a
+ * big colored number. Designed for a phone browser; no laptop required.
+ */
+static const char VIEWER_HTML[] =
+"<!DOCTYPE html><html><head>"
+"<meta name='viewport' content='width=device-width,initial-scale=1,user-scalable=no'>"
+"<title>Helmet</title>"
+"<style>"
+"html,body{margin:0;padding:0;height:100%;font-family:-apple-system,monospace;background:#111;color:#eee;}"
+".card{height:60vh;display:flex;flex-direction:column;justify-content:center;align-items:center;transition:background .15s;}"
+".dist{font-size:28vw;font-weight:700;line-height:1;}"
+".unit{font-size:4vw;opacity:.7;margin-top:1vh;}"
+".clear{background:#062;}.warn{background:#963;}.alert{background:#a02;}.dead{background:#333;}"
+".meta{padding:3vw;font-size:4vw;line-height:1.5;}"
+".grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:2vw;}"
+".cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:2.5vw;background:#222;border-radius:4px;color:#888;}"
+"</style></head><body>"
+"<div id='card' class='card dead'>"
+"<div class='dist' id='val'>---</div>"
+"<div class='unit'>cm forward to nearest</div></div>"
+"<div class='meta'>"
+"alert <span id='alt'>?</span> &middot; valid <span id='vc'>?</span>/<span id='vt'>?</span> &middot; row thresholds (cm): <span id='thrs'>?</span>"
+"</div>"
+"<div class='grid' id='grid'></div>"
+"<script>"
+"const grid=document.getElementById('grid');"
+"const fmt=mm=>Math.round(mm/10);"
+"async function tick(){"
+"try{const r=await fetch('/api/status');if(!r.ok)throw 0;const d=await r.json();"
+"const v=d.nearest_mm;const el=document.getElementById('val');const c=document.getElementById('card');"
+"if(v<0||v>=4000){el.textContent='---';c.className='card dead';}"
+"else{el.textContent=fmt(v);c.className='card '+(d.alert?'alert':(v<1500?'warn':'clear'));}"
+"document.getElementById('alt').textContent=d.alert?'ON':'off';"
+"document.getElementById('thrs').textContent=d.row_thresholds_mm.map(fmt).join(', ');"
+"const side=d.side;document.getElementById('vt').textContent=side*side;"
+"let nval=0;if(grid.children.length!==side*side){grid.style.gridTemplateColumns='repeat('+side+',1fr)';grid.innerHTML='';for(let i=0;i<side*side;i++){const e=document.createElement('div');e.className='cell';grid.appendChild(e);}}"
+"for(let i=0;i<side*side;i++){const z=d.grid[i];const e=grid.children[i];const row=Math.floor(i/side);const thr=d.row_thresholds_mm[row];if(z<0){e.textContent='-';e.style.background='#222';e.style.color='#555';}else{nval++;e.textContent=fmt(z);const f=Math.min(1,z/(1.5*thr));e.style.background='hsl('+(f*120)+',70%,30%)';e.style.color='#fff';}}"
+"document.getElementById('vc').textContent=nval;"
+"}catch(e){document.getElementById('val').textContent='ERR';document.getElementById('card').className='card dead';}"
+"}setInterval(tick,200);tick();"
+"</script></body></html>";
+
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, VIEWER_HTML, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t status_get_handler(httpd_req_t *req)
+{
+    int side = g_latest_grid_side;
+    if (side <= 0) side = 8;
+    int total = side * side;
+    int16_t nearest = g_nearest_mm;
+    bool alert = g_alert_active;
+
+    /* JSON includes per-row thresholds so the viewer can colour each row
+     * against its own threshold. */
+    char buf[2560];
+    int off = snprintf(buf, sizeof(buf),
+        "{\"nearest_mm\":%d,\"alert\":%s,\"side\":%d,\"row_thresholds_mm\":[",
+        (int)nearest, alert ? "true" : "false", side);
+    for (int r = 0; r < side && off < (int)sizeof(buf) - 8; r++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%d", r ? "," : "", (int)g_row_threshold_mm[r]);
+    }
+    off += snprintf(buf + off, sizeof(buf) - off, "],\"grid\":[");
+    for (int i = 0; i < total && off < (int)sizeof(buf) - 8; i++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%d", i ? "," : "", (int)g_latest_forward[i]);
+    }
+    off += snprintf(buf + off, sizeof(buf) - off, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, buf, off);
+    return ESP_OK;
+}
+
+static esp_err_t health_get_handler(httpd_req_t *req)
+{
+    char buf[256];
+    int off = snprintf(buf, sizeof(buf),
+        "{\"free_heap\":%lu,\"min_free_heap\":%lu,\"uptime_ms\":%lu,\"frames\":%lu}",
+        (unsigned long)esp_get_free_heap_size(),
+        (unsigned long)esp_get_minimum_free_heap_size(),
+        (unsigned long)(esp_timer_get_time() / 1000),
+        (unsigned long)g_latest_grid_side);   /* placeholder — frame count if added later */
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, buf, off);
+    return ESP_OK;
+}
+
 static void start_ota_server(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.server_port = OTA_HTTP_PORT;
-    cfg.recv_wait_timeout = 30;
-    cfg.send_wait_timeout = 30;
-    cfg.stack_size = 8192;
+    cfg.server_port       = OTA_HTTP_PORT;
+    cfg.recv_wait_timeout = 60;          /* longer wait so slow flash writes don't drop OTA */
+    cfg.send_wait_timeout = 60;
+    cfg.stack_size        = 12288;       /* extra headroom for OTA write paths */
+    cfg.max_uri_handlers  = 8;
 
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start OTA HTTP server");
+        ESP_LOGE(TAG, "Failed to start HTTP server");
         return;
     }
-    httpd_uri_t ota_uri = {
-        .uri = "/update",
-        .method = HTTP_POST,
-        .handler = ota_post_handler,
-        .user_ctx = NULL,
-    };
+    httpd_uri_t ota_uri    = { .uri = "/update",      .method = HTTP_POST, .handler = ota_post_handler,    .user_ctx = NULL };
+    httpd_uri_t root_uri   = { .uri = "/",            .method = HTTP_GET,  .handler = root_get_handler,    .user_ctx = NULL };
+    httpd_uri_t status_uri = { .uri = "/api/status",  .method = HTTP_GET,  .handler = status_get_handler,  .user_ctx = NULL };
+    httpd_uri_t health_uri = { .uri = "/api/health",  .method = HTTP_GET,  .handler = health_get_handler,  .user_ctx = NULL };
     httpd_register_uri_handler(server, &ota_uri);
-    ESP_LOGI(TAG, "OTA HTTP server listening on port %d (POST /update)", OTA_HTTP_PORT);
+    httpd_register_uri_handler(server, &root_uri);
+    httpd_register_uri_handler(server, &status_uri);
+    httpd_register_uri_handler(server, &health_uri);
+    ESP_LOGI(TAG, "HTTP server on port %d: GET / (viewer), GET /api/status, GET /api/health, POST /update",
+             OTA_HTTP_PORT);
 }
 
 /* â”€â”€ TCP server task â€” single-client, blocks on accept() between clients â”€â”€â”€â”€ */
@@ -630,6 +847,16 @@ static void ranging_task(void *arg)
              (TARGET_ORDER == VL53L8CX_TARGET_ORDER_CLOSEST) ? "CLOSEST" : "STRONGEST",
              STATUS_FILTER_STRICT ? "{5} strict" : "{5,6,9}");
 
+    /* Build the per-row slant->forward cosine table for the buzzer logic */
+    int side_init = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
+    compute_row_cos_table(side_init);
+    ESP_LOGI(TAG, "Mount pitch %.1f deg DOWN -- slant->forward cosines:",
+             (double)MOUNT_PITCH_DEG);
+    for (int r = 0; r < side_init; r++) {
+        ESP_LOGI(TAG, "  row %d: cos = %.4f  (forward = slant * %.4f)",
+                 r, (double)g_row_cos[r], (double)g_row_cos[r]);
+    }
+
     ret = vl53l8cx_start_ranging(&sensor);
     if (ret != VL53L8CX_STATUS_OK) {
         ESP_LOGE(TAG, "start_ranging failed (ret=%u)", ret);
@@ -655,20 +882,39 @@ static void ranging_task(void *arg)
         }
         ++frame_num;
 
-        /* Update nearest-valid-zone for the buzzer task. */
-        int total_zones = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
-        int16_t nearest = INT16_MAX;
-        for (int z = 0; z < total_zones; z++) {
-            uint8_t status = results.target_status[z * VL53L8CX_NB_TARGET_PER_ZONE];
+        /* Update nearest-valid-zone FORWARD distance for the buzzer task.
+         * Iterate in body-frame (output) order so each zone's row index r_out
+         * matches the per-row cosine table built in compute_row_cos_table().
+         * Forward distance = slant * cos(row_elevation + mount_pitch). */
+        int side        = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
+        int total_zones = side * side;
+        int16_t nearest_forward = INT16_MAX;
+        bool    any_alert       = false;
+        for (int z_out = 0; z_out < total_zones; z_out++) {
+            int z_src = rotated_zone(z_out, side);
+            int r_out = z_out / side;
+            uint8_t status = results.target_status[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
             bool status_ok = STATUS_FILTER_STRICT
                            ? (status == 5)
                            : (status == 5 || status == 6 || status == 9);
-            if (results.nb_target_detected[z] > 0 && status_ok) {
-                int16_t d = results.distance_mm[z * VL53L8CX_NB_TARGET_PER_ZONE];
-                if (d > 0 && d < nearest) nearest = d;
+            int16_t forward_for_grid = -1;
+            if (results.nb_target_detected[z_src] > 0 && status_ok) {
+                int16_t slant = results.distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
+                if (slant > 0) {
+                    int16_t forward = (int16_t)((float)slant * g_row_cos[r_out]);
+                    forward_for_grid = forward;
+                    if (forward < nearest_forward) nearest_forward = forward;
+                    /* Per-row threshold check: only the top index of the row
+                     * matters (r_out is the same for all columns in a row),
+                     * but we apply it per-zone for correctness. */
+                    if (forward < g_row_threshold_mm[r_out]) any_alert = true;
+                }
             }
+            g_latest_forward[z_out] = forward_for_grid;
         }
-        g_nearest_mm = nearest;
+        g_nearest_mm        = nearest_forward;
+        g_alert_active      = any_alert;
+        g_latest_grid_side  = side;
 
 #if STREAM_DATA
         stream_distance_line(&results, SENSOR_RESOLUTION);
@@ -728,4 +974,8 @@ void app_main(void)
     /* Buzzer / GPIO control task. 4096 byte stack â€” 2048 was overflowing. */
     xTaskCreate(buzzer_task, "buzzer", 4096, NULL, 2, NULL);
 #endif
+
+    /* OTA rollback safety: confirm this image works (WiFi + sensor both up)
+     * within ~30 s of boot, else bootloader auto-reverts to previous slot. */
+    xTaskCreate(ota_rollback_confirm_task, "ota_confirm", 4096, NULL, 3, NULL);
 }

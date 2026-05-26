@@ -1,8 +1,10 @@
 # Increase main task stack — VL53L8CX ULD needs at least 7168 bytes
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# Log level
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# Log level — verbose globally to diagnose OTA failures. Can drop back to
+# INFO once OTA write failures are understood. Costs a few % CPU + flash.
+CONFIG_LOG_DEFAULT_LEVEL_VERBOSE=y
+CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT=y
 
 # I2C driver
 CONFIG_I2C_ENABLE_DEBUG_LOG=n
@@ -17,3 +19,8 @@ CONFIG_PARTITION_TABLE_TWO_OTA=y
 # Flash size — ESP32-S3 N16R8 has 16 MB of flash on board
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# OTA rollback: bootloader auto-reverts to previous slot if the new image
+# fails to call esp_ota_mark_app_valid_cancel_rollback() within boot. Prevents
+# bricked partitions from bad OTAs (we've hit this twice — see todo.md).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
