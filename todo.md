@@ -73,17 +73,21 @@ Living list of work for this project. Append-only during sessions; check items o
 - Bar in doorway with **open space behind it** (gap > 60 cm) → NB=2 + CLOSEST will resolve the bar separately. Worth trying.
 - Bar with **wall close behind it** (gap < 60 cm) → multi-target won't help, sensor fundamentally can't separate them. Need a different approach (different mount angle, second sensor aimed slightly upward, etc.).
 
-## OTA root-cause finding (2026-05-25 evening, RESUME HERE TOMORROW)
+## OTA root-cause finding — RESOLVED 2026-05-26
 
-Spent the evening debugging "OTA fails mid-stream" with serial captures over COM10. Real cause found:
+Spent the evening of 2026-05-25 debugging "OTA fails mid-stream" with serial captures over COM10. Real cause:
 
-- **Verbose logging was throttling OTA to UART speed.** With `CONFIG_LOG_DEFAULT_LEVEL_VERBOSE`, every OTA chunk produced ~400 B of UART log output. At 115200 baud (= ~11 KB/s ceiling), log writes blocked the OTA task, slowing the whole transfer to ~15 KB/s. A 930 KB OTA then took 60+ seconds and curl's `--max-time 90` would clip the tail.
-- **Heap was healthy throughout.** Free heap stable at 237 KB, min-free 229 KB unchanged — disproves my earlier heap-fragmentation hypothesis.
-- **`esp_ota_write` was succeeding on every chunk.** No actual partition-corruption issue this session. (Earlier "mid-stream drops at 65 KB" were probably real partition corruption from a different cause — USB flash recovered each time. Need fresh data to confirm if it recurs.)
+- **Verbose logging was throttling OTA to UART speed.** With `CONFIG_LOG_DEFAULT_LEVEL_VERBOSE`, every OTA chunk produced ~400 B of UART log output. At 115200 baud (~11 KB/s ceiling), log writes blocked the OTA task, slowing the whole transfer to ~15 KB/s. A 930 KB OTA then took 60+ seconds and curl's `--max-time 90` clipped the tail.
+- **Heap was healthy throughout** (237 KB free, min-free 229 KB stable). Disproves the heap-fragmentation hypothesis.
+- **`esp_ota_write` succeeded on every chunk.** No actual partition corruption this session. Earlier 65 KB mid-stream drops were real partition damage from accumulated bad-OTA boots before rollback was enabled — those are prevented now.
 
-**Resolution:** Reverted `sdkconfig.defaults` to `CONFIG_LOG_DEFAULT_LEVEL_INFO`, kept the OTA-handler heap-progress logs (they're at INFO level, no throttle penalty). USB-flashed the new firmware. **Verify in the morning** that OTA now completes in <10 s instead of 60+.
+**Fix applied:** `sdkconfig.defaults` reverted to `CONFIG_LOG_DEFAULT_LEVEL_INFO`. OTA-handler heap-progress logs kept (INFO level, no throttle penalty).
 
-If OTA still flakes after this change: the diagnostics (`/api/health` for live heap, per-64 KB heap reports, verbose can be re-enabled selectively per ESP-IDF tag via `esp_log_level_set("ota", ESP_LOG_VERBOSE)` without slowing the whole system) are all in place.
+**Verified 2026-05-26 morning:** OTA push timed at **6.3 seconds at 164 KB/s** (was 60+ s at 15 KB/s). Clean reboot, sensor streaming after, heap healthy. Case closed.
+
+**What still could break OTA (recoverable, not blocking):**
+- Sensor I²C init flake (~20% of warm reboots) is independent of OTA but could prevent the HTTP server coming up that boot.
+- Other future causes (long-uptime heap fragmentation, WiFi rate-limit) → all diagnostic plumbing in place: `serial_capture.py`, `/api/health`, per-chunk heap logs, runtime `esp_log_level_set("OTA", ESP_LOG_VERBOSE)` to enable verbose without throttling.
 
 ## Recurring bugs / pitfalls (don't repeat)
 
