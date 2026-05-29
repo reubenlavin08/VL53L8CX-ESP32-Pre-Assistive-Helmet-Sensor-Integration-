@@ -1,5 +1,7 @@
 # VL53L8CX × ESP32 — Setup Summary
 
+> **Note (2026-05-28):** This doc is a **fresh-machine quickstart**. The project has moved well past the initial setup it describes — current production firmware runs at **4×4 / 30 Hz** (not 8×8 / 10 Hz), with WiFi streaming, OTA updates, body-frame rotation, per-row slant compensation, a buzzer alert, and a 3-motor directional haptic ring. For everything past first-boot, see [`README.md`](README.md) (v7 onward) and [`PROGRESS.md`](PROGRESS.md) (v1–v6).
+
 ## Completed Tasks
 
 - [x] Located the RJRP44 VL53L8CX ESP-IDF library (v4.0.0) on the ESP Component Registry
@@ -147,7 +149,7 @@ The serial monitor opens automatically after flashing. You should see:
 ```
 I (xxx) VL53L8CX: Sensor detected
 I (xxx) VL53L8CX: Uploading ULD firmware (takes ~1 s)...
-I (xxx) VL53L8CX: Sensor ready: 8x8 resolution, 10 Hz
+I (xxx) VL53L8CX: Configured: 4x4, 30 Hz, sharpener=5%, order=CLOSEST, filter={5,6,9}
 I (xxx) VL53L8CX: Ranging started
 I (xxx) VL53L8CX: Frame #1
 
@@ -164,13 +166,15 @@ Press **Ctrl + ]** to exit the monitor.
 
 These defines in `main/main.c` control sensor behaviour:
 
-| Define               | Default                              | Options                                      |
+| Define               | Current default *(see note above)*  | Options                                      |
 |----------------------|--------------------------------------|----------------------------------------------|
-| `SENSOR_RESOLUTION`  | `VL53L8CX_RESOLUTION_8X8`           | `VL53L8CX_RESOLUTION_4X4`                   |
-| `RANGING_FREQ_HZ`    | `10`                                 | 1–15 Hz (8×8) or 1–60 Hz (4×4)              |
-| `RANGING_MODE`       | `VL53L8CX_RANGING_MODE_CONTINUOUS`  | `VL53L8CX_RANGING_MODE_AUTONOMOUS`           |
-| `PRINT_GRID`         | `1`                                  | `0` to disable the ASCII grid                |
-| `PRINT_CLOSEST_ONLY` | `0`                                  | `1` to only log the single nearest zone      |
+| `SENSOR_RESOLUTION`  | `VL53L8CX_RESOLUTION_4X4`            | `_8X8`. 4×4 picked after the v9 sweep — 4× lower per-zone noise, big enough for the helmet's binary-alert use case. |
+| `RANGING_FREQ_HZ`    | `30`                                 | 1–15 Hz at 8×8, 1–60 Hz at 4×4. Picked 30 after wearable-latency analysis (`docs/research-optimal-config.md`). |
+| `RANGING_MODE`       | `VL53L8CX_RANGING_MODE_CONTINUOUS`   | `_AUTONOMOUS` for low-power. |
+| `PRINT_GRID`         | `0`                                  | `1` for the ASCII grid log every frame. |
+| `PRINT_CLOSEST_ONLY` | `0`                                  | `1` to only log the single nearest zone. |
+
+For the full current configuration knob list (HAPTIC_TEST, buzzer, per-row thresholds, MOUNT_ROTATION_DEG, MOUNT_PITCH_DEG, etc.), see the "Configuration knobs" section of [`README.md`](README.md).
 
 ---
 

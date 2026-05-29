@@ -1,7 +1,7 @@
 <h1 align="center">VL53L8CX × ESP32-S3 — Live 3D Point Cloud</h1>
 
 <p align="center">
-  <em>A helmet-mounted obstacle warning device for the visually impaired, built around an 8×8 time-of-flight depth grid on an ESP32-S3. Streams over WiFi, alerts via a buzzer based on body-frame distance, and serves its own iPhone-friendly web viewer so I can debug while wearing it.</em>
+  <em>A helmet-mounted obstacle warning device for the visually impaired, built around a 4×4 time-of-flight depth grid at 30 Hz on an ESP32-S3 (sensor supports 8×8 too — see v9 picks). Streams over WiFi, alerts via a buzzer + 3 directional haptic motors based on body-frame distance, and serves its own iPhone-friendly web viewer so I can debug while wearing it.</em>
 </p>
 
 <p align="center">
@@ -246,6 +246,8 @@ python visualizer.py --port COM12
 
 ## Wiring
 
+### Sensor (SATEL-VL53L8CX)
+
 | SATEL pin | ESP32-S3 pin | Pull-up |
 |---|---|---|
 | `PWREN` | GPIO 5 | 10 kΩ → 3.3 V |
@@ -258,6 +260,19 @@ python visualizer.py --port COM12
 
 > Pull-up resistors connect **between the signal line and 3.3 V**, not in series along the wire. Power the sensor from 3.3 V — not 5 V. Use the **UART USB port** (left, on DevKitC-1) for flashing.
 
+### Actuators (alert outputs)
+
+| Signal | ESP32-S3 pin | Driver | Notes |
+|---|---|---|---|
+| Buzzer | GPIO 6 | direct (drive cap 3, ~40 mA) | active 5 V piezo, `+` → GPIO 6, `−` → GND |
+| Haptic motor — **CENTER** (forehead) | **GPIO 7**  | 1 kΩ → 2N3904 NPN base; collector → motor → 3V3; emitter → GND | LEDC ch 1 / timer 1 @ 1 kHz |
+| Haptic motor — **RIGHT** temple | **GPIO 15** | same driver | LEDC ch 2 / timer 1 |
+| Haptic motor — **LEFT** temple | **GPIO 16** | same driver | LEDC ch 3 / timer 1 |
+
+> Mapping verified 2026-05-28 with the `HAPTIC_ID_MODE` single-pin pulse test (one motor pulses every 3 s, user reports which physical location buzzes). Aliases `HAPTIC_GPIO_CENTER` / `_RIGHT` / `_LEFT` defined in `main.c` so column→motor mapping reads geographically rather than by wiring order.
+
+The buzzer owns LEDC channel 0 / timer 0; haptic motors share timer 1 across channels 1–3 so they can be driven independently from the same PWM frequency source. Motors are 70 Ω ERM coin (~43 mA stall each at 3 V) — well within a 2N3904's 200 mA Ic. Schottky 1N5819 flyback diodes (cathode → 3V3) and a 100 µF bulk cap across the 3V3 rail are recommended for the final perfboard build but were proven unnecessary for bench validation on the dev-board regulator. `main.c` forces all three motor GPIOs to OUTPUT-LOW with a pulldown at the start of `app_main` — guarantees no stuck-on motor across reboots regardless of build configuration.
+
 <details>
 <summary><strong>Configuration knobs (firmware)</strong></summary>
 
@@ -266,8 +281,10 @@ Edit the defines at the top of [`main/main.c`](main/main.c):
 | Define | Default | Options |
 |---|---|---|
 | `GPIO_SDA` / `GPIO_SCL` / `GPIO_PWREN` | 1 / 2 / 5 | any valid GPIO |
-| `SENSOR_RESOLUTION` | `VL53L8CX_RESOLUTION_4X4` *(was 8X8 prior to v7)* | `_8X8`. 4×4 = 16 zones with 4× more SPADs per zone (~2× lower noise per zone); 8×8 = 64 zones with finer spatial detail but 4× higher per-zone noise. |
-| `RANGING_FREQ_HZ` | `8` *(was 15 prior to v7)* | 1–15 Hz (8×8), 1–60 Hz (4×4). Lower Hz → longer auto-integration in CONTINUOUS mode → cleaner data per the √t rule. |
+| `SENSOR_RESOLUTION` | `VL53L8CX_RESOLUTION_4X4` *(was 8X8 prior to v7)* | `_8X8`. 4×4 = 16 zones with 4× more SPADs per zone (~4× lower per-zone noise per the v9 sweep); 8×8 = 64 zones with finer spatial detail but ~4× higher per-zone noise. |
+| `RANGING_FREQ_HZ` | `30` *(was 15 / 10 / 8 in earlier iterations)* | 1–15 Hz at 8×8, 1–60 Hz at 4×4. Wearable-latency analysis (see `docs/research-optimal-config.md` Phase 1) showed frame latency dominates per-zone noise by 10–40× for a moving user — picked 30 Hz over 10 Hz for the reaction-time gain. 60 Hz worth empirical testing. |
+| `HAPTIC_TEST` | `0` | `1` runs the 3-motor bench/identify test instead of the sensor pipeline (WiFi + OTA stay up either way). See v11. |
+| `HAPTIC_ID_MODE` | `0` | When `HAPTIC_TEST=1`, set to `1` to pulse only `HAPTIC_ID_GPIO` for physical-motor identification. |
 | `RANGING_MODE` | `VL53L8CX_RANGING_MODE_CONTINUOUS` | `_AUTONOMOUS` to set integration time explicitly |
 | `STREAM_DATA` | `1` | `0` to silence the `DATA:` lines |
 | `STREAM_SIGMA` | `1` | `0` to silence the `SIGMA:` lines (v7+) |
@@ -754,15 +771,103 @@ I'm running v10 with pitch 20° (keeps top-of-FoV overhead detection while exten
 
 ---
 
+## v11 — Directional haptic feedback (3-motor ring)
+
+v10's buzzer encoded *distance* via beep rate but not *direction* — a chirp told me something was close, but not whether it was to my left, ahead, or right. v11 adds three ERM coin motors driven from the ESP, mapped to the FoV's left / center / right columns, so the alert is now two-dimensional: the buzzer says "obstacle, close" and the motor against my skin says "on your left."
+
+### What changed
+
+**Three vibration motors on GPIOs 7 / 15 / 16.** Each motor is switched by a low-side 2N3904 NPN BJT (1 kΩ base resistor, motor sits between collector and 3V3, emitter to GND). All three share LEDC timer 1 at 1 kHz across channels 1–3 (the buzzer keeps timer 0 / channel 0 — independent), so PWM duty cycle controls intensity per-motor with no cross-talk. Physical mapping (verified 2026-05-28 by single-pin pulse test): **GPIO 7 = center / forehead**, **GPIO 15 = right temple**, **GPIO 16 = left temple**.
+
+**`HAPTIC_TEST` build flag in `main.c`.** Setting `#define HAPTIC_TEST 1` makes `app_main` skip the sensor ranging task and run `haptic_test_task` instead — full-on for 1.5 s on motor A, then ramp; same for B then C; then all three together. WiFi + the OTA HTTP server still come up, so I can OTA back to normal firmware without touching USB. This is the workflow that proved out all three motors over the air in a single afternoon (2026-05-28).
+
+**Boot-time safety GPIO config.** Before anything else in `app_main` — even before NVS or WiFi — the three motor GPIOs are explicitly forced to OUTPUT-LOW with a pulldown enabled. Runs regardless of `HAPTIC_TEST`. This belt-and-suspenders step exists because of a real failure I hit during bring-up: a motor wired directly between 3V3 and ground (bypassing the transistor) was running continuously, generating broadband brush-arc noise that coupled onto the shared 3V3 rail AND radiated into the nearby I²C pull-up wires, corrupting the VL53L8CX's ~80 KB ULD firmware upload at sensor init. Fixing the wiring restored the sensor; the safety config ensures even a stuck-on transistor or a flaky reboot can't leave a motor running silently and overheating.
+
+### Bring-up sequence I followed
+
+Documented in [`docs/haptics-bringup.md`](docs/haptics-bringup.md), but the short version:
+
+1. **Motor sanity** — motor leads briefly to 3V3 + GND. Confirms motor is alive and is NOT a piezo (piezo reads open-circuit; this read 70 Ω → real coil → needs flyback diode for clean switching).
+2. **Driver build** — 2N3904 + 1 kΩ base resistor. Verified with multimeter diode mode (B→E and B→C both ~0.7 V) to confirm the pinout (E-B-C left-to-right, flat face toward me).
+3. **One motor on GPIO 7** with `HAPTIC_TEST = 1`. OTA-flashed. Felt smooth ramp 0→100 %. (2026-05-26.)
+4. **Scaled to three motors** on GPIO 7 / 15 / 16. Per-motor phase verified each one fires on cue; all-three-together at full duty draws ~130 mA on the shared 3V3 rail without browning out the regulator or any visible sensor disturbance. (2026-05-28.)
+5. **Caps + diodes intentionally skipped for bench**. The 1N5819 Schottky kit is in the mail; 33 µF + 22 µF caps are on hand but not soldered. Recommended for the final worn-perfboard build, not required for the dev board.
+
+### Why directional haptics matter for this helmet
+
+For a visually-impaired user, "something is close" without "where" forces them to stop and sweep their head to localise — exactly the failure mode Ghaffari et al. 2025 hit with single-buzzer alerts. With three motors at left temple / forehead / right temple the alert encodes left / centre / right directly into skin, which (per their wrist-haptic study) the brain localises laterally with near-100 % accuracy in well-separated mounts. The centre (forehead) motor stays useful as a "straight ahead" cue even when the user is turning, because head-relative direction is what they actually need to steer around.
+
+Comfort caveat: the same Ghaffari paper switched from head to wrist haptics because pilot users found head-mounted ERMs uncomfortable for sustained wear. Worth pressure-testing the helmet ring on long sessions before committing to the design.
+
+### Directional drive (column → motor) — live in sensor mode
+
+`ranging_task` drives all three motors every frame from the live depth grid:
+
+- **Column → motor:** body-frame col 0 → LEFT (GPIO 16), cols 1–2 → CENTER (GPIO 7), col 3 → RIGHT (GPIO 15). Generalizes to 8×8 (outer quarter of columns → side motors).
+- **Per-motor urgency:** each motor tracks the *most-urgent* obstacle (lowest forward/threshold ratio) in its column region, same integer cross-product math as the buzzer.
+- **Squared duty curve with a floor:** `duty = MIN + (MAX − MIN) × (1 − ratio)²`. The squared shape concentrates intensity near point-blank (Stevens-law-supported for alerting); the `HAPTIC_DUTY_MIN` floor (130) jumps an alerting motor straight to "just-felt" the instant the buzzer fires — without it, the ERM dead zone left the motor silent until ~20 cm.
+- **Dominance weighting:** when ≥2 motors fire, the strongest keeps full duty and the others have only their *above-floor* portion scaled to 70 %, so they stay felt but clearly secondary (mitigates the multi-motor comprehension drop documented in Zegarra Flores 2022).
+
+Full design + primary sources: [`docs/research-sources/directional-haptics-mapping.md`](docs/research-sources/directional-haptics-mapping.md).
+
+### Configuration knobs
+
+| Define | Default | Notes |
+|---|---|---|
+| `HAPTIC_TEST` | `0` | `1` runs the standalone 3-motor test ramp instead of the sensor pipeline. WiFi + OTA stay up either way. |
+| `HAPTIC_ID_MODE` | `0` | When `HAPTIC_TEST=1`, `1` pulses only `HAPTIC_ID_GPIO` for physical-motor identification. |
+| `HAPTIC_DIRECTIONAL` | `1` | Directional column→motor drive in sensor mode. `0` = buzzer-only (motors stay off) without rewiring. |
+| `HAPTIC_DUTY_MIN` | `130` | ERM dead-zone floor (≈51 % of 255). An alerting motor jumps to this duty immediately; the curve ramps it to `MAX` at point-blank. Raise if weak at threshold. |
+| `HAPTIC_DOMINANCE_NUM` / `_DEN` | `7` / `10` | Above-floor scale applied to non-dominant motors when ≥2 fire. |
+| `HAPTIC_GPIO_CENTER` / `_RIGHT` / `_LEFT` | `7` / `15` / `16` | Verified physical mapping. Move to other free GPIOs only — avoid strapping pins 0, 3, 45, 46 on ESP32-S3. |
+
+### Wiring (one per motor)
+
+```
+                    +3V3
+                     │
+                     ├──────────────┐
+                   [motor]    [1N5819 Schottky]   ← optional for bench,
+                     │       (cathode → +3V3)        recommended for final
+                     ├──────────────┘
+                     │
+               Collector (pin 3, right)
+                     │
+   GPIO ──[1 kΩ]── Base (pin 2, middle)
+                     │
+               Emitter (pin 1, left)
+                     │
+                    GND  (shared with ESP32 GND)
+```
+
+### Lessons from v11 dev
+
+- **Brushed DC motor noise can wreck I²C sensor init.** Brush arcing emits broadband RF that couples both conductively (shared 3V3 rail) and inductively (nearby pull-up wires). A continuously-running motor next to the sensor's I²C bus corrupted enough bits in the 80 KB ULD firmware upload that the sensor reported `is_alive = false` 100 % of the time. The motor doesn't even need to be PWM'd — DC-on is enough. Fix at the system level: cap the motor for noise (100 nF ceramic across motor terminals), bulk cap the rail (100 µF), make sure the transistor is actually in the path so the motor isn't running unless commanded.
+- **A safety GPIO config at boot is cheap insurance.** Even with the test flag off, force the motor pins to a known-LOW state at the start of `app_main` before anything can configure them otherwise. Costs four lines of code per pin and prevents the worst-case "GPIO floats high on warm reboot → transistor partly conducts → motor runs forever" failure mode.
+- **The `frames` field in `/api/health` is currently `g_latest_grid_side`, not an actual frame counter.** Misled me once during bring-up — saw `frames: 4` and thought the sensor had only produced 4 frames; really it meant "4×4 grid is active and streaming." Open TODO to make it a real counter; in the meantime the comment in `main.c:742` calls it out.
+- **OTA-flashable test mode beats USB-flash test mode.** The `HAPTIC_TEST` flag pattern lets me iterate on motor behaviour without ever pulling the helmet off the desk for a cable swap, and without losing the sensor firmware. Same flag-and-flag-back workflow would suit any future actuator bring-up (speaker, LED ring, second buzzer).
+- **A proportional curve needs a floor on a real motor.** The squared urgency curve looked right on paper but felt broken in the hand: the buzzer alerted at the threshold distance while the motor stayed dead until ~20 cm, then slammed to full. ERM coin motors simply don't spin below ~50 % duty, so the bottom half of any 0→max curve is wasted. The fix is to map the alert band onto `[MIN..MAX]`, not `[0..MAX]` — the motor is felt the moment the alert fires and the curve shapes intensity above that. This is the same "just-noticeable floor" Ghaffari 2025 uses.
+- **Driving motors during normal operation reintroduces the noise risk.** Bench-testing motors in a dedicated mode was clean, but once `ranging_task` drives them continuously during alerts, a sustained point-blank obstacle pins motors at high duty and the brush noise can wedge the HTTP server on the un-decoupled bench rig. The motor caps + rail bulk cap (deferred as "optional for bench") become genuinely necessary for the worn build.
+
+### Files added/changed in v11
+
+- `main/main.c` — `HAPTIC_TEST` / `HAPTIC_ID_MODE` flags, verified `HAPTIC_GPIO_CENTER/RIGHT/LEFT` mapping, `haptic_test_task`, safety GPIO config at top of `app_main`; **directional drive**: LEDC infra hoisted out of `#if HAPTIC_TEST`, `haptic_motors_init()`, `haptic_motor_for_col()`, `haptic_apply()` (squared curve + `HAPTIC_DUTY_MIN` floor + dominance weighting), per-motor urgency tracking in `ranging_task`
+- `docs/haptics-bringup.md` — full bring-up log: parts list, transistor pinout, driver schematic, test sequence, OTA workflow, results log, directional-drive implementation + dead-zone fix
+- `docs/research-sources/directional-haptics-mapping.md` — cited research behind the mapping/curve/dominance decisions
+
+---
+
 ## What's next (queued)
 
-After v10 the helmet is wearable and the alerts work for the upper 2/3 of body coverage. Next steps are filling in the bottom 1/3 and graduating from a prototype to something I'd trust.
+After v11 the helmet is wearable with two-dimensional alerts (distance + direction) — the buzzer encodes urgency, the three motors encode direction, and both fire together. Next steps are walk-testing, filling in the bottom 1/3 of body coverage, and graduating from a prototype to something I'd trust.
 
-1. **Second VL53L8CX aimed downward** — fixes the belly-button-and-below blind spot. SPI bus (cleaner than I²C for two sensors — no address conflict). Independent calibration, independent per-row thresholds, fused into a single body-frame alert.
-2. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`) — helps thin obstacles in open doorways (pullup bar with open space behind). Per ST UM3109 §4.10, this only resolves targets separated by ≥ 600 mm — so it won't help bars with a wall right behind them, but doorways usually have several metres of room beyond.
-3. **Bird's-eye-view mode for the phone viewer** — top-down body-centered radar display instead of the sensor-grid layout. Becomes more useful once the second sensor is in (one fused view of all obstacles around me, not two separate per-sensor grids).
-4. **IMU on the helmet** — gravity-anchored pitch/roll so the slant→forward correction adapts when I look up/down instead of assuming level head. Cheaper interim path: iPhone IMU streamed over WiFi UDP (Phyphox app).
-5. **Phase 2 — USB camera + CV** — classify what the ToF is detecting (person vs wall vs glass) so the alert pattern can encode object type, not just distance.
+1. **Walk-test + tune the directional haptics.** The column→motor drive is implemented and bench-confirmed. Remaining is real-world tuning: dial in `HAPTIC_DUTY_MIN` for the actual motors, confirm direction holds while moving, and watch the one open stability item — the HTTP server wedged once when motors ran sustained at point-blank on the un-decoupled bench rig. Mitigations on deck: motor-terminal 100 nF + rail 100 µF caps (mailed), optional duty cap, optional HTTP watchdog.
+2. **Solder the perfboard rim** when the 1N5819 Schottky diodes arrive — three transistors, three 1 kΩ resistors, three flyback diodes, one 100 µF bulk cap across the 3V3 rail, JST connectors out to the motors so the helmet can be removed without de-soldering.
+3. **Second VL53L8CX aimed downward** — fixes the belly-button-and-below blind spot. SPI bus (cleaner than I²C for two sensors — no address conflict). Independent calibration, independent per-row thresholds, fused into a single body-frame alert.
+4. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`) — helps thin obstacles in open doorways (pullup bar with open space behind). Per ST UM3109 §4.10, this only resolves targets separated by ≥ 600 mm — so it won't help bars with a wall right behind them, but doorways usually have several metres of room beyond.
+5. **Bird's-eye-view mode for the phone viewer** — top-down body-centered radar display instead of the sensor-grid layout. Becomes more useful once the second sensor is in (one fused view of all obstacles around me, not two separate per-sensor grids).
+6. **IMU on the helmet** — gravity-anchored pitch/roll so the slant→forward correction adapts when I look up/down instead of assuming level head. Cheaper interim path: iPhone IMU streamed over WiFi UDP (Phyphox app).
+7. **Phase 2 — USB camera + CV** — classify what the ToF is detecting (person vs wall vs glass) so the alert pattern can encode object type, not just distance.
 
 Living list of all open work, hardware notes, and recurring pitfalls is in [`todo.md`](todo.md).
 

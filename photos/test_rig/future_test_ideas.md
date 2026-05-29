@@ -79,6 +79,41 @@ Adding an ultrasonic sensor (HC-SR04 or similar) aimed straight down could:
 
 Trade-off: more wires, more power, more firmware complexity. Probably more relevant after camera (Phase 2) is in — at that point we'll have CV that can identify ground plane and curbs visually.
 
+## IMU-fused proportional feedback (Phase 3 when IMU lands)
+
+Once we have an IMU (BNO055/BNO085 or iPhone fallback), the beep-rate curve could also scale with **walking speed**:
+- Slow walk (0.5 m/s) → indoor cautious mode, alert range tightens (e.g. 80 cm max)
+- Brisk walk (1.5+ m/s) → outdoor mode, alert range widens to 200 cm+, curve gets steeper
+- Standing still → suppress alerts entirely (you're not about to collide)
+
+The Ghaffari paper hard-codes their `n` parameter to switch indoor/outdoor; an IMU lets us pick automatically. This is also the foundation for the unsolved "indoor-clutter-aware alert suppression" problem identified in the research synthesis.
+
+## Hybrid lower-body sensor for floor coverage (Phase 1.5 / Phase 2 prep)
+
+Confirmed approach after research:
+- **Option A: Second VL53L8CX at chest/sternum, pitched ~30° down**
+  - Pattern: GuideTouch (arXiv 2601.13813) — two ToFs vertically offset to combine vertical FoV
+  - Wiring: I²C bus with `LPn` pin manipulation to assign different addresses (0x29 → 0x52 etc.)
+  - Per davespace blog: pull LPn LOW on all sensors except the one being programmed, 100 ms settling delay
+  - **Open question:** IR illuminator interference when FoVs overlap. GuideTouch paper doesn't address this. ST docs don't directly answer either. Histogram-based pulse correlation in the L5/L8CX should give partial natural rejection (each sensor only correlates returns matching its own pulse pattern), but SNR may degrade in overlap region. Test by running both sensors simultaneously and looking at sigma in overlap zones.
+- **Option B: Single HC-SR04 ultrasonic at chest, pointed forward-down**
+  - Simpler, $3 sensor, 2 GPIO. Cone-shaped detection at ~15°, 2 cm to 4 m range.
+  - Catches floor-level / curb / footwear-level obstacles that ToF misses.
+  - Pattern: PMC10708878 used 9× of these in head-mounted array.
+  - Limitation: ultrasonic misses soft fabric, angled glass, dark/low-reflectivity surfaces.
+- **Hybrid (Reuben's preferred path)**: ultrasonic for floor + ToF for camera FoV in Phase 2. Each sensor does what it's best at. Camera handles classification + ground-plane segmentation, ToF handles distance + zones, ultrasonic handles the floor gap.
+
+## Min-cluster filter on 4×4 — likely NOT applicable (confirmed concern 2026-05-26)
+
+ETH's `MIN_PIXEL_NUMBER` filter works on 8×8 (64 zones) because real obstacles fill 6+ pixels even at moderate distance. On 4×4 (16 zones), a chair 3 m away might occupy 1-2 zones — so requiring ≥3 zones would drop real obstacles.
+
+Decision: **skip min-cluster on 4×4.** Rely on status filter (5,9 only) + per-row threshold + per-zone sigma as the primary noise rejection.
+
+If we ever revisit on 8×8 OR on 4×4 with a distance-aware threshold:
+- Distance-scaled: closer obstacles must fill ≥3 zones; far obstacles accept 1 zone
+- Sigma-aware: low-sigma high-confidence pixels accepted alone; high-sigma pixels need spatial confirmation
+- Temporal coherence: require 1+ pixel consistently across N frames (better fit for 4×4 than spatial)
+
 ## Doorway false-alert problem (observed 2026-05-26)
 
 When walking through a doorway, the helmet alerts non-stop on the empty doorframe / open passage. Reuben noticed this in dynamic use.
@@ -95,6 +130,7 @@ When walking through a doorway, the helmet alerts non-stop on the empty doorfram
 
 ### What we're NOT doing right now (per 2026-05-26 conversation)
 - Edge-column tighter threshold (e.g. outer columns alert only <50 cm) — Reuben deferred this. Would directly suppress doorway noise but risks missing real side obstacles.
+- Software doorway-pattern detector (center≥2m AND edges<1m → suppress) — Reuben rejected: too prone to other false negatives (e.g. real hallway with stuff at the sides). Confirmed 2026-05-26.
 
 ## Borrowing-from-research-but-need-to-verify list
 

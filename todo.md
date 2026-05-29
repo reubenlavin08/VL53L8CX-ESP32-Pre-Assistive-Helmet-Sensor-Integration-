@@ -2,40 +2,51 @@
 
 Living list of work for this project. Append-only during sessions; check items off only after they're done AND verified.
 
-## In progress
+## In progress (no active items — see Queued)
+
+## Recently shipped (2026-05-25 → 2026-05-28)
 
 - [x] **Rotation in firmware:** `MOUNT_ROTATION_DEG = 270` confirmed working in `main.c`, applied via `rotated_zone()` helper to all three stream functions (DATA/SIGMA/STATUS). Single source of truth at the chip — all downstream consumers see body-frame data automatically.
-- [x] **README first-person rewrite.** v9 now in first person; earlier sections were already mostly first-person (only remaining "you/your" are reader-addressed instructional bits, which is correct README style).
-- [x] **Embed test rig photos in README.** `rig_wide_full_setup.jpg` + `rig_close_sensor_and_board.jpg` now inline at top of v9 section.
-- [x] **"Limitations of this analysis" subsection added to README** with explicit caveats about ambient light, untested surfaces, motion noise, and coverage gaps.
-- [x] **Helmet-mount tilt calibration via wall stare** (done 2026-05-25). Sensor at 73", wall at 32", 200-frame capture. Fit gave **~13° pitch down** (dominant) plus a small ~few-degree roll that I'm ignoring as second-order for now. Calibration script lives at `visualizer/calibrate_tilt.py`; raw capture in `visualizer/raw_frames/wall-tilt-calib-h185cm-d81cm_*.csv`.
+- [x] **README first-person rewrite + v9 photos + Limitations subsection.**
+- [x] **Helmet-mount tilt calibration via wall stare** (2026-05-25). Pitch 13° → 20° after physical mount adjustment. `visualizer/calibrate_tilt.py` + raw captures in `visualizer/raw_frames/wall-tilt-calib-h185cm-d81cm_*.csv`.
+- [x] **Per-row slant compensation in firmware** (shipped). `MOUNT_PITCH_DEG = 20.0f`, `compute_row_cos_table()` runs at boot, nearest-distance loop multiplies slant by `g_row_cos[row]` before comparing to per-row thresholds. Raw `DATA:` stream is unaffected (still slant) so analysis tools see what the sensor sees.
+- [x] **Per-row alert thresholds** in firmware (60/60/80/95 cm at 4×4 — innovation, not from literature).
+- [x] **Urgency-ratio buzzer** — beep rate scales with `forward / row_threshold` (ratio²) instead of absolute distance. Lower-row obstacles beep faster at the same forward distance because their FoV exits sooner.
+- [x] **30 Hz ranging at 4×4** (bumped from 20 Hz after wearable-latency research; latency dominates per-zone noise by 10–40× for a moving user — see `docs/research-optimal-config.md`).
+- [x] **OTA bug RCA closed** (2026-05-26): verbose UART logging throttling OTA to 15 KB/s. Fixed by reverting to INFO log level. Now 164 KB/s.
+- [x] **Phase 2A/B/C/D research synthesis** (`docs/research-optimal-config.md`): ST docs deep-dive, academic literature review, market survey, with source-verification appendix retracting fabricated AN5912/AN6066/ETH-median-filter citations.
+- [x] **Below-chest coverage research** — three options documented (move sensor lower / two-sensor stack / multi-row ultrasonic). Hybrid path = preferred.
+- [x] **Haptic motors bench-tested** (2026-05-26 single motor, 2026-05-28 all 3). Driver: 2N3904 NPN low-side switch + 1 kΩ base resistor per motor. GPIO 7/15/16, LEDC ch 1/2/3 timer 1 @ 1 kHz.
+- [x] **Haptic motor physical-position mapping VERIFIED** (2026-05-28) via single-pin OTA pulse test (`HAPTIC_ID_MODE`):
+  - **GPIO 7  = CENTER (forehead)**
+  - **GPIO 15 = RIGHT temple**
+  - **GPIO 16 = LEFT temple**
+  - Aliases `HAPTIC_GPIO_CENTER` / `_RIGHT` / `_LEFT` in `main.c`.
+- [x] **Safety GPIO boot config** — all 3 motor GPIOs forced OUTPUT-LOW with pulldown at the very start of `app_main` regardless of `HAPTIC_TEST` state. Prevents stuck-on motor after warm reboot.
+- [x] **Directional-haptics research with primary sources** (2026-05-28) — full citations in `docs/research-sources/directional-haptics-mapping.md`. Verifies that concurrent multi-motor firing is precedented (GuideTouch), squared PWM curve is supported for alerting (Stevens' law), funneling isn't an issue at our motor separation (Kaul 2020), and dominance weighting is warranted (Zegarra Flores 70% finding).
+- [x] **Directional column→motor haptic drive IMPLEMENTED** (2026-05-28). `ranging_task` maps obstacle columns to LEFT/CENTER/RIGHT motors each frame: hard regional mapping + per-motor most-urgent tracking + squared duty curve + dominance weighting. `haptic_motors_init()` runs at boot in sensor mode; LEDC infra pulled out of `#if HAPTIC_TEST`. Bench-confirmed. **ERM dead-zone fix:** added `HAPTIC_DUTY_MIN` (130) floor so an alerting motor is felt the instant the buzzer fires instead of staying silent until ~20 cm. New knobs: `HAPTIC_DIRECTIONAL`, `HAPTIC_DUTY_MIN`, `HAPTIC_DOMINANCE_NUM/DEN`.
 
 ## Queued (in order)
 
-1. [~] **Per-row slant compensation in firmware** — IMPLEMENTED, awaiting flash.
-   - `MOUNT_PITCH_DEG = 13.0f` in `main.c`, anchored by the wall-stare calibration.
-   - `compute_row_cos_table()` builds the per-row cosine table at sensor init.
-   - Nearest-distance loop now iterates body-frame zones and multiplies slant by `g_row_cos[row]` before comparing to threshold.
-   - Practical effect at 13° pitch (8x8): top rows barely change (cos ~0.99), bottom row reads 84% of slant (cos = 0.84). Floor-near obstacles in lower rows now trigger sooner.
-   - Raw `DATA:` stream is unaffected (still slant) — analysis tools see what the sensor sees.
-2. [ ] **Multi-target per zone (`VL53L8CX_NB_TARGET_PER_ZONE = 2`).**
-   - Enables sensor to detect both the pullup bar AND the wall behind it as separate targets per zone.
-   - Combined with `TARGET_ORDER = CLOSEST`, the bar wins.
-   - ~40 line firmware change (loop through all targets per zone in stream functions, take closest valid).
-3. [ ] **Dynamic wearable testing once 1+2 are in.**
-   - Walk hallways, doorways, around furniture.
-   - Specifically test: pullup bar / overhead doorframe, chair near body, dark fabric, glass at angle, lighting changes (indoor → outdoor).
-   - Decide based on real use whether a 2nd sensor is needed.
+1. **Walk-test the directional haptics + tune.** The drive is implemented and bench-confirmed; now wear it and walk.
+   - Tune `HAPTIC_DUTY_MIN` (currently 130) — raise if the motor still feels weak right at the alert threshold, lower if it's too strong across the whole band.
+   - Confirm direction holds while moving (left obstacle → left temple, etc.) and that two-sided/doorway scenes fire both side motors with dominance contrast.
+   - **Open watch item:** HTTP server wedged once when motors ran sustained at high duty point-blank (~11 cm desk obstacle). Did not recur in normal use. If it reproduces during walking: add motor-terminal 100 nF + rail 100 µF caps (mailed), a duty cap, or an HTTP watchdog.
+2. **Solder perfboard for the helmet rim** when 1N5819 Schottky kit arrives — three 2N3904s, three 1 kΩ resistors, three flyback diodes (cathode → 3V3), one 100 µF bulk cap across 3V3, JST connectors out to motors.
+3. **Multi-target per zone** (`VL53L8CX_NB_TARGET_PER_ZONE = 2`) — helps thin obstacles in open doorways. ~40 line firmware change.
+4. **Dynamic wearable testing.** Walk hallways, doorways, around furniture. Specifically test: pullup bar / overhead doorframe, chair near body, dark fabric, glass at angle, lighting changes (indoor → outdoor). Decide whether 2nd sensor is needed.
+5. **Second VL53L8CX aimed downward** (SPI bus) for the belly-button-and-below blind spot.
 
 ## Research synthesis (2026-05-26)
 
 Did a full Phase-1 data re-analysis (latency-focused wearable lens) + spawned 3 background research agents (ST docs, academic literature, market survey). All findings written up in [`docs/research-optimal-config.md`](docs/research-optimal-config.md).
 
 Key conclusions baked into firmware:
-- 4×4 @ 20 Hz currently (Phase 1 says 30 Hz is better; 60 Hz worth testing)
+- **4×4 @ 30 Hz currently** (Phase 1 latency analysis showed frame latency dominates per-zone noise by 10–40× for a moving user; 60 Hz worth testing)
 - CONTINUOUS mode, sharpener 5, TARGET_ORDER CLOSEST (defensible at our <100 ms budget per ST)
 - Per-row thresholds 60/60/80/95 cm (4×4) — our innovation, not in literature
-- Ratio-based beep urgency (forward / row_threshold) — our innovation
+- Ratio-based beep urgency (forward / row_threshold) with squared curve — our innovation
+- 3-motor directional haptic ring (LEFT/CENTER/RIGHT temple/forehead) — wired + verified + research-backed, column-mapping logic pending (see Queued #1)
 
 What's empirically open (publishable contributions):
 - No published paper has tested VL53L8CX on a head-mounted ETA for visually impaired

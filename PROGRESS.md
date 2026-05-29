@@ -360,3 +360,19 @@ Further visualiser work is **paused until the IMU arrives.** Once the IMU is wir
 | `4520f99` | Visualiser v5: experimental 6-DOF relative pose estimation (Kabsch) |
 | `5462d60` | Document v5 + 15 Hz bump and add v4 motion demo clip |
 | *(next)*  | Visualiser v6: world-frame point memory + fading trail |
+
+---
+
+## v7 → v11 — see README.md
+
+**This document captures v1–v6 in depth.** v7 onward (WiFi streaming, OTA, buzzer alert, v9 sensor characterization sweep, v10 wearable/body-frame/per-row-threshold/phone viewer, v11 directional haptic ring) are documented in full inline in [`README.md`](README.md), with the development log structured as one iteration section per version. Single source of truth for everything after the IMU-or-bust pause is the README — this PROGRESS log is kept for v1–v6 historical reference only.
+
+### v11 — directional haptic ring (2026-05-28, current)
+
+Three ERM coin motors added to the helmet rim, driven by 2N3904 NPN low-side switches from GPIOs 7 / 15 / 16. Physical mapping verified via single-pin OTA pulse test:
+
+- **GPIO 7  = CENTER (forehead)**
+- **GPIO 15 = RIGHT temple**
+- **GPIO 16 = LEFT temple**
+
+Full bring-up log in [`docs/haptics-bringup.md`](docs/haptics-bringup.md). Column→motor mapping logic with dominance weighting (research-backed in [`docs/research-sources/directional-haptics-mapping.md`](docs/research-sources/directional-haptics-mapping.md)) is **next up** — design decisions locked in, code not yet written. See `todo.md` Queued #1.

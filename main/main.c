@@ -50,10 +50,62 @@
 #define GPIO_PWREN    GPIO_NUM_5
 #define BUZZER_GPIO         GPIO_NUM_6   /* active buzzer signal pin */
 #define BUZZER_TEST         1            /* set 0 to silence */
+/* Haptic motor bench test (Option B): when 1, app_main skips sensor ranging
+ * and runs a motor ramp on HAPTIC_GPIO, but KEEPS WiFi + OTA alive so you can
+ * OTA back to normal firmware. Set 0 for normal operation. See
+ * docs/haptics-bringup.md. Uses LEDC channel 1 / timer 1 (buzzer owns 0/0). */
+#define HAPTIC_TEST         0   /* 0 = sensor mode; 1 = run haptic test task */
+/* When HAPTIC_TEST=1, HAPTIC_ID_MODE picks which task body runs:
+ *   0 = original 3-motor sequence (CENTER alone -> RIGHT alone -> LEFT alone -> ALL)
+ *   1 = identify mode: short bursts on HAPTIC_ID_GPIO only (helps map
+ *       a single GPIO to its physical motor location on the helmet).
+ * Change HAPTIC_ID_GPIO to HAPTIC_GPIO_RIGHT or _LEFT between OTA flashes
+ * to ID the other two. */
+#define HAPTIC_ID_MODE      1
+#define HAPTIC_ID_GPIO      HAPTIC_GPIO_RIGHT   /* pulse this one to find it */
+/* Verified physical mapping 2026-05-28 by single-pin OTA ID pulses:
+ *   GPIO 7  = CENTER (forehead)
+ *   GPIO 15 = RIGHT  temple
+ *   GPIO 16 = LEFT   temple
+ * Aliases A/B/C kept for ranging_task column-mapping convenience. */
+#define HAPTIC_GPIO_CENTER  GPIO_NUM_7
+#define HAPTIC_GPIO_RIGHT   GPIO_NUM_15
+#define HAPTIC_GPIO_LEFT    GPIO_NUM_16
+#define HAPTIC_GPIO_A       HAPTIC_GPIO_CENTER   /* alias: motor A = center  */
+#define HAPTIC_GPIO_B       HAPTIC_GPIO_RIGHT    /* alias: motor B = right   */
+#define HAPTIC_GPIO_C       HAPTIC_GPIO_LEFT     /* alias: motor C = left    */
+/* Directional haptic drive (sensor mode). When 1, ranging_task maps obstacle
+ * columns to the 3 motors each frame: col region LEFT/CENTER/RIGHT -> motor,
+ * PWM duty scaled by the same squared urgency curve the buzzer uses. Set 0 to
+ * keep motors silent (buzzer-only) without rewiring. Ignored in HAPTIC_TEST.
+ * Design + sources: docs/research-sources/directional-haptics-mapping.md */
+#define HAPTIC_DIRECTIONAL  1
+/* Dominance weighting: when >=2 motors fire at once, the most-urgent keeps
+ * full duty and the others are scaled by NUM/DEN (7/10). Keeps the dominant
+ * direction legible -- concurrent multi-motor comprehension drops from ~99%
+ * to ~70% (Zegarra Flores 2022, arXiv 2201.04453). */
+#define HAPTIC_DOMINANCE_NUM 7
+#define HAPTIC_DOMINANCE_DEN 10
+/* Motor count + index order (used by ranging_task, which is defined above the
+ * LEDC infrastructure block — declared here so it's in scope early). Order
+ * matches the A/B/C aliases = { CENTER, RIGHT, LEFT }. */
+#define HAPTIC_N            3
+#define HAPTIC_IDX_CENTER   0             /* GPIO7  forehead */
+#define HAPTIC_IDX_RIGHT    1             /* GPIO15 right temple */
+#define HAPTIC_IDX_LEFT     2             /* GPIO16 left temple */
+/* ERM dead-zone floor. Coin motors don't spin below ~50% duty (not enough
+ * torque to beat static friction), so a pure squared curve leaves the motor
+ * silent across most of the alert band and only "wakes up" point-blank --
+ * which felt like "nothing until ~20 cm, then suddenly very strong". With the
+ * floor, an alerting motor jumps straight to HAPTIC_DUTY_MIN (just-felt) the
+ * instant the buzzer fires, and the squared curve then ramps it MIN->MAX as
+ * the obstacle closes. Tune to your motor's measured start-spin duty. */
+#define HAPTIC_DUTY_MIN     130           /* ~51% of 255; raise if still weak at threshold */
 #define OBSTACLE_THRESHOLD_MM 600        /* start beeping at this distance (60 cm) */
 #define BEEP_MS             50           /* short beep = quieter */
 #define BEEP_GAP_MIN_MS     30           /* gap at point-blank (frantic chirping) */
-#define BEEP_GAP_MAX_MS     400          /* gap at threshold distance (slow alert) */
+#define BEEP_GAP_MAX_MS     700          /* gap at threshold distance (just-noticeable, indoor-friendly) */
+#define BEEP_CURVE_SQUARED  1            /* 1 = ratio^2 nonlinear (Ghaffari-style); 0 = linear */
 
 /* â”€â”€ Sensor configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #define SENSOR_RESOLUTION   VL53L8CX_RESOLUTION_4X4        /* 16 zones (4× tighter σ, wider angular per zone) */
@@ -413,8 +465,21 @@ static void buzzer_task(void *arg)
             int16_t uf = g_urgency_forward;
             int16_t ut = g_urgency_threshold;
             if (ut < 1) ut = 1;
+            /* ratio_pct = (uf/ut) * 100, clamped to 0..100 */
+            int32_t ratio_pct = (int32_t)uf * 100 / ut;
+            if (ratio_pct < 0)   ratio_pct = 0;
+            if (ratio_pct > 100) ratio_pct = 100;
+#if BEEP_CURVE_SQUARED
+            /* Nonlinear: gap = MIN + (MAX-MIN) * (uf/ut)^2.
+             * Far obstacles barely chirp; close obstacles ramp up urgency
+             * much faster than linear. Ghaffari 2025-style proportional
+             * feedback (their PWM duty cycle = 8/(n-2d) is also nonlinear). */
+            int32_t curve_pct = (ratio_pct * ratio_pct) / 100;
+#else
+            int32_t curve_pct = ratio_pct;
+#endif
             int gap = BEEP_GAP_MIN_MS +
-                      (int)((int32_t)(BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) * uf / ut);
+                      (int)((int32_t)(BEEP_GAP_MAX_MS - BEEP_GAP_MIN_MS) * curve_pct / 100);
             if (gap < BEEP_GAP_MIN_MS) gap = BEEP_GAP_MIN_MS;
             if (gap > BEEP_GAP_MAX_MS) gap = BEEP_GAP_MAX_MS;
             gpio_set_level(BUZZER_GPIO, 1);
@@ -827,6 +892,11 @@ static void tcp_server_task(void *arg)
     }
 }
 
+/* Haptic helpers used by ranging_task but defined below it (after the buzzer
+ * task block). Forward-declared so the directional drive can call them. */
+static int  haptic_motor_for_col(int col, int side);
+static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *active);
+
 /* â”€â”€ Main ranging task â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void ranging_task(void *arg)
 {
@@ -937,9 +1007,18 @@ static void ranging_task(void *arg)
         int16_t urgency_forward    = 0;       /* most-urgent zone, for beep rate */
         int16_t urgency_threshold  = 1;
         bool    have_urgency       = false;
+        /* Per-motor most-urgent tracker for directional haptics. Indexed by
+         * HAPTIC_IDX_{CENTER,RIGHT,LEFT}; the zone's column picks the motor. */
+        int16_t motor_fwd[HAPTIC_N];
+        int16_t motor_thr[HAPTIC_N];
+        bool    motor_active[HAPTIC_N];
+        for (int m = 0; m < HAPTIC_N; m++) {
+            motor_fwd[m] = 0; motor_thr[m] = 1; motor_active[m] = false;
+        }
         for (int z_out = 0; z_out < total_zones; z_out++) {
             int z_src = rotated_zone(z_out, side);
             int r_out = z_out / side;
+            int c_out = z_out % side;
             uint8_t status = results.target_status[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
             bool status_ok = STATUS_FILTER_STRICT
                            ? (status == 5)
@@ -966,6 +1045,17 @@ static void ranging_task(void *arg)
                             urgency_threshold = row_thresh;
                             have_urgency      = true;
                         }
+                        /* Same most-urgent (lowest ratio) tracking, but per motor
+                         * region so each motor's intensity reflects the worst
+                         * obstacle in its slice of the FoV. */
+                        int mi = haptic_motor_for_col(c_out, side);
+                        if (!motor_active[mi] ||
+                            (int32_t)forward * motor_thr[mi]
+                                < (int32_t)motor_fwd[mi] * row_thresh) {
+                            motor_fwd[mi]    = forward;
+                            motor_thr[mi]    = row_thresh;
+                            motor_active[mi] = true;
+                        }
                     }
                 }
             }
@@ -976,6 +1066,13 @@ static void ranging_task(void *arg)
         g_urgency_forward   = urgency_forward;
         g_urgency_threshold = urgency_threshold;
         g_latest_grid_side  = side;
+
+#if HAPTIC_DIRECTIONAL
+        /* Drive the 3 directional motors from this frame's per-motor urgency.
+         * Squared duty curve + dominance weighting inside haptic_apply(). When
+         * no motor is active all duties resolve to 0 (motors off). */
+        haptic_apply(motor_fwd, motor_thr, motor_active);
+#endif
 
 #if STREAM_DATA
         stream_distance_line(&results, SENSOR_RESOLUTION);
@@ -999,14 +1096,227 @@ static void ranging_task(void *arg)
     vTaskDelete(NULL);
 }
 
+/* â”€â”€ Haptic motor PWM infrastructure (always compiled) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * Shared by the bench-test task (HAPTIC_TEST) AND the directional drive in
+ * ranging_task (HAPTIC_DIRECTIONAL). 3 ERM coin motors via 2N3904 low-side
+ * switches, LEDC channels 1/2/3 on timer 1 @ 1 kHz (buzzer owns ch0/timer0).
+ * Motor index order matches the A/B/C aliases = { CENTER, RIGHT, LEFT }. */
+#define HAPTIC_LEDC_TIMER   LEDC_TIMER_1
+#define HAPTIC_LEDC_MODE    LEDC_LOW_SPEED_MODE
+#define HAPTIC_FREQ_HZ      1000          /* 1 kHz: smooth motor drive, low whine */
+#define HAPTIC_DUTY_MAX     255           /* 8-bit resolution */
+/* HAPTIC_N + HAPTIC_IDX_* are defined near the top config block (needed by
+ * ranging_task, which appears before this infrastructure). */
+
+static const gpio_num_t     HAPTIC_GPIOS[HAPTIC_N] = { HAPTIC_GPIO_A, HAPTIC_GPIO_B, HAPTIC_GPIO_C };
+static const ledc_channel_t HAPTIC_CHS  [HAPTIC_N] = { LEDC_CHANNEL_1, LEDC_CHANNEL_2, LEDC_CHANNEL_3 };
+static const char *         HAPTIC_NAMES[HAPTIC_N] __attribute__((unused)) = { "CENTER (GPIO7)", "RIGHT (GPIO15)", "LEFT (GPIO16)" };
+
+static inline void haptic_set(int i, uint8_t duty)
+{
+    ledc_set_duty(HAPTIC_LEDC_MODE, HAPTIC_CHS[i], duty);
+    ledc_update_duty(HAPTIC_LEDC_MODE, HAPTIC_CHS[i]);
+}
+
+static inline void haptic_all(uint8_t duty)
+{
+    for (int i = 0; i < HAPTIC_N; i++) haptic_set(i, duty);
+}
+
+/* Configure the LEDC timer + 3 channels and zero all motors. Safe to call
+ * once at boot. Both the test task and the normal sensor path use this. */
+static void haptic_motors_init(void)
+{
+    ledc_timer_config_t timer = {
+        .speed_mode      = HAPTIC_LEDC_MODE,
+        .timer_num       = HAPTIC_LEDC_TIMER,
+        .duty_resolution = LEDC_TIMER_8_BIT,
+        .freq_hz         = HAPTIC_FREQ_HZ,
+        .clk_cfg         = LEDC_AUTO_CLK,
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&timer));
+    for (int i = 0; i < HAPTIC_N; i++) {
+        ledc_channel_config_t ch = {
+            .gpio_num   = HAPTIC_GPIOS[i],
+            .speed_mode = HAPTIC_LEDC_MODE,
+            .channel    = HAPTIC_CHS[i],
+            .timer_sel  = HAPTIC_LEDC_TIMER,
+            .duty       = 0,
+            .hpoint     = 0,
+        };
+        ESP_ERROR_CHECK(ledc_channel_config(&ch));
+    }
+    haptic_all(0);
+    ESP_LOGI(TAG, "Haptic motors init: %d motors on LEDC timer1 @ %d Hz "
+                  "(CENTER=GPIO%d, RIGHT=GPIO%d, LEFT=GPIO%d)",
+             HAPTIC_N, HAPTIC_FREQ_HZ,
+             (int)HAPTIC_GPIO_CENTER, (int)HAPTIC_GPIO_RIGHT, (int)HAPTIC_GPIO_LEFT);
+}
+
+/* Map a body-frame column index to a motor index. Body frame: col 0 = left of
+ * body, col side-1 = right (see MOUNT_ROTATION_DEG remap). General rule scales
+ * to any resolution: outer quarter of columns -> LEFT/RIGHT, middle -> CENTER.
+ *   4x4: col 0 -> LEFT, cols 1-2 -> CENTER, col 3 -> RIGHT
+ *   8x8: cols 0-1 -> LEFT, cols 2-5 -> CENTER, cols 6-7 -> RIGHT */
+static int haptic_motor_for_col(int col, int side)
+{
+    if (col < side / 4)        return HAPTIC_IDX_LEFT;
+    if (col >= 3 * side / 4)   return HAPTIC_IDX_RIGHT;
+    return HAPTIC_IDX_CENTER;
+}
+
+/* Given the most-urgent (forward, threshold, active) per motor, compute each
+ * motor's PWM duty with the squared urgency curve, apply dominance weighting,
+ * and write the LEDC channels. Integer-only (no float) to stay cheap in the
+ * ranging loop. */
+static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *active)
+{
+    uint8_t duty[HAPTIC_N] = { 0 };
+    for (int m = 0; m < HAPTIC_N; m++) {
+        if (!active[m] || thr[m] < 1) continue;
+        /* ratio = forward / threshold in [0,100]. duty = MAX * (1 - ratio)^2:
+         * far obstacle (ratio->1) ~0 duty, point-blank (ratio->0) full duty.
+         * Squared matches the buzzer curve (Stevens-law support, Verrillo 1969). */
+        int32_t ratio = (int32_t)fwd[m] * 100 / thr[m];
+        if (ratio < 0)   ratio = 0;
+        if (ratio > 100) ratio = 100;
+        int32_t inv = 100 - ratio;
+        int32_t curve = (inv * inv) / 100;             /* (1-ratio)^2 in pct */
+        /* Map curve 0..100 onto [HAPTIC_DUTY_MIN .. HAPTIC_DUTY_MAX] so an
+         * alerting motor is felt immediately (floor) and ramps to full at
+         * point-blank, instead of sitting in the ERM dead zone until ~20 cm. */
+        duty[m] = (uint8_t)(HAPTIC_DUTY_MIN +
+                  (int32_t)(HAPTIC_DUTY_MAX - HAPTIC_DUTY_MIN) * curve / 100);
+    }
+    /* Dominance weighting: when >=2 motors fire, attenuate all but the
+     * strongest so the dominant direction stays legible. Scale only the
+     * ABOVE-FLOOR portion so a secondary motor never drops back below
+     * HAPTIC_DUTY_MIN (i.e. it stays felt, just weaker). */
+    int n_firing = 0, max_idx = -1;
+    uint8_t max_duty = 0;
+    for (int m = 0; m < HAPTIC_N; m++) {
+        if (duty[m] > 0) {
+            n_firing++;
+            if (duty[m] > max_duty) { max_duty = duty[m]; max_idx = m; }
+        }
+    }
+    if (n_firing >= 2) {
+        for (int m = 0; m < HAPTIC_N; m++) {
+            if (m != max_idx && duty[m] > HAPTIC_DUTY_MIN) {
+                int32_t above = (int32_t)duty[m] - HAPTIC_DUTY_MIN;
+                duty[m] = (uint8_t)(HAPTIC_DUTY_MIN +
+                          above * HAPTIC_DOMINANCE_NUM / HAPTIC_DOMINANCE_DEN);
+            }
+        }
+    }
+    for (int m = 0; m < HAPTIC_N; m++) haptic_set(m, duty[m]);
+}
+
+/* â”€â”€ Haptic motor bench test task (Option B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * Ramps the ERM coin motors via LEDC PWM to verify the 2N3904 drivers +
+ * intensity control. WiFi + OTA stay up so you can OTA back to normal. */
+#if HAPTIC_TEST
+static void haptic_test_task(void *arg)
+{
+    haptic_motors_init();
+    ESP_LOGW(TAG, "HAPTIC test running on %d motors (LEDC timer1, %d Hz)",
+             HAPTIC_N, HAPTIC_FREQ_HZ);
+
+#if HAPTIC_ID_MODE
+    /* IDENTIFY mode: only pulse the motor on HAPTIC_ID_GPIO. Other two
+     * stay off so the user can feel which physical motor corresponds
+     * to that pin. 250 ms burst every 3 s. */
+    int id_idx = -1;
+    for (int i = 0; i < HAPTIC_N; i++) {
+        if (HAPTIC_GPIOS[i] == HAPTIC_ID_GPIO) { id_idx = i; break; }
+    }
+    ESP_LOGW(TAG, "HAPTIC IDENTIFY: pulsing GPIO%d (motor idx %d) every 3 s",
+             (int)HAPTIC_ID_GPIO, id_idx);
+    while (1) {
+        if (id_idx >= 0) {
+            haptic_set(id_idx, HAPTIC_DUTY_MAX);
+            vTaskDelay(pdMS_TO_TICKS(250));
+            haptic_set(id_idx, 0);
+        }
+        vTaskDelay(pdMS_TO_TICKS(2750));
+    }
+#endif
+
+    while (1) {
+        /* PHASES 1-3: each motor alone so you can ID which is which physically. */
+        for (int m = 0; m < HAPTIC_N; m++) {
+            ESP_LOGI(TAG, "HAPTIC PHASE %d: motor %s alone (full-on 1.5 s + ramp)",
+                     m + 1, HAPTIC_NAMES[m]);
+            haptic_all(0);
+            haptic_set(m, HAPTIC_DUTY_MAX);
+            vTaskDelay(pdMS_TO_TICKS(1500));
+            for (int d = 0; d <= HAPTIC_DUTY_MAX; d += 5) {
+                haptic_set(m, (uint8_t)d);
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+            for (int d = HAPTIC_DUTY_MAX; d >= 0; d -= 5) {
+                haptic_set(m, (uint8_t)d);
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+            haptic_set(m, 0);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+        /* PHASE 4: all motors together — watch current draw on multimeter. */
+        ESP_LOGI(TAG, "HAPTIC PHASE 4: ALL %d motors together (full-on 2 s + ramp)", HAPTIC_N);
+        haptic_all(HAPTIC_DUTY_MAX);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        for (int d = 0; d <= HAPTIC_DUTY_MAX; d += 5) {
+            haptic_all((uint8_t)d);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        for (int d = HAPTIC_DUTY_MAX; d >= 0; d -= 5) {
+            haptic_all((uint8_t)d);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        haptic_all(0);
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+#endif /* HAPTIC_TEST */
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "VL53L8CX + WiFi interface starting");
+
+    /* SAFETY: force all 3 haptic GPIOs to OUTPUT-LOW at the very start of boot,
+     * BEFORE anything else can configure them. Prevents a "stuck-on motor"
+     * after a reboot where the GPIO would otherwise be high-Z and the
+     * transistor base could float into a partially-conducting state.
+     * Runs regardless of HAPTIC_TEST so even normal sensor firmware
+     * guarantees motors are off. */
+    const gpio_num_t haptic_pins_off[] = { HAPTIC_GPIO_A, HAPTIC_GPIO_B, HAPTIC_GPIO_C };
+    for (size_t i = 0; i < sizeof(haptic_pins_off)/sizeof(haptic_pins_off[0]); i++) {
+        gpio_config_t cfg = {
+            .pin_bit_mask = 1ULL << haptic_pins_off[i],
+            .mode         = GPIO_MODE_OUTPUT,
+            .pull_up_en   = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_ENABLE,
+            .intr_type    = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&cfg);
+        gpio_set_level(haptic_pins_off[i], 0);
+    }
 
     g_client_mutex = xSemaphoreCreateMutex();
     for (int i = 0; i < MAX_TCP_CLIENTS; i++) {
         g_client_socks[i] = -1;
     }
+
+#if HAPTIC_TEST
+    ESP_LOGW(TAG, "HAPTIC_TEST mode: sensor ranging SKIPPED. WiFi + OTA stay up "
+                  "so you can OTA back to normal (set HAPTIC_TEST 0).");
+#else
+#if HAPTIC_DIRECTIONAL
+    /* Configure the haptic LEDC channels before ranging starts driving them.
+     * Re-uses the same pins the safety block just set OUTPUT-LOW; LEDC takes
+     * over each pin with duty 0, so motors stay off until an obstacle alerts. */
+    haptic_motors_init();
+#endif
 
     /* Start the ranging task FIRST so the sensor can complete its I2C init
      * (about ~1 s of ULD firmware upload) BEFORE WiFi spins up. Otherwise
@@ -1016,6 +1326,7 @@ void app_main(void)
 
     /* Give the sensor a head start before bringing up WiFi. */
     vTaskDelay(pdMS_TO_TICKS(2500));
+#endif
 
     /* NVS is required by the WiFi driver to store its config. */
     esp_err_t ret = nvs_flash_init();
@@ -1031,7 +1342,10 @@ void app_main(void)
     /* TCP server task waits for WiFi internally, then listens. */
     xTaskCreate(tcp_server_task, "tcp_server", 4096, NULL, 4, NULL);
 
-#if BUZZER_TEST
+#if HAPTIC_TEST
+    /* Motor ramp instead of the buzzer/sensor alert loop. */
+    xTaskCreate(haptic_test_task, "haptic_test", 4096, NULL, 2, NULL);
+#elif BUZZER_TEST
     /* Buzzer / GPIO control task. 4096 byte stack â€” 2048 was overflowing. */
     xTaskCreate(buzzer_task, "buzzer", 4096, NULL, 2, NULL);
 #endif
