@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Helmet dual ToF - 3D</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d12;color:#cdd6e0;
+            font-family:Segoe UI,system-ui,sans-serif;overflow:hidden}
+  #hud{position:fixed;top:0;left:0;right:0;padding:10px 14px;z-index:10;
+       background:linear-gradient(#0b0d12ee,#0b0d1200);font-size:13px}
+  #hud b{color:#33b6ff} #hud .o{color:#ffb347}
+  input{background:#1a1f2a;color:#cdd6e0;border:1px solid #2a3340;border-radius:5px;padding:4px 7px;width:130px}
+  button{background:#2a6df4;color:#fff;border:0;border-radius:6px;padding:5px 12px;cursor:pointer}
+  #stat{opacity:.7;margin-left:10px}
+  #hint{position:fixed;bottom:10px;left:0;right:0;text-align:center;font-size:12px;opacity:.5}
+</style>
+</head>
+<body>
+<div id="hud">
+  helmet IP <input id="ip" value="192.168.1.228">
+  <button id="go">Connect</button>
+  <span id="stat">not connected</span>
+  &nbsp; <b>&#9679; bottom (down)</b> &nbsp; <span class="o">&#9679; top (up)</span>
+</div>
+<div id="hint">drag = orbit &nbsp;·&nbsp; scroll = zoom &nbsp;·&nbsp; wave near a sensor to see its cone fire</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const FOV = 45.0, INVALID = 4000;
+const PITCH = { bottom: 30 * Math.PI/180, top: -5 * Math.PI/180 };   // +rot.x = tilt down
+const ZOFF  = { bottom: 0, top: 250 };
+const COL   = { bottom: 0x33b6ff, top: 0xffb347 };
+
+// ---- scene ----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d12);
+const cam = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 1, 40000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', ()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+scene.add(new THREE.GridHelper(8000, 16, 0x2a3340, 0x161b24));
+const ax = new THREE.AxesHelper(1500); scene.add(ax);
+
+function cloud(tag){
+  const g = new THREE.Group();
+  g.rotation.x = PITCH[tag];
+  g.position.y = ZOFF[tag];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(64*3), 3));
+  geo.setDrawRange(0,0);
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({color:COL[tag], size:120, sizeAttenuation:true}));
+  g.add(pts); scene.add(g);
+  return {geo, dirsCache:{}};
+}
+const clouds = { bottom: cloud('bottom'), top: cloud('top') };
+
+function dirs(total){
+  const side = Math.round(Math.sqrt(total));
+  const apz = (FOV/side) * Math.PI/180, c=(side-1)/2, out=[];
+  for(let r=0;r<side;r++) for(let cc=0;cc<side;cc++){
+    const h=(cc-c)*apz, v=-(r-c)*apz;            // row 0 = up
+    out.push([Math.sin(h), Math.sin(v), Math.cos(h)*Math.cos(v)]);   // x right, y up, z fwd
+  }
+  return out;
+}
+
+function updateCloud(C, arr){
+  if(!arr || !arr.length) return;
+  const total = arr.length;
+  if(!C.dirsCache[total]) C.dirsCache[total] = dirs(total);
+  const d = C.dirsCache[total];
+  const pos = C.geo.attributes.position.array;
+  let n=0;
+  for(let i=0;i<total;i++){
+    const z = arr[i];
+    if(z<0 || z>=INVALID-1) continue;            // skip invalid
+    pos[n*3]   = d[i][0]*z;
+    pos[n*3+1] = d[i][1]*z;
+    pos[n*3+2] = d[i][2]*z;
+    n++;
+  }
+  C.geo.setDrawRange(0,n);
+  C.geo.attributes.position.needsUpdate = true;
+}
+
+// ---- simple orbit camera ----
+let az=-0.9, el=0.5, dist=7000, dragging=false, px=0, py=0;
+function place(){ cam.position.set(dist*Math.cos(el)*Math.sin(az), dist*Math.sin(el), dist*Math.cos(el)*Math.cos(az)); cam.lookAt(0,300,0); }
+renderer.domElement.addEventListener('mousedown',e=>{dragging=true;px=e.clientX;py=e.clientY;});
+addEventListener('mouseup',()=>dragging=false);
+addEventListener('mousemove',e=>{ if(!dragging)return; az-=(e.clientX-px)*0.005; el=Math.max(-1.4,Math.min(1.4,el+(e.clientY-py)*0.005)); px=e.clientX;py=e.clientY; });
+renderer.domElement.addEventListener('wheel',e=>{ dist=Math.max(1500,Math.min(20000,dist*(1+e.deltaY*0.001))); e.preventDefault(); },{passive:false});
+
+function loop(){ requestAnimationFrame(loop); place(); renderer.render(scene,cam); }
+loop();
+
+// ---- polling ----
+let timer=null;
+const stat=document.getElementById('stat');
+async function poll(host){
+  try{
+    const r = await fetch(`http://${host}/api/status`, {cache:'no-store'});
+    const d = await r.json();
+    updateCloud(clouds.bottom, d.grid);
+    updateCloud(clouds.top, d.grid_top);
+    stat.textContent = `connected - ${d.side}x${d.side} - nearest ${d.nearest_mm} mm - haptics ${d.haptics?'on':'PAUSED'}`;
+  }catch(e){ stat.textContent = 'fetch failed: ' + e.message; }
+}
+document.getElementById('go').onclick = ()=>{
+  const host = document.getElementById('ip').value.trim();
+  if(timer) clearInterval(timer);
+  stat.textContent='connecting...';
+  timer = setInterval(()=>poll(host), 80);
+};
+// auto-connect on load
+document.getElementById('go').click();
+</script>
+</body>
+</html>

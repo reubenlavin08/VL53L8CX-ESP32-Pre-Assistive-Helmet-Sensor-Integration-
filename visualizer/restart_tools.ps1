@@ -24,6 +24,7 @@ Write-Host ''
 # 1. Kill existing instances
 $killed = 0
 Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -like '*visualizer_dual*' -or
     $_.CommandLine -like '*visualizer_simple*' -or
     $_.CommandLine -like '*idf_monitor*' -or
     $_.CommandLine -like '*esp-idf-monitor*'
@@ -39,10 +40,10 @@ Start-Sleep -Seconds 1
 # 2. Launch visualizer (WiFi, background, hidden console)
 if (Test-Path $PyExe) {
     Start-Process -FilePath $PyExe `
-        -ArgumentList 'visualizer_simple.py','--host',$EspIp `
+        -ArgumentList 'visualizer_dual.py','--host',$EspIp `
         -WorkingDirectory $VisDir `
         -WindowStyle Hidden
-    Write-Host "  [OK] Visualizer launched on WiFi -- ${EspIp}:3333" -ForegroundColor Green
+    Write-Host "  [OK] DUAL visualizer launched on WiFi -- ${EspIp}:3333" -ForegroundColor Green
 } else {
     Write-Host "  [FAIL] Visualizer venv not found at $PyExe" -ForegroundColor Red
 }

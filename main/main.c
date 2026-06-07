@@ -42,26 +42,35 @@
 #include "lwip/netdb.h"
 
 #include "vl53l8cx_api.h"
+#include "bno08x.h"
 #include "wifi_credentials.h"
 
 /* â”€â”€ Pin configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Bottom/old sensor (forward + ~30 deg DOWN): ground & low-obstacle coverage. I2C_NUM_1. */
 #define GPIO_SDA      GPIO_NUM_1
 #define GPIO_SCL      GPIO_NUM_2
 #define GPIO_PWREN    GPIO_NUM_5
+/* Top/new sensor (forward + ~5 deg UP): head & overhead coverage. Second bus, I2C_NUM_0. */
+#define GPIO_SDA2     GPIO_NUM_41
+#define GPIO_SCL2     GPIO_NUM_42
+#define GPIO_PWREN2   GPIO_NUM_40
 #define BUZZER_GPIO         GPIO_NUM_6   /* active buzzer signal pin */
+/* Debug pause switch: 3-pin SPDT, COM->this GPIO, one outer->GND, third pin
+ * unconnected. Internal pull-up => HIGH = haptics ON, LOW (GND side) = paused. */
+#define HAPTIC_SWITCH_GPIO  GPIO_NUM_17
 #define BUZZER_TEST         1            /* set 0 to silence */
 /* Haptic motor bench test (Option B): when 1, app_main skips sensor ranging
  * and runs a motor ramp on HAPTIC_GPIO, but KEEPS WiFi + OTA alive so you can
  * OTA back to normal firmware. Set 0 for normal operation. See
  * docs/haptics-bringup.md. Uses LEDC channel 1 / timer 1 (buzzer owns 0/0). */
-#define HAPTIC_TEST         0   /* 0 = sensor mode; 1 = run haptic test task */
+#define HAPTIC_TEST         0   /* 0 = sensor mode; 1 = run haptic test task */ /* TEMP: testing RIGHT motor 2026-06-05 — set back to 0 after */
 /* When HAPTIC_TEST=1, HAPTIC_ID_MODE picks which task body runs:
  *   0 = original 3-motor sequence (CENTER alone -> RIGHT alone -> LEFT alone -> ALL)
  *   1 = identify mode: short bursts on HAPTIC_ID_GPIO only (helps map
  *       a single GPIO to its physical motor location on the helmet).
  * Change HAPTIC_ID_GPIO to HAPTIC_GPIO_RIGHT or _LEFT between OTA flashes
  * to ID the other two. */
-#define HAPTIC_ID_MODE      1
+#define HAPTIC_ID_MODE      0
 #define HAPTIC_ID_GPIO      HAPTIC_GPIO_RIGHT   /* pulse this one to find it */
 /* Verified physical mapping 2026-05-28 by single-pin OTA ID pulses:
  *   GPIO 7  = CENTER (forehead)
@@ -131,7 +140,8 @@
  * forward distance for the obstacle-alert logic (so a floor obstacle close
  * to the body triggers the alert even though its slant distance is large).
  * Raw DATA: stream is NOT affected -- that stays as raw slant. */
-#define MOUNT_PITCH_DEG     20.0f
+#define MOUNT_PITCH_DEG     30.0f    /* bottom/old sensor: mounted ~30 deg DOWN (was 20) */
+#define MOUNT_PITCH_DEG_TOP (-5.0f)  /* top/new sensor: mounted ~5 deg UP (negative = up) */
 #define MAX_GRID_SIDE       8
 
 /* â”€â”€ Display options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -171,6 +181,9 @@ static volatile int16_t g_nearest_mm = INT16_MAX;
  * obstacle reaches body proximity, so the alert has to fire while the
  * obstacle is still in view. */
 static volatile bool g_alert_active = false;
+/* Master enable for motors + buzzer, driven by the HAPTIC_SWITCH_GPIO toggle.
+ * true = normal; false = paused (sensor keeps streaming) for debugging. */
+static volatile bool g_haptics_enabled = true;
 
 /* Most-urgent alerting zone this frame, used for beep-rate interpolation:
  *   urgency_ratio = g_urgency_forward / g_urgency_threshold  (0..1)
@@ -212,6 +225,19 @@ static const int16_t g_row_threshold_4x4[MAX_GRID_SIDE] = {
  * from the optical axis. Row index is in body-frame (post-rotation). */
 static float g_row_cos[MAX_GRID_SIDE];
 
+/* Second (top/upward) sensor's per-row tables. Same structure as the bottom
+ * sensor's above. Thresholds seeded equal to the bottom set for now -- TUNE
+ * separately for the upward sensor's head/overhead coverage. */
+static const int16_t g_row_threshold_top_8x8[MAX_GRID_SIDE] = {
+    600, 600, 600, 600, 700, 800, 850, 900,
+};
+static const int16_t g_row_threshold_top_4x4[MAX_GRID_SIDE] = {
+    600, 600, 800, 950,    /* TODO TUNE for the upward sensor */
+    0, 0, 0, 0,
+};
+static int16_t g_row_threshold_top[MAX_GRID_SIDE];
+static float   g_row_cos_top[MAX_GRID_SIDE];
+
 /* Latest frame's forward-distance grid (rotation + slant compensation applied),
  * 64 zones max. -1 = invalid. Read by /api/status web handler. */
 static volatile int16_t g_latest_forward[MAX_GRID_SIDE * MAX_GRID_SIDE];
@@ -221,6 +247,9 @@ static volatile int16_t g_latest_forward[MAX_GRID_SIDE * MAX_GRID_SIDE];
  * ST UM3109 §5.5). */
 static volatile uint8_t g_latest_status[MAX_GRID_SIDE * MAX_GRID_SIDE];
 static volatile int     g_latest_grid_side = 0;
+/* TOP sensor's body-frame grid, for the phone viewer's second heatmap. */
+static volatile int16_t g_latest_forward_top[MAX_GRID_SIDE * MAX_GRID_SIDE];
+static volatile uint8_t g_latest_status_top[MAX_GRID_SIDE * MAX_GRID_SIDE];
 
 static void compute_row_cos_table(int side)
 {
@@ -240,6 +269,23 @@ static void compute_row_cos_table(int side)
     const int16_t *src = (side == 8) ? g_row_threshold_8x8 : g_row_threshold_4x4;
     for (int r = 0; r < MAX_GRID_SIDE; r++) {
         g_row_threshold_mm[r] = src[r];
+    }
+}
+
+/* Same as compute_row_cos_table() but for the TOP/upward sensor: uses
+ * MOUNT_PITCH_DEG_TOP and fills g_row_cos_top / g_row_threshold_top. */
+static void compute_top_cos_table(int side)
+{
+    float deg_per_zone = 45.0f / (float)side;
+    float pitch_rad    = MOUNT_PITCH_DEG_TOP * (float)M_PI / 180.0f;
+    for (int r = 0; r < side; r++) {
+        float alpha_rad = ((float)r - (side - 1) / 2.0f)
+                          * deg_per_zone * (float)M_PI / 180.0f;
+        g_row_cos_top[r] = cosf(alpha_rad + pitch_rad);
+    }
+    const int16_t *src = (side == 8) ? g_row_threshold_top_8x8 : g_row_threshold_top_4x4;
+    for (int r = 0; r < MAX_GRID_SIDE; r++) {
+        g_row_threshold_top[r] = src[r];
     }
 }
 
@@ -296,12 +342,13 @@ static inline int rotated_zone(int out_z, int side)
 
 /* â”€â”€ Helper: stream DATA: line to UART + TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #if STREAM_DATA
-static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resolution)
+static void stream_distance_line(VL53L8CX_ResultsData *results, uint8_t resolution,
+                                 const char *prefix)
 {
     int total = (resolution == VL53L8CX_RESOLUTION_8X8) ? 64 : 16;
     int side  = (resolution == VL53L8CX_RESOLUTION_8X8) ? 8  : 4;
     char buf[STREAM_BUF_SIZE];
-    int off = snprintf(buf, sizeof(buf), "DATA:");
+    int off = snprintf(buf, sizeof(buf), "%s", prefix);
     for (int z = 0; z < total && off < (int)sizeof(buf) - 1; z++) {
         int src = rotated_zone(z, side);
         int16_t dist;
@@ -460,7 +507,7 @@ static void buzzer_task(void *arg)
      * ratio) — so the row-7 one beeps faster, matching how close the
      * obstacle is to "actionable proximity" for that body region. */
     while (1) {
-        bool alert = g_alert_active;
+        bool alert = g_alert_active && g_haptics_enabled;
         if (alert) {
             int16_t uf = g_urgency_forward;
             int16_t ut = g_urgency_threshold;
@@ -698,14 +745,18 @@ static const char VIEWER_HTML[] =
 "<div class='dist' id='val'>---</div>"
 "<div class='unit'>cm forward to nearest</div></div>"
 "<div class='meta'>"
-"alert <span id='alt'>?</span> &middot; valid <span id='vc'>?</span>/<span id='vt'>?</span> &middot; row thresholds (cm): <span id='thrs'>?</span>"
+"alert <span id='alt'>?</span> &middot; haptics <span id='hap'>?</span> &middot; valid <span id='vc'>?</span>/<span id='vt'>?</span> &middot; row thresholds (cm): <span id='thrs'>?</span>"
 "</div>"
+"<div class='meta' style='padding-bottom:0'>BOTTOM sensor (down &mdash; ground/low)</div>"
 "<div class='grid' id='grid'></div>"
+"<div class='meta' style='padding-bottom:0'>TOP sensor (up &mdash; head/overhead)</div>"
+"<div class='grid' id='gridT'></div>"
 "<div class='meta' style='font-size:2.8vw;line-height:1.6'>"
 "Status codes (ST UM3109 §5.5): 0=no update, 4=consistency fail, 5=valid, 6=wrap-around, 7=rate inconsistent, 8=signal too low, 9=valid low-signal, 10=sigma too high, 11=no target, 255=no update"
 "</div>"
 "<script>"
 "const grid=document.getElementById('grid');"
+"const gridT=document.getElementById('gridT');"
 "const fmt=mm=>Math.round(mm/10);"
 "async function tick(){"
 "try{const r=await fetch('/api/status');if(!r.ok)throw 0;const d=await r.json();"
@@ -713,10 +764,14 @@ static const char VIEWER_HTML[] =
 "if(v<0||v>=4000){el.textContent='---';c.className='card dead';}"
 "else{el.textContent=fmt(v);c.className='card '+(d.alert?'alert':(v<1500?'warn':'clear'));}"
 "document.getElementById('alt').textContent=d.alert?'ON':'off';"
+"document.getElementById('hap').textContent=(d.haptics===false)?'PAUSED':'on';"
 "document.getElementById('thrs').textContent=d.row_thresholds_mm.map(fmt).join(', ');"
 "const side=d.side;document.getElementById('vt').textContent=side*side;"
-"let nval=0;if(grid.children.length!==side*side){grid.style.gridTemplateColumns='repeat('+side+',1fr)';grid.innerHTML='';for(let i=0;i<side*side;i++){const e=document.createElement('div');e.className='cell';grid.appendChild(e);}}"
-"for(let i=0;i<side*side;i++){const z=d.grid[i];const e=grid.children[i];const row=Math.floor(i/side);const thr=d.row_thresholds_mm[row];if(z<0){const s=d.status?d.status[i]:'?';e.textContent='s'+s;e.style.background='#2a1212';e.style.color='#c66';}else{nval++;e.textContent=fmt(z);const f=Math.min(1,z/(1.5*thr));e.style.background='hsl('+(f*120)+',70%,30%)';e.style.color='#fff';}}"
+"function ensure(g){if(g.children.length!==side*side){g.style.gridTemplateColumns='repeat('+side+',1fr)';g.innerHTML='';for(let i=0;i<side*side;i++){const e=document.createElement('div');e.className='cell';g.appendChild(e);}}}"
+"function paint(g,arr,st,thr){let nv=0;for(let i=0;i<side*side;i++){const z=arr[i];const e=g.children[i];const row=Math.floor(i/side);const t=thr[row];if(z<0){const s=st?st[i]:'?';e.textContent='s'+s;e.style.background='#2a1212';e.style.color='#c66';}else{nv++;e.textContent=fmt(z);const f=Math.min(1,z/(1.5*t));e.style.background='hsl('+(f*120)+',70%,30%)';e.style.color='#fff';}}return nv;}"
+"ensure(grid);ensure(gridT);"
+"const nval=paint(grid,d.grid,d.status,d.row_thresholds_mm);"
+"paint(gridT,d.grid_top,d.status_top,d.thr_top||d.row_thresholds_mm);"
 "document.getElementById('vc').textContent=nval;"
 "}catch(e){document.getElementById('val').textContent='ERR';document.getElementById('card').className='card dead';}"
 "}setInterval(tick,200);tick();"
@@ -748,10 +803,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     } else {
         urgency_pct = -1;   /* sentinel: no alert */
     }
-    char buf[2560];
+    char buf[4096];
     int off = snprintf(buf, sizeof(buf),
-        "{\"nearest_mm\":%d,\"alert\":%s,\"urgency_pct\":%d,\"side\":%d,\"row_thresholds_mm\":[",
-        (int)nearest, alert ? "true" : "false", urgency_pct, side);
+        "{\"nearest_mm\":%d,\"alert\":%s,\"haptics\":%s,\"urgency_pct\":%d,\"side\":%d,\"row_thresholds_mm\":[",
+        (int)nearest, alert ? "true" : "false", g_haptics_enabled ? "true" : "false", urgency_pct, side);
     for (int r = 0; r < side && off < (int)sizeof(buf) - 8; r++) {
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%s%d", r ? "," : "", (int)g_row_threshold_mm[r]);
@@ -766,10 +821,26 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         off += snprintf(buf + off, sizeof(buf) - off,
                         "%s%u", i ? "," : "", (unsigned)g_latest_status[i]);
     }
+    off += snprintf(buf + off, sizeof(buf) - off, "],\"grid_top\":[");
+    for (int i = 0; i < total && off < (int)sizeof(buf) - 8; i++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%d", i ? "," : "", (int)g_latest_forward_top[i]);
+    }
+    off += snprintf(buf + off, sizeof(buf) - off, "],\"status_top\":[");
+    for (int i = 0; i < total && off < (int)sizeof(buf) - 8; i++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%u", i ? "," : "", (unsigned)g_latest_status_top[i]);
+    }
+    off += snprintf(buf + off, sizeof(buf) - off, "],\"thr_top\":[");
+    for (int r = 0; r < side && off < (int)sizeof(buf) - 8; r++) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+                        "%s%d", r ? "," : "", (int)g_row_threshold_top[r]);
+    }
     off += snprintf(buf + off, sizeof(buf) - off, "]}");
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");   /* let the local 3D viewer fetch this */
     httpd_resp_send(req, buf, off);
     return ESP_OK;
 }
@@ -785,6 +856,7 @@ static esp_err_t health_get_handler(httpd_req_t *req)
         (unsigned long)g_latest_grid_side);   /* placeholder — frame count if added later */
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");   /* let the local 3D viewer fetch this */
     httpd_resp_send(req, buf, off);
     return ESP_OK;
 }
@@ -897,13 +969,138 @@ static void tcp_server_task(void *arg)
 static int  haptic_motor_for_col(int col, int side);
 static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *active);
 
+/* Initialise one VL53L8CX on its own I2C bus + pins, run ULD init + config,
+ * and start ranging. Returns true on success. Bottom + top run on I2C_NUM_1 /
+ * I2C_NUM_0 -- separate buses so both keep the default 0x29 address with no
+ * LPn juggling. */
+static bool init_one_sensor(VL53L8CX_Configuration *s, i2c_port_t port,
+                            gpio_num_t sda, gpio_num_t scl, gpio_num_t pwren,
+                            const char *name)
+{
+    i2c_master_bus_config_t bus_cfg = {
+        .clk_source           = I2C_CLK_SRC_DEFAULT,
+        .i2c_port             = port,
+        .scl_io_num           = scl,
+        .sda_io_num           = sda,
+        .glitch_ignore_cnt    = 7,
+        .flags.enable_internal_pullup = false,
+    };
+    i2c_master_bus_handle_t bus_handle;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus_handle));
+
+    /* IMU presence probe: a BNO085 wired onto this bus ACKs at 0x4A (ADO low)
+     * or 0x4B (ADO high). Confirms wiring before we add the full driver. */
+    if (port == I2C_NUM_0) {
+        bool imu_a = (i2c_master_probe(bus_handle, 0x4A, 50) == ESP_OK);
+        bool imu_b = (i2c_master_probe(bus_handle, 0x4B, 50) == ESP_OK);
+        if (imu_a || imu_b)
+            ESP_LOGW(TAG, "IMU PROBE: BNO085 ACK at 0x%02X", imu_a ? 0x4A : 0x4B);
+        else
+            ESP_LOGW(TAG, "IMU PROBE: no device at 0x4A/0x4B -- check PS1=PS0=GND, CS=3V3, power, SDA/SCL");
+    }
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = VL53L8CX_DEFAULT_I2C_ADDRESS >> 1,
+        .scl_speed_hz    = VL53L8CX_MAX_CLK_SPEED,
+    };
+
+    memset(s, 0, sizeof(*s));
+    s->platform.bus_config = bus_cfg;
+    s->platform.reset_gpio = pwren;
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &s->platform.handle));
+
+    VL53L8CX_Reset_Sensor(&s->platform);
+
+    uint8_t alive = 0;
+    uint8_t ret = vl53l8cx_is_alive(s, &alive);
+    if (ret != VL53L8CX_STATUS_OK || !alive) {
+        ESP_LOGE(TAG, "[%s] sensor NOT detected (ret=%u) on SDA=%d SCL=%d PWREN=%d",
+                 name, ret, (int)sda, (int)scl, (int)pwren);
+        return false;
+    }
+    ESP_LOGI(TAG, "[%s] sensor detected; uploading ULD firmware...", name);
+    ret = vl53l8cx_init(s);
+    if (ret != VL53L8CX_STATUS_OK) { ESP_LOGE(TAG, "[%s] vl53l8cx_init failed (ret=%u)", name, ret); return false; }
+
+    ret  = vl53l8cx_set_resolution(s, SENSOR_RESOLUTION);
+    ret |= vl53l8cx_set_ranging_mode(s, RANGING_MODE);
+    ret |= vl53l8cx_set_ranging_frequency_hz(s, RANGING_FREQ_HZ);
+    ret |= vl53l8cx_set_sharpener_percent(s, SHARPENER_PERCENT);
+    ret |= vl53l8cx_set_target_order(s, TARGET_ORDER);
+    if (ret != VL53L8CX_STATUS_OK) { ESP_LOGE(TAG, "[%s] configuration failed (ret=%u)", name, ret); return false; }
+
+    ret = vl53l8cx_start_ranging(s);
+    if (ret != VL53L8CX_STATUS_OK) { ESP_LOGE(TAG, "[%s] start_ranging failed (ret=%u)", name, ret); return false; }
+    ESP_LOGI(TAG, "[%s] ranging started", name);
+    return true;
+}
+
+/* Process one sensor's frame into the SHARED per-frame accumulators (nearest
+ * forward distance, alert flag, most-urgent zone, and the 3 per-motor urgency
+ * trackers). Called for both sensors each cycle so haptics + buzzer reflect the
+ * worst obstacle across BOTH. row_cos/row_thr are that sensor's tables;
+ * fill_grid true only for the streamed (bottom) sensor so /api/status + DATA:
+ * keep showing it. */
+static void process_frame(const VL53L8CX_ResultsData *results, int side,
+                          const float *row_cos, const int16_t *row_thr,
+                          volatile int16_t *out_forward, volatile uint8_t *out_status,
+                          int16_t *nearest_forward, bool *any_alert,
+                          int16_t *urgency_forward, int16_t *urgency_threshold, bool *have_urgency,
+                          int16_t *motor_fwd, int16_t *motor_thr, bool *motor_active)
+{
+    int total_zones = side * side;
+    for (int z_out = 0; z_out < total_zones; z_out++) {
+        int z_src = rotated_zone(z_out, side);
+        int r_out = z_out / side;
+        int c_out = z_out % side;
+        uint8_t status = results->target_status[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
+        bool status_ok = STATUS_FILTER_STRICT ? (status == 5)
+                                              : (status == 5 || status == 6 || status == 9);
+        int16_t forward_for_grid = -1;
+        if (out_status) out_status[z_out] = status;
+        if (results->nb_target_detected[z_src] > 0 && status_ok) {
+            int16_t slant = results->distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
+            if (slant > 0) {
+                int16_t forward = (int16_t)((float)slant * row_cos[r_out]);
+                forward_for_grid = forward;
+                if (forward < *nearest_forward) *nearest_forward = forward;
+                int16_t row_thresh = row_thr[r_out];
+                if (forward < row_thresh) {
+                    *any_alert = true;
+                    if (!*have_urgency ||
+                        (int32_t)forward * *urgency_threshold
+                            < (int32_t)*urgency_forward * row_thresh) {
+                        *urgency_forward   = forward;
+                        *urgency_threshold = row_thresh;
+                        *have_urgency      = true;
+                    }
+                    int mi = haptic_motor_for_col(c_out, side);
+                    if (!motor_active[mi] ||
+                        (int32_t)forward * motor_thr[mi]
+                            < (int32_t)motor_fwd[mi] * row_thresh) {
+                        motor_fwd[mi]    = forward;
+                        motor_thr[mi]    = row_thresh;
+                        motor_active[mi] = true;
+                    }
+                }
+            }
+        }
+        if (out_forward) out_forward[z_out] = forward_for_grid;
+    }
+}
+
 /* â”€â”€ Main ranging task â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 static void ranging_task(void *arg)
 {
-    VL53L8CX_Configuration sensor;
-    VL53L8CX_ResultsData   results;
+    /* static = off the task stack (.bss). These structs are large; two of each
+     * overflowed the 8 KB ranging_task stack as plain locals. */
+    static VL53L8CX_Configuration sensor;       /* bottom/old sensor - I2C_NUM_1 */
+    static VL53L8CX_ResultsData   results;
+    static VL53L8CX_Configuration sensor_top;   /* top/new sensor - I2C_NUM_0 */
+    static VL53L8CX_ResultsData   results_top;
+    bool                   top_valid = false, top_online = false;
     uint8_t                is_alive  = 0;
-    uint8_t                is_ready  = 0;
     uint32_t               frame_num = 0;
 
     i2c_master_bus_config_t bus_cfg = {
@@ -916,6 +1113,16 @@ static void ranging_task(void *arg)
     };
     i2c_master_bus_handle_t bus_handle;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus_handle));
+
+    /* IMU presence probe on the BOTTOM bus too (I2C_NUM_1, SDA=GPIO1 SCL=GPIO2). */
+    {
+        bool imu_a = (i2c_master_probe(bus_handle, 0x4A, 50) == ESP_OK);
+        bool imu_b = (i2c_master_probe(bus_handle, 0x4B, 50) == ESP_OK);
+        if (imu_a || imu_b)
+            ESP_LOGW(TAG, "IMU PROBE (bottom bus 1/2): BNO085 ACK at 0x%02X", imu_a ? 0x4A : 0x4B);
+        else
+            ESP_LOGW(TAG, "IMU PROBE (bottom bus 1/2): no device at 0x4A/0x4B");
+    }
 
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -978,23 +1185,86 @@ static void ranging_task(void *arg)
     }
     ESP_LOGI(TAG, "Ranging started");
 
+    /* Bring up the TOP/new sensor on the second I2C bus (I2C_NUM_0). Separate
+     * bus keeps the default 0x29 address, no LPn juggling. Build its own cos +
+     * threshold tables (mounted ~5 deg UP vs the bottom's ~30 deg down). */
+    compute_top_cos_table(side_init);
+    top_online = init_one_sensor(&sensor_top, I2C_NUM_0,
+                                 GPIO_SDA2, GPIO_SCL2, GPIO_PWREN2, "top");
+    if (top_online) {
+        ESP_LOGI(TAG, "Top sensor online (pitch %.1f deg, positive = up).",
+                 (double)MOUNT_PITCH_DEG_TOP);
+    } else {
+        ESP_LOGW(TAG, "Top sensor NOT available - running bottom sensor only.");
+    }
+
+    /* Haptic-pause switch: input + internal pull-up. HIGH = on, LOW(GND) = paused. */
+    gpio_config_t sw_cfg = {
+        .pin_bit_mask = 1ULL << HAPTIC_SWITCH_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&sw_cfg);
+    ESP_LOGI(TAG, "Haptic-pause switch on GPIO%d (HIGH=on, LOW=paused)", (int)HAPTIC_SWITCH_GPIO);
+
+    /* Bring up the IMU (BNO085) on the SHARED bottom bus at 0x4B. Its own task
+     * runs the SH-2 service loop; we just read the latest quaternion to stream. */
+    if (bno08x_start(bus_handle, 0x4B))
+        ESP_LOGI(TAG, "IMU (BNO085) task started on bottom bus @0x4B");
+    else
+        ESP_LOGW(TAG, "IMU start failed");
+
+    /* Stall fail-safe: consecutive no-fresh-frame iterations before forcing all
+     * outputs OFF. ~40 iters x (5 ms wait + I2C poll) >= ~200 ms = several frame
+     * periods, so normal inter-frame gaps never trip it; only a real sensor
+     * stall (e.g. wedged at point-blank) does. Prevents motors/buzzer latching
+     * at their last (max) duty until a manual ESP reset. */
+    const int STALE_FRAMES_OFF = 40;
+    int stale_frames = 0;
+
     while (1) {
-        ret = vl53l8cx_check_data_ready(&sensor, &is_ready);
-        if (ret != VL53L8CX_STATUS_OK) {
-            ESP_LOGE(TAG, "check_data_ready error (ret=%u)", ret);
+        bool got = false;
+        uint8_t rdy = 0;
+        /* Poll both sensors; keep each one's latest frame. Recombine + drive
+         * haptics whenever EITHER produced a fresh frame. */
+        if (vl53l8cx_check_data_ready(&sensor, &rdy) == VL53L8CX_STATUS_OK && rdy) {
+            if (vl53l8cx_get_ranging_data(&sensor, &results) == VL53L8CX_STATUS_OK) {
+                got = true; ++frame_num;
+            }
+        }
+        if (top_online) {
+            rdy = 0;
+            if (vl53l8cx_check_data_ready(&sensor_top, &rdy) == VL53L8CX_STATUS_OK && rdy) {
+                if (vl53l8cx_get_ranging_data(&sensor_top, &results_top) == VL53L8CX_STATUS_OK) {
+                    top_valid = true; got = true;
+                }
+            }
+        }
+        if (!got) {
+            /* No fresh frame this iteration. If the sensor has stalled for too
+             * long, fail safe: force every output OFF so motors/buzzer don't
+             * stay latched at their last (max) duty until a reset. Fire once on
+             * crossing the threshold; nothing re-raises them while stalled. */
+            if (++stale_frames == STALE_FRAMES_OFF) {
+#if HAPTIC_DIRECTIONAL
+                int16_t z_fwd[HAPTIC_N] = { 0 };
+                int16_t z_thr[HAPTIC_N] = { 1, 1, 1 };
+                bool    z_act[HAPTIC_N] = { false };
+                haptic_apply(z_fwd, z_thr, z_act);   /* all motor duties -> 0 */
+#endif
+                g_alert_active      = false;         /* silence buzzer_task */
+                g_urgency_forward   = 0;
+                g_urgency_threshold = 1;
+                g_nearest_mm        = INT16_MAX;
+                ESP_LOGW(TAG, "Sensor stall (%d empty frames) - outputs forced OFF (fail-safe)",
+                         stale_frames);
+            }
             VL53L8CX_WaitMs(&sensor.platform, 5);
             continue;
         }
-        if (!is_ready) {
-            VL53L8CX_WaitMs(&sensor.platform, 5);
-            continue;
-        }
-        ret = vl53l8cx_get_ranging_data(&sensor, &results);
-        if (ret != VL53L8CX_STATUS_OK) {
-            ESP_LOGE(TAG, "get_ranging_data error (ret=%u)", ret);
-            continue;
-        }
-        ++frame_num;
+        stale_frames = 0;
 
         /* Update nearest-valid-zone FORWARD distance for the buzzer task.
          * Iterate in body-frame (output) order so each zone's row index r_out
@@ -1061,12 +1331,29 @@ static void ranging_task(void *arg)
             }
             g_latest_forward[z_out] = forward_for_grid;
         }
+
+        /* Fold in the TOP/upward sensor (its own cos + threshold tables) into
+         * the same accumulators so haptics + buzzer reflect BOTH sensors. */
+        if (top_valid) {
+            process_frame(&results_top, side, g_row_cos_top, g_row_threshold_top,
+                          g_latest_forward_top, g_latest_status_top,
+                          &nearest_forward, &any_alert, &urgency_forward,
+                          &urgency_threshold, &have_urgency,
+                          motor_fwd, motor_thr, motor_active);
+        }
+
         g_nearest_mm        = nearest_forward;
         g_alert_active      = any_alert;
         g_urgency_forward   = urgency_forward;
         g_urgency_threshold = urgency_threshold;
         g_latest_grid_side  = side;
 
+        /* Debug pause switch (GPIO17): when off, zero the motors so you can
+         * work with the sensor without the haptics going crazy. */
+        g_haptics_enabled = (gpio_get_level(HAPTIC_SWITCH_GPIO) != 0);
+        if (!g_haptics_enabled) {
+            for (int m = 0; m < HAPTIC_N; m++) motor_active[m] = false;
+        }
 #if HAPTIC_DIRECTIONAL
         /* Drive the 3 directional motors from this frame's per-motor urgency.
          * Squared duty curve + dominance weighting inside haptic_apply(). When
@@ -1075,8 +1362,19 @@ static void ranging_task(void *arg)
 #endif
 
 #if STREAM_DATA
-        stream_distance_line(&results, SENSOR_RESOLUTION);
+        stream_distance_line(&results, SENSOR_RESOLUTION, "DATA:");
+        if (top_valid) stream_distance_line(&results_top, SENSOR_RESOLUTION, "DATAT:");
 #endif
+        {   /* IMU orientation, when available: Q:w,x,y,z */
+            float q[4];
+            if (bno08x_get_quat(q)) {
+                char qb[72];
+                int qn = snprintf(qb, sizeof(qb), "Q:%.4f,%.4f,%.4f,%.4f\n",
+                                  (double)q[0], (double)q[1], (double)q[2], (double)q[3]);
+                fputs(qb, stdout);
+                tcp_write(qb, qn);
+            }
+        }
 #if STREAM_SIGMA
         stream_sigma_line(&results, SENSOR_RESOLUTION);
 #endif
@@ -1093,6 +1391,7 @@ static void ranging_task(void *arg)
     }
 
     vl53l8cx_stop_ranging(&sensor);
+    if (top_online) vl53l8cx_stop_ranging(&sensor_top);
     vTaskDelete(NULL);
 }
 

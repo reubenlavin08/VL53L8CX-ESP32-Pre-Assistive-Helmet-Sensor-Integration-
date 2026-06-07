@@ -17,3 +17,7 @@ visualizer/venv/
 
 # WiFi credentials — never commit
 main/wifi_credentials.h
+
+# transient run logs
+*.log
+viz.pid

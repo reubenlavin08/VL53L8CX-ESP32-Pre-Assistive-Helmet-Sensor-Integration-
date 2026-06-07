@@ -164,3 +164,12 @@ Until the IMU arrives:
   next to sensor on helmet, parse the stream, fuse with ToF distances.
   Practical for prototyping if a real IMU breakout (e.g. BNO085) isn't on hand.
   Trade-offs: extra bulk, battery drain on phone, ~50 ms WiFi latency.
+
+## ToF↔ToF mutual interference (logged 2026-06-06) — NEXT after IMU
+Two VL53L8CX firing simultaneously may interfere (one sensor's 940nm emission
+seen by the other), corrupting ranges where their FoVs overlap or face each other.
+Investigate after the IMU is working. Mitigations to test:
+- Stagger/alternate ranging so they don't integrate at the same instant.
+- Check ST app notes for multi-sensor sync / Xtalk between modules.
+- Compare per-zone SIGMA with one sensor vs both running (interference shows as
+  inflated sigma / phantom returns on the overlapping zones).

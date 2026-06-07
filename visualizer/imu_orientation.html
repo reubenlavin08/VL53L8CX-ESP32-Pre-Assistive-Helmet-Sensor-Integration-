@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BNO085 Live Orientation</title>
+<style>
+  html,body{margin:0;height:100%;background:#0e1116;color:#cdd6e0;
+            font-family:Segoe UI,system-ui,sans-serif;overflow:hidden}
+  #ui{position:fixed;top:0;left:0;right:0;padding:12px 16px;display:flex;
+      gap:14px;align-items:center;background:linear-gradient(#0e1116ee,#0e111600);z-index:10}
+  button{background:#2a6df4;color:#fff;border:0;border-radius:7px;padding:9px 16px;
+         font-size:14px;cursor:pointer}
+  button:hover{background:#3f80ff}
+  #status{font-size:13px;opacity:.85}
+  #q{font-size:12px;opacity:.6;margin-left:auto;font-family:Consolas,monospace}
+  #hint{position:fixed;bottom:12px;left:0;right:0;text-align:center;font-size:12px;opacity:.5}
+</style>
+</head>
+<body>
+<div id="ui">
+  <button id="connect">Connect to BNO085</button>
+  <span id="status">Not connected. Click connect, then pick the C6 port (USB Serial / COM9).</span>
+  <span id="q"></span>
+</div>
+<div id="hint">Move the sensor to rotate the body &nbsp;·&nbsp; red = X &nbsp; green = Y &nbsp; blue = Z &nbsp;·&nbsp; do a figure-8 to calibrate the heading</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const statusEl = document.getElementById('status');
+const qEl = document.getElementById('q');
+
+// ---- 3D scene ----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1116);
+const cam = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 100);
+cam.position.set(4, 3.2, 5);
+cam.lookAt(0, 0, 0);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+addEventListener('resize', () => {
+  cam.aspect = innerWidth/innerHeight; cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.1));
+const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(5,8,6); scene.add(dl);
+const grid = new THREE.GridHelper(12, 12, 0x2a3340, 0x1a2230); scene.add(grid);
+
+// group rotated so the sensor's Z-up frame maps to three.js Y-up
+const frame = new THREE.Group();
+frame.rotation.x = -Math.PI/2;
+scene.add(frame);
+
+// the sensor body
+const body = new THREE.Mesh(
+  new THREE.BoxGeometry(2.2, 1.5, 0.32),
+  new THREE.MeshStandardMaterial({color:0x33b6ff, metalness:0.2, roughness:0.5})
+);
+frame.add(body);
+
+// body-fixed axes (rotate with the body)
+function axis(dir, color){
+  const a = new THREE.ArrowHelper(dir, new THREE.Vector3(0,0,0), 1.7, color, 0.4, 0.22);
+  body.add(a); return a;
+}
+axis(new THREE.Vector3(1,0,0), 0xff4444); // X red
+axis(new THREE.Vector3(0,1,0), 0x44ff66); // Y green
+axis(new THREE.Vector3(0,0,1), 0x4488ff); // Z blue
+
+function render(){ requestAnimationFrame(render); renderer.render(scene, cam); }
+render();
+
+// ---- Web Serial ----
+let lastQ = null;
+document.getElementById('connect').onclick = async () => {
+  if (!('serial' in navigator)) {
+    statusEl.textContent = "This browser has no Web Serial API. Use Chrome or Edge.";
+    return;
+  }
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    statusEl.textContent = "Connected. Streaming…";
+    document.getElementById('connect').style.display = 'none';
+    readLoop(port);
+  } catch (e) {
+    statusEl.textContent = "Connect failed/cancelled: " + e.message;
+  }
+};
+
+async function readLoop(port){
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  const reader = decoder.readable.getReader();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line.startsWith("Q,")) handleQuat(line);
+    }
+  }
+}
+
+function handleQuat(line){
+  const p = line.split(",");
+  if (p.length !== 5) return;
+  const w = +p[1], x = +p[2], y = +p[3], z = +p[4];
+  if ([w,x,y,z].some(Number.isNaN)) return;
+  // three.js quaternion is (x, y, z, w)
+  body.quaternion.set(x, y, z, w);
+  qEl.textContent = `q(w,x,y,z) = ${w.toFixed(3)} ${x.toFixed(3)} ${y.toFixed(3)} ${z.toFixed(3)}`;
+}
+</script>
+</body>
+</html>
