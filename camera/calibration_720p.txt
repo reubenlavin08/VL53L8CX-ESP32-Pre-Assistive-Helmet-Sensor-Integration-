@@ -1,0 +1,41 @@
+HBV-1716WA fisheye calibration  (1280x720, MJPG)
+images used : 19
+board       : 8x11 inner corners, 19.6 mm squares
+RMS reprojection error : 0.3006 px   -> GOOD - use it
+
+K =
+[[669.8228   0.     620.9529]
+ [  0.     670.0752 335.1691]
+ [  0.       0.       1.    ]]
+
+D (k1..k4) =
+[-0.079359 -0.006644  0.016116 -0.007523]
+
+fx = 669.823 px    fy = 670.075 px
+cx = 620.953 px    cy = 335.169 px      (frame centre would be 640.0, 360.0)
+
+MEASURED field of view (this replaces the extrapolated ~109/67 guess):
+  horizontal 119.58 deg
+  vertical    63.12 deg
+  diagonal   144.02 deg   (box claims 140 deg diagonal)
+
+per-image mean error (px):
+   0.554  calib_008.png
+   0.431  calib_009.png
+   0.252  calib_012.png
+   0.213  calib_013.png
+   0.210  calib_011.png
+   0.196  calib_015.png
+   0.181  calib_016.png
+   0.166  calib_006.png
+   0.163  calib_001.png
+   0.139  calib_014.png
+   0.138  calib_002.png
+   0.137  calib_000.png
+   0.133  calib_018.png
+   0.129  calib_005.png
+   0.126  calib_019.png
+   0.126  calib_017.png
+   0.116  calib_010.png
+   0.112  calib_004.png
+   0.103  calib_003.png

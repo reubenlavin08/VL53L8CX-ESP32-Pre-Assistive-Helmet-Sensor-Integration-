@@ -1,6 +1,12 @@
 # Increase main task stack — VL53L8CX ULD needs at least 7168 bytes
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
+# FreeRTOS tick = 1 kHz (default 100 Hz). At 100 Hz the IMU service task's
+# vTaskDelay(pdMS_TO_TICKS(2)) rounded to 0 ticks -> it free-spun and starved the
+# ToF loop at the shared-I2C mutex (intermittent "no DATA:/Q:" on some boots).
+# At 1 kHz the 2 ms delay is real -> the task paces at ~500 Hz and frees the bus.
+CONFIG_FREERTOS_HZ=1000
+
 # Log level. Verbose was used for OTA diagnosis (see 2026-05-25) and
 # revealed verbose logging itself was throttling OTA to UART speed (~15 KB/s
 # vs ~150 KB/s clean). Back to INFO. The OTA handler's per-chunk heap log
@@ -12,7 +18,7 @@ CONFIG_I2C_ENABLE_DEBUG_LOG=n
 
 # VL53L8CX — enable I2C timeout so failures print an error instead of hanging
 CONFIG_VL53L8CX_I2C_TIMEOUT=y
-CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=1000
+CONFIG_VL53L8CX_I2C_TIMEOUT_VALUE=100
 
 # Two-OTA partition layout (factory + ota_0 + ota_1 not needed — use two_ota):
 CONFIG_PARTITION_TABLE_TWO_OTA=y

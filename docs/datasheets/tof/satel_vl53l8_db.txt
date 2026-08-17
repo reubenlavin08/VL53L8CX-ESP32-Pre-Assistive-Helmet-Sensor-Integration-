@@ -1,0 +1,425 @@
+Features
+• Breakout boards based on the VL53L8 series for STM32 Nucleo
+– VL53L8CX Low-power high-performance 8x8 multizone ToF sensor
+– VL53L8CH Artificial intelligence enabler, high performance 8x8 
+multizone ToF sensor
+• Divisible board that can be used as a mini-PCB breakout board, easy to 
+integrate into the customer's device
+• Two breakout boards available in the package
+• Compatible with X-NUCLEO-53L8A1
+Description
+The SATEL-VL53L8 package includes two breakout boards, which can be easily 
+integrated into the customer's devices.
+The PCB section that embeds the VL53L8 series Time-of-Flight sensor module is 
+perforated. The developers can then break off the mini-PCB and use it in a 3.3 V 
+supply application via flying wires.
+This makes it easier to integrate the SATEL-VL53L8 breakout boards into the 
+development and evaluation devices, thanks to their small size.
+The breakout boards support two products: VL53L8CX and VL53L8CH.
+The VL53L8CX is an 8x8 multizone, ToF ranging sensor, which enhances 
+performance under ambient light with a reduced power consumption. Based on 
+STMicroelectronics FlightSense technology, the sensor is designed to provide 
+accurate ranging up to 400 cm with a 65° diagonal FoV.
+The VL53L8CH is the perfect Time-of-Flight sensor enabling AI applications, with 
+enhanced performance under ambient light with a wide 65° diagonal FoV. The 
+compact and normalized histogram (CNH) innovative data output is specially 
+designed for artificial intelligence (AI) applications requiring multizone raw data from 
+a high performance multizone ToF sensor.
+Product summary
+Breakout board 
+based on the 
+VL53L8 series 
+Time-of-Flight 
+sensors
+SATEL-VL53L8
+Time-of-Flight 
+expansion board 
+based on the 
+VL53L8 series for 
+STM32 Nucleo
+X-NUCLEO-53L8A1
+Applications
+Personal Electronics - 
+Audio and Video
+Gaming and Drones
+Virtual - Augmented 
+Reality
+Wearable
+Breakout board based on the VL53L8 series Time-of-Flight sensors
+SATEL-VL53L8
+Data brief
+DB4924 - Rev 3 - May 2026
+For further information, contact your local STMicroelectronics sales office.
+www.st.com
+1 Breakout boards
+You can break the breakout boards along the perforations to use the mini-PCB.
+Figure 1. Breakout board
+This setup is easier to integrate into a customer's device thanks to its small form factor.
+You canot plug the VL53L8 breakout boards directly onto the X-NUCLEO-53L8A1 expansion board through two 
+six-pin connectors (Figure 2), They can be connected to the X-NUCLEO-53L8A1 by using the mini PCB through 
+flying wires (Figure 3 and Figure 4).
+The schematic can be duplicated for the sensor on the right allowing the use of both mini PCB. For more 
+information on connection and how to configure the X-NUCLEO-53L8A1 please refer to UM3120.
+SATEL-VL53L8
+Breakout boards
+DB4924 - Rev 3 page 2/9
+Figure 2. SATEL-VL53L8 breakout boards can not be connected to the X-NUCLEO-53L8A1 expansion 
+board
+Figure 3. SATEL-VL53L8 mini-PCB flying wire connection to the X-NUCLEO-53L8A1 expansion board in 
+I2C mode. X-NUCLEO-53L8A1 J9 jumper with pin 2 and 3 connected
+SATEL-VL53L8
+Breakout boards
+DB4924 - Rev 3 page 3/9
+Figure 4. SATEL-VL53L8 mini-PCB flying wire connection to the X-NUCLEO-53L8A1 expansion board in 
+SPI mode. X-NUCLEO-53L8A1 J9 jumper with pin 1 and 2 connected
+SATEL-VL53L8
+Breakout boards
+DB4924 - Rev 3 page 4/9
+2 Ordering information for the VL53L8 series ToF sensor
+This board is equipped with a noncommercial VL53L8CA evaluation purpose only Time-of-Flight sensor. Its 
+equivalent orderable products are listed in the following table.
+For a detailed description of each sensor, please refer to its datasheet on the product web page.
+Additional information is available from the user manual and collateral documents of the target ToF sensor.
+Table 1. Orderable products
+RPN CPN Datasheet Features
+VL53L8CX VL53L8CXV0GC/1 DS14161
+Low-power high-performance 
+8x8 multizone Time-of-Flight 
+sensor
+VL53L8CH VL53L8CHV0GC/1 DS14310
+Artificial intelligence enabler, 
+high performance 8x8 
+multizone Time-of-Flight 
+sensor
+SATEL-VL53L8
+Ordering information for the VL53L8 series ToF sensor
+DB4924 - Rev 3 page 5/9
+3 Schematic diagram
+Figure 5. SATEL-VL53L8 circuit schematic
+EXT_5V0
+10V
+C51uF1%
+R6100k
+EXT_PWR_EN
+REG_1V8
+6.3V
+C310uF
+EXT_5V0
+10V
+C61uF
+EXT_PWR_EN
+REG_3V3
+10V
+C44.7uF
+DUT_AVDD
+6.3V
+C14.7uF
+DUT_IOVDD
+1%
+R347k1%
+R447k
+1%
+R547k
+1%
+R747k
+DUT_LP n
+DUT_SPI_I2C_N
+DUT_GPIO1DUT_GPIO2
+DUT_MCLK_SCLDUT_MOSI_S DADUT_MIS ODUT_NCS
+1%
+R12.2k1%
+R22.2k
+1%
+R847k1%
+R947k
+DUT_IOVDD
+Snap-offperforations
+TP 1 TP 2
+TP 3 TP 4
+TP 5 TP 6
+TP 7 TP 8
+TP 9 TP10
+TP 11 TP12
+TP13 TP14
+TP15 TP16
+TP17 TP18
+TP19 TP20
+TP21 TP22
+DUT_AVDD
+DUT_IOVDD
+DUT_GPIO1
+DUT_GPIO2
+DUT_LP n
+DUT_SPI_I2C_N
+DUT_MCLK_SCL
+DUT_MOSI_S DA
+DUT_MIS O
+DUT_NCS
+Top (device) edge  pads
+Bottom edge  pads
+All pads 0.8 x 1.6mm, top pads inline  with bottom pads
+Snap-offperforations
+DUT_AVDD
+DUT_IOVDD
+DUT_GPIO1
+DUT_GPIO2
+DUT_MCLK_SCL
+DUT_MOSI_S DA
+DUT_MIS O
+DUT_NCS
+LPn
+GPIO1
+GPIO2
+SPI_I2C_N
+MCLK_SCL
+MOSI_S DA
+MISO
+NCS
+AVDD
+IOVDD
+EXT_3V3
+EXT_IOVDD
+EXT_NCS
+EXT_LP n
+EXT_MIS O
+EXT_MOSI_S DA
+EXT_MCLK_SCL
+EXT_PWR_EN
+EXT_SPI_I2C_N
+EXT_GPIO2
+EXT_GPIO1
+R10
+0R
+R12
+0R
+R11
+0R
+EXT_3V3
+EXT_IOVDD
+AVDDIOVDD
+REG_1V8
+R25 0RR26 0RR27 0RR28 0RR29 0RR30 0RR31 0RR32 0R
+EXT_MOSI_S DAEXT_MIS OEXT_NCSEXT_LP nEXT_GPIO1EXT_GPIO2EXT_SPI_I2C_NEXT_MCLK_SCL
+MOSI_S DAMISONCSLPnGPIO1GPIO2SPI_I2C_NMCLK_SCL
+REG_3V3
+DUT_CORE_1V8
+3.3V LDO for AVDD1.8V LDO for IOVDD and CORE_1V8 DUT
+CORE_1V8 DUT_CORE_1V8
+EXT_5V0
+10V
+C111uF
+EXT_PWR_EN
+REG_1V2
+6.3V
+C1010uF
+R34
+0R
+R35
+0R
+EXT_1V8
+CORE_1V8
+REG_1V8
+REG_1V2
+1.2V LDO for IOVDD
+EXT_1V8
+EXT_5V0
+Level Translator AVDD (3.3V) <--> IOVDD (1.2V or 1.8V)Expansion board Connector
+Level Translator bypasses
+Supply Options (External or Regulators)
+A12
+A23
+A34
+A45
+VCCB 14
+VCCA 1
+NC6
+GND7
+EN8
+NC9
+B4 10B3 11B2 12B1 13
+U6
+PI4ULS3V204
+25V
+C13100nF25V
+C12100nF
+AVDD IOVDD
+1%
+R3810k
+A12
+A23
+A34
+A45
+VCCB 14
+VCCA 1
+NC6
+GND7
+EN8
+NC9
+B4 10B3 11B2 12B1 13
+U4
+PI4ULS3V204
+25V
+C15100nF25V
+C14100nF
+AVDD IOVDD
+1%
+R4010k
+MOSI_S DA
+MISO
+NCS
+LPn
+EXT_MOSI_S DA
+EXT_MIS O
+EXT_NCS
+EXT_LP n
+GPIO1
+GPIO2
+SPI_I2C_N
+MCLK_SCL
+EXT_GPIO1
+EXT_GPIO2
+EXT_SPI_I2C_N
+EXT_MCLK_SCL
+1%
+R41100k
+EXT_5V0
+TP23 TP24
+DUT_CORE_1V8
+1%
+R3910k
+1%
+R3710k
+CE min=1.2V
+DUT_SPI_I2C_N
+DUT_LP n
+J3[1-2]
+IL12
+Link
+IL4
+Link
+IL5
+Link
+IL6
+Link
+IL7
+Link
+IL8
+Link
+IL9
+Link
+IL10
+Link
+IL11
+Link
+IL1
+Link
+IL2
+Link
+IL3
+Link
+Jumper to select 1.2V or 1.8V for IOVDD
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11J2
+HDR_11x1 Male  2.54mm
+J1
+HDR_3x1 Male  2.54mm
+J3
+HDR_3x1 Male  2.54mm
+25V
+C9100nF
+25V
+C2100nF
+IN1
+GND2
+EN3
+OUT5
+3V3BYP4
+U2
+LDK130M33RY
+IN1
+GND2
+EN3
+OUT5
+1V8BYP4
+U1
+LDK130M18R
+VIN1
+VSS2
+EN3 BYP4
+VOUT5
+1V2
+U5
+LDK130M12R
+NOTE
+AVDD = 3V3 +/- 5%CORE_1V8 = 1V8 +/- 10%IOVDD = 1.2V +/- 10% or 1.8V +/- 10%
+GNDC3
+GNDC6
+GNDA7
+GNDA6
+MOSI/S DAA4
+MISOC5
+GNDC7
+AVDD C4
+CORE_1V8 B7
+GPIO1A1
+GPIO2B1LPnA2
+IOVDD A3
+MCLK/SCLA5
+NCSC2
+SPI_I2C_NC1
+THERMB4
+U3
+VL53L8CA
+Alternate  part #XC6222D331MR-GAlternate  part #XC6222B181MR-G 1.8VAlternate  part #XC6222B121MR-G
+DB4924 - Rev 3page 6/9
+SATEL-VL53L8
+Schematic diagram 
+4 Board versions
+Table 2. SATEL-VL53L8 versions
+Finished good Schematic diagrams Bill of materials
+SATEL$VL53L8A (1) SATEL$VL53L8A schematic diagrams SATEL$VL53L8A bill of materials
+SATEL$VL53L8B (2) SATEL$VL53L8B schematic diagrams SATEL$VL53L8B bill of materials
+ 
+1. This code identifies the SATEL-VL53L8 expansion board first version.
+2. This code identifies the SATEL-VL53L8 expansion board second version.
+ 
+SATEL-VL53L8
+Board versions
+DB4924 - Rev 3 page 7/9
+Revision history
+Table 3. Document revision history
+Date Revision Changes
+09-Mar-2023 1 Initial release.
+02-Aug-2023 2 Updated Section Features, Section Description and Section 2 Ordering 
+information for the VL53L8 series ToF sensor.
+04-May-2026 3 Updated Section 4: Board versions.
+SATEL-VL53L8
+DB4924 - Rev 3 page 8/9
+IMPORTANT NOTICE – READ CAREFULLY
+STMicroelectronics NV and its subsidiaries (“ST”) reserve the right to make changes, corrections, enhancements, modifications, and improvements to ST 
+products and/or to this document at any time without notice.
+In the event of any conflict between the provisions of this document and the provisions of any contractual arrangement in force between the purchasers and 
+ST, the provisions of such contractual arrangement shall prevail.
+The purchasers should obtain the latest relevant information on ST products before placing orders. ST products are sold pursuant to ST’s terms and 
+conditions of sale in place at the time of order acknowledgment.
+The purchasers are solely responsible for the choice, selection, and use of ST products and ST assumes no liability for application assistance or the design of 
+the purchasers’ products.
+No license, express or implied, to any intellectual property right is granted by ST herein.
+Resale of ST products with provisions different from the information set forth herein shall void any warranty granted by ST for such product.
+If the purchasers identify an ST product that meets their functional and performance requirements but that is not designated for the purchasers' market 
+segment, the purchasers shall contact ST for more information.
+ST and the ST logo are trademarks of ST. For additional information about ST trademarks, refer to www.st.com/trademarks. All other product or service names 
+are the property of their respective owners.
+Information in this document supersedes and replaces information previously supplied in any prior versions of this document.
+© 2026 STMicroelectronics – All rights reserved
+SATEL-VL53L8
+DB4924 - Rev 3 page 9/9

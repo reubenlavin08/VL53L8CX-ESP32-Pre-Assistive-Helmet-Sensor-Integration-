@@ -1,0 +1,38 @@
+
+capture_calib.py - collect checkerboard images for fisheye calibration.
+
+WHAT CALIBRATION IS DOING (read once, it makes the procedure make sense)
+We know the board's real geometry exactly: a flat grid of 20 mm squares. So for
+every photo, OpenCV can ask "where must the camera have been, and what must the
+lens do to light, for this known flat grid to land on those particular pixels?"
+One photo has too many unknowns. Many photos, of the SAME board seen from DIFFERENT
+angles and distances, over-constrain the problem until only one lens model fits
+them all. That model is K (focal length + optical centre) and D (how the lens bends
+light outward). This is Zhang's method.
+
+WHY TILTING IS REQUIRED, NOT A PROBLEM
+Held flat-on and square to the camera, "small board up close" and "big board far
+away" produce nearly identical images - the focal length and the distance trade
+off against each other and cannot be separated. Tilting breaks that tie: a tilted
+plane produces perspective foreshortening whose exact shape depends on focal
+length alone. So tilt is what makes the answer unique. Flat-on images are the
+useless ones.
+
+WHAT THIS SCRIPT ADDS
+It tracks WHERE in the frame you have already photographed the board and refuses
+to count near-duplicates, so you end up with genuinely varied views covering the
+whole frame - centre AND edges AND corners. Edge coverage is what pins down the
+fisheye distortion terms; without it the model is guessing out there.
+
+HOW TO USE
+1. Print camera/checkerboard_8x11_20mm.pdf at 100%, verify the 100 mm ruler,
+   glue it to something rigid and flat. Flatness matters more than print quality.
+2. Run this. Hold the board up and move it around. Green overlay = detected.
+3. AUTO-capture fires when the board is detected, held still, and occupies a
+   screen region you have not already covered. Press SPACE to force a capture.
+4. Fill all 9 cells of the coverage grid, and get some steep tilts in. Aim for
+   >= 20 keepers. Then press q.
+5. Run: python camera/calibrate_fisheye.py
+
+Keys: SPACE force-capture   d delete last   r reset all   q finish
+

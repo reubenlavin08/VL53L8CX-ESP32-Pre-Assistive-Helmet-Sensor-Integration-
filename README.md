@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Sensor-VL53L8CX-1F8AC0?style=flat-square" alt="VL53L8CX"/>
   <img src="https://img.shields.io/badge/Framework-ESP--IDF%20v5.4.4-blue?style=flat-square" alt="ESP-IDF v5.4.4"/>
   <img src="https://img.shields.io/badge/Viewer-iPhone%20Safari%20%E2%86%92%20ESP%20HTTP-44A833?style=flat-square" alt="Phone viewer"/>
-  <img src="https://img.shields.io/badge/Status-v10%20wearable%20testing-brightgreen?style=flat-square" alt="Status"/>
+  <img src="https://img.shields.io/badge/Status-Stage%204%20—%20camera%2BToF%20fusion%20live-brightgreen?style=flat-square" alt="Status"/>
 </p>
 
 ---
@@ -22,6 +22,35 @@
   <br/>
   <sub><a href="visualizer/progress_demo_v6.mp4">▶ HD MP4 (10 s, 370 KB)</a></sub>
 </p>
+
+---
+
+## Latest — camera + ToF fusion (2026-08-16)
+
+The two depth sensors are now calibrated to the helmet camera and fused live:
+
+- **Extrinsic calibration** from a planar target: rotation within 1.2° of the
+  CAD design, 5.5 mm plane residual across 39 poses. Along the way this
+  uncovered that the sensor reports perpendicular distance (not slant), that
+  its effective per-zone aim on flat surfaces sits inside the geometric zone
+  centres (illumination roll-off), and a sign convention bug worth a devlog
+  entry on its own. Full story: `docs/DEVLOG.md`.
+- **Live fusion overlay** (`camera/fusion_overlay.py`): every ToF zone drawn
+  as a curved frustum patch on the fisheye feed, depth-coloured.
+- **CV fusion** (`camera/cv_fusion.py`): YOLO26n segmentation + ByteTrack on
+  the camera, each detection ranged by the ToF zones its mask claims, and a
+  voice that follows evidence from assistive-tech research — silent by
+  default, hazards only, distance as tick tempo rather than numbers, detail
+  on demand. A second "brevity" mode borrows fighter-aviation callout
+  structure (`docs/CALLOUT-PROTOCOL.md`), with a trainer
+  (`camera/callout_trainer.py`).
+- **Research base**: three commissioned deep-dives (CV stack, failure modes,
+  what blind users actually want) archived under `docs/research-sources/`,
+  merged into `docs/MASTER-SYNTHESIS-2026-08-16.md`.
+
+This is a research prototype exploring camera + time-of-flight sensing as a
+supplementary cue. It is not a mobility aid and not a substitute for a white
+cane, a guide dog, or O&M training.
 
 ---
 

@@ -1,0 +1,750 @@
+
+--- page 1 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 1 of
+A
+i i
+USB camera module
+specification book
+The Camera Module Specification
+With 0.3M Pixel
+Color CMOS Sensor and USB 2.0 output
+Customer name
+identification of product
+HBVCAM -1319 S3.0
+product name
+Submission date
+2019-10-11
+edition
+S 3.0
+authorized strength
+examine and verify
+ratify
+Customer confirmation
+Customer seal
+
+
+--- page 2 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 2 of
+A
+i i
+Catalogue of product
+specifications
+1Main specifications of products.....................................................................3
+2Product structure drawings..................................................................................4
+3Product appearance specifications...............................................................5
+4Product image specifications............................................................................ 6
+5Product sampling plan...............................................................................................7
+6Product reliability planning.............................................................................8
+7Product change record...............................................................................................9
+
+
+--- page 3 ---
+HBVCAM - 1319 S 3.0
+1. Key Spec ifications (main specification)
+Module No .
+HBVCAM -1319 S 3.0
+Module Size
+25mm
+× 8mm
+× 4.5mm ±0.2MM
+Temperature (Operation )
+-30°C to 70°C
+Temperature (Stable Image )
+0°C t o 50°C
+Assembly technique
+SMT (ROSH )
+F ocus
+F ixed
+Object distance
+30CM -infinity
+R esolution
+600LW /PH (Center )
+PCB printing ink
+bla ck
+i nterface
+USB 2.0
+Power suuply
+USB bus power
+supply voltage
+DC
+5V ±5%
+Maximum Power consumption
+400mW
+Operating system request
+Win XP /win 7 、8 / vista /android 4.0/ mac /Linux
+with uvc
+S ensor
+GC 0307 (1/7” )
+Seneor Package
+CSP ,Bare Die
+Maximum resolution
+640*480
+Sensitivit y
+.03mv / (lux -sec )
+Pixel Size
+3.2 µm x 3.2 µ m
+Maximum Image Transfer Rate
+YUY 2 160x
+120 YUY 2
+176x 144 YUY
+2 320x 240
+YUY 2 352x
+288 YUY 2
+640x 480
+30FPS
+30FPS
+30FPS
+30FPS
+30FPS
+S /N Ratio
+42 db
+Max Dynamic Range
+69 db
+Shutter type
+Electronic rolling shutter
+AGC /AEC /Whiter balance
+Auto
+Output Formats
+YUY 2
+M icrophone
+N O
+Lens Construction
+2P +IR
+F /No
+2.8
+EFL
+2.6mm
+FOV
+50°
+TV Distortion
+<1%
+Relative Illumination (Sensor )
+70%
+IR Filter
+650±10nm
+Module Package
+Anti -electrostatic tray
+C e rtifications
+FCC /CE /ROSH
+A printing plate.
+Page 3 of 9
+2019/ 10/ 11
+
+
+--- page 4 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 4 of
+A
+i i
+2. Module Mechanical Dimension (module structure diagram)
+
+
+--- page 5 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 5 of
+A
+i i
+3. Appearance Specification (external specification)
+surface
+order
+numbe
+r
+project
+ask
+method of
+calibration
+Disqualifie
+d
+classificat
+ion
+1
+Module
+appearanc
+e
+The surface of the module is no dirty, no
+visible scratches, and no impurities in the
+plastic
+8X
+magnifying
+glass
+A
+2
+lens
+In 800 ± 100 Lux intensity light, 45 degrees
+of reflected light examination, no visible
+scars or dirt
+8X
+magnifying
+glass
+A
+3
+Threaded
+glue
+The dot glue length is 1 / 3-1 / 2 of the
+circumference, and the glue can not overflow to
+the lens end surface and the lens base
+8X
+magnifying
+glass
+A
+4
+gasket
+cement
+Sealant is evenly filled between the base and
+FPC, with no gap, no uneven thickness, and no
+glue overflow of FPC edge, leading to excessive
+external size
+8X
+magnifying
+glass
+A
+5
+P CB
+1) The surface is not dirty and the printing
+font is clear; 2) the edge burr length is less
+than 1mm and the width is less than 0.3mm; 3)
+the edge gap length is less than 1mm and the
+width is less than 0.1mm and not more than 2
+45X,
+microscope
+(continuou
+s zoom)
+A
+External size
+order
+numbe
+r
+project
+ask
+method of
+calibration
+Disqualifie
+d
+classificat
+ion
+1
+altitude Meet the drawing requirements
+digital
+caliper
+A
+2
+length
+Meet the drawing requirements
+digital
+caliper
+A
+3
+width
+Meet the drawing requirements
+digital
+caliper
+A
+
+
+--- page 6 ---
+HBVCAM - 1319 S 3.0
+4. Image Specification (Image Specification)
+Optical performance testing requirements
+order
+number
+inspecting item
+ask
+method of
+calibration
+Nonco
+nfor
+ming
+clas
+sifi
+cati
+on
+1
+stain
+(Dust)
+In the white field, obtain the image and visually do
+not allow visible foreign body in the whole picture
+.6500Test the
+fixture. Small
+light box K white
+backlight
+A
+2
+Imaging
+direction (imaging
+direction)
+Meet the drawing requirements
+Test fixtures
+A
+3
+Bad points and
+cluster type bad
+points
+(Dead
+& Wound
+Pixel )
+1) Dark field: the total number of highlights is
+less than 400pixel; 2 adjacent pixel cluster
+highlights are less than 20; no 3 pixel cluster
+highlights.
+2) White field: total number of dark points less
+than 400pixel; 2 cluster adjacent pixel less than
+20; no cluster dark more above 3 pixel.
+testing software
+Small light box
+(6500K white
+backlight)
+A
+4
+resolution
+ratio
+(Resolution )
+30 million pixels: center not less than 600 LW / PH
+The MTF test
+procedure
+A
+5
+angle of field
+(FOV )
+Level (horizontal): 40°
+Vertical (Vertical): 30°
+Diagonal line (Diagonal): 50°
+Test fixtures,
+Field of view
+corner marker
+A
+6
+Like surface
+uniformity
+(Shading )
+The average brightness of the four corners from the
+center is at least 45% of the brightness of the
+center test field; the brightness of each corner is
+more than 35% of the center brightness (sampling
+box size is 40 * 40 pixels, sensor dark angle
+compensation function is not on).
+testing software,
+Small Light Box
+(3400 Lux, 6500K
+White Backlit)
+A
+7
+chromatic
+aberration
+(Color )
+The color reduction error is not greater than 20%
+testing software
+Color
+checker
+card
+A
+8
+Geometric
+Distortion (TV
+distortion)
+Pillow distortion (positive number) or barrel
+distortion (negative number) is not more than 1%
+testing software
+ISO 12233 Plate
+A
+9
+gamma
+(Grayscale )
+The two gray order brightness differences must be
+less than 8
+testing software,
+Grey scale plate
+A
+10
+dispersion
+(CA)
+Less than 0.5
+testing software
+ISO 12233 Plate
+A
+
+
+--- page 7 ---
+11
+Thread torsion
+(Torsional)
+Not less than 1 kgf.cm
+Twisted hand
+A
+12
+Base thrust
+(Thrust )
+Not less than 2 N
+thrust meter
+A
+Description of the classification of nonconforming products:
+A) Serious unqualified: the unqualified batch batch as judged by inspection, or causing
+great economic losses, directly affecting product quality, main functions, performance and
+technical indicators, etc., shall be indicated by the letter A;
+B) Generally unqualified: generally unqualified refers to the unqualified products that can
+meet the following conditions at the same time, indicated by the letter B.
+I) It does not affect the appearance quality of the final product;
+Ⅱ) Does not affect the technical performance of the final product;
+Ⅲ) The raw material or the final product does not affect the processing or assembly of
+the next process.
+A printing plate.
+Page 6 of 9
+2019/ 10/ 11
+
+
+--- page 8 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 7 of
+A
+i i
+5. Sam ple Plan (Sampling Plan)
+order
+number
+.
+inspecting
+item
+sampling
+frequency
+method of
+calibration
+remarks
+Imaging and reliability items
+1
+stain
+N =5, C =0
+The same as the
+production
+Production of
+full inspection
+items
+2
+Imaging
+direction
+N =5, C =0
+Test fixtures
+Production of
+full inspection
+items
+3
+Bad points and
+cluster type bad
+points
+N =5, C =0
+The same as the
+production
+Production of
+full inspection
+items
+4
+resolution
+ratio
+N =5, C =0
+MTF testing
+program
+Production of
+full inspection
+items
+5
+angle of
+field
+N =5, C =0
+Test fixtures,
+Field of view
+corner marker
+QA sampling
+inspection
+items
+6
+Like surface
+uniformity
+N =5, C =0
+testing
+software,
+Small light box
+(3400 Lux,
+6500K white
+backlight)
+Production of
+full inspection
+items
+7
+dispersion
+N =5, C =0
+Test software,
+Color checker card
+QA sampling
+inspection
+items
+8
+geometric
+distortion
+N =5, C =0
+testing
+software,
+ISO 12233 Plate
+QA sampling
+inspection
+items
+9
+gamma
+N =5, C =0
+testing
+software,
+Grey scale
+plate
+QA sampling
+inspection
+items
+10
+reliability
+trial
+Sample trial stage: Sampling plan: 2 PCS / per production batch,
+acceptable level 0 / 1
+Production stability stage: Sampling plan: 5 PCS per project /
+month, acceptable level 0 / 1
+Appearance project
+1
+Module
+appearance
+AQL =0.65
+8X magnifying
+glass
+Production of
+full inspection
+items
+
+
+--- page 9 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 7 of
+A
+i i
+2
+lens
+AQL =0.65
+8X magnifying
+glass
+Production of
+full inspection
+items
+3
+Threaded
+glue
+AQL =0.65
+8X magnifying
+glass
+Production of
+full inspection
+items
+4
+gasket
+cement
+AQL =0.65
+8X magnifying
+glass
+Production of
+full inspection
+items
+5
+P CB
+AQL =0.65
+45X, microscope
+(continuous zoom)
+Production of
+full inspection
+items
+6
+junctor
+AQL =0.65
+45X, microscope
+(continuous zoom)
+Production of
+full inspection
+items
+External size
+1
+altitude
+AQL =0.65
+The same as the
+production
+Production of
+full inspection
+items
+2
+length
+AQL =0.65
+The same as the
+production
+Production of
+full inspection
+items
+3
+width
+AQL =0.65
+The same as the
+production
+Production of
+full inspection
+items
+4
+Threaded
+torsion
+N =5, C =0
+Twisted hand
+QA sampling
+inspection items
+5
+Base thrust
+N =5, C =0
+thrust meter
+QA sampling
+inspection items
+
+
+--- page 10 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 8 of
+A
+i i
+6. Reliability Specification (Reliability)
+order
+number
+test item
+Conditions and requirements
+experimental
+rig
+1
+Low
+temperature
+storage
+-30℃, 96hours lift temperature time of 30min each
+Low
+temperature
+box
+2
+cold
+operation
+-30℃, 96hours lift temperature time of 30min each
+cryogenic
+box
+3
+high-
+temperature
+storage
+80℃, 96hours lift temperature time of 30min each
+high-
+temperature
+cabinet
+4
+hot
+operation
+70℃, 96hours lift temperature time of 30min each
+high-
+temperature
+cabinet
+5
+High
+temperature
+and high
+humidity
+storage
+60℃, 90% RH, 120hours lift temperature time 30min
+each
+High
+temperature
+constant wet
+box
+6
+High
+temperature
+and high
+humidity
+operation
+40℃, 90% RH, 48hours lift temperature time 30min
+each
+High
+temperature
+constant wet
+box
+7
+Hot and cold
+shock test
+-30℃) 80℃(30min each) High and low temperature
+cross-conversion time is less than 5 minutes Total:
+10cycles
+Low-temperature
+box / high-
+temperature box
+8
+Free fall test
+(After
+packaging)
+Height of 150cm, 10 times
+Oak ground
+9
+vibration
+test
+(After
+packaging)
+10Hz ~200Hz ~10Hz, amplitude of 2mm, three
+directions of XYZ, vibration for 2 hours
+vibration test
+stand
+10
+Electrostati
+c test
+(interrupt
+)
+150 Pf, 330 O ± 8KV, air discharge measurements 10
+times
+Electrostatic
+tester
+
+
+--- page 11 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 8 of
+A
+i i
+1. After all the reliability tests of the product, the size,
+appearance, torque force and optical performance all meet the product
+requirements.2. Test conditions:
+Light ance: small light box 1500 ± 10% LUX large light box 6000 ± 10%
+LUX
+Colour temperature: 4,400 ± 150K
+The PC test
+software is
+the MODULE
+test platform
+
+
+--- page 12 ---
+HBVCAM - 1319 S 3.0
+2019/ 10/ 11
+Page 9 of
+A
+i i
+7. ECO (Change Record)
+order
+number
+clause
+s and
+subcla
+uses
+Before the change
+after change
+1
+2
+3
+4
+5
+6

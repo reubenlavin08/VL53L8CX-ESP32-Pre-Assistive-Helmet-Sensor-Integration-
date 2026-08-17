@@ -24,9 +24,8 @@ import sys
 import time
 
 import numpy as np
-import pyqtgraph as pg
 import pyqtgraph.opengl as gl
-from pyqtgraph.Qt import QtCore, QtWidgets
+from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
 FOV = 45.0
 INVALID = 4000
@@ -101,6 +100,14 @@ def parse(line):
     if line.startswith("DATA:"):   a = _nums(line[5:]);  return ("DATA", a) if a is not None else None
     if line.startswith("STATUS:"): a = _nums(line[7:]);  return ("STATUS", a) if a is not None else None
     if line.startswith("SIGMA:"):  a = _nums(line[6:]);  return ("SIGMA", a) if a is not None else None
+    if line.startswith("Q:"):
+        # Q:w,x,y,z[,status,headacc_rad] -- extra fields (mag-fusion quality) are
+        # optional; take the first 4 as the quaternion.
+        try:
+            q = [float(v) for v in line[2:].split(",")]
+        except ValueError:
+            return None
+        return ("Q", np.asarray(q[:4], dtype=float)) if len(q) >= 4 else None
     return None
 
 
@@ -177,8 +184,8 @@ class Cloud:
 
         if good.any():
             self.nearest_mm = int(d[good].min())
-            cols = np.arange(self.n) % side
-            lm = good & (cols < side / 2.0); rm = good & (cols >= side / 2.0)
+            cols = np.arange(self.n) % self.side
+            lm = good & (cols < self.side / 2.0); rm = good & (cols >= self.side / 2.0)
             self.near_left = int(d[lm].min()) if lm.any() else None
             self.near_right = int(d[rm].min()) if rm.any() else None
         else:
@@ -193,6 +200,7 @@ class Reader(QtCore.QThread):
         self._stop = False
         self.state = "connecting"
         self.latest = {"bottom": None, "top": None}
+        self.quat = None   # latest IMU orientation quaternion (w, x, y, z), or None
 
     def run(self):
         backoff = 1.0
@@ -238,6 +246,8 @@ class Reader(QtCore.QThread):
                         self.latest["bottom"] = (arr, sta, sig)
                     elif kind == "DATAT":
                         self.latest["top"] = (arr, None, None)
+                    elif kind == "Q":
+                        self.quat = arr
             finally:
                 try: f.close()
                 except Exception: pass
@@ -282,6 +292,10 @@ def main():
         b.setMinimumWidth(92)
         b.clicked.connect(lambda checked=False, a=az, e=el: view.setCameraPosition(azimuth=a, elevation=e))
         vb.addWidget(b)
+    recenter_btn = QtWidgets.QPushButton("Recenter IMU")
+    recenter_btn.setMinimumWidth(92)
+    recenter_btn.setToolTip("Face forward + hold still, then click to zero head orientation")
+    vb.addWidget(recenter_btn)
     vb.addStretch(1)
     hbox.addWidget(bar)
     hbox.addWidget(view, 1)
@@ -311,21 +325,58 @@ def main():
     head = gl.GLMeshItem(meshdata=gl.MeshData.sphere(rows=12, cols=12, radius=90),
                          smooth=True, color=(0.55, 0.57, 0.65, 1.0), shader="shaded")
     view.addItem(head)
-    view.addItem(gl.GLLinePlotItem(pos=np.array([[0, 0, 0], [0, 240, 0]]),
-                                   color=(0.7, 0.7, 0.78, 0.9), width=2, antialias=True))
+    nose = gl.GLLinePlotItem(pos=np.array([[0, 0, 0], [0, 240, 0]]),
+                             color=(0.7, 0.7, 0.78, 0.9), width=2, antialias=True)
+    view.addItem(nose)
 
     fcol = {"bottom": (0.22, 0.75, 1.0, 0.28), "top": (1.0, 0.62, 0.22, 0.28)}
+    frustums = []
     for tag in ("bottom", "top"):
         segs = frustum_segments(rot_x(PITCH[tag]), Z_OFFSET[tag], args.max_mm, FOV / 2.0)
         fr = gl.GLLinePlotItem(pos=segs.astype(np.float32), color=fcol[tag], width=1.0, antialias=True, mode="lines")
         fr.setGLOptions("translucent")
         view.addItem(fr)
+        frustums.append(fr)
 
     clouds = {"bottom": Cloud(view, "bottom", args.max_mm, args.ema, args.sigma_max),
               "top": Cloud(view, "top", args.max_mm, args.ema, args.sigma_max)}
 
+    # Everything rigidly attached to the head -> rotated by the IMU each frame so
+    # the cloud tilts/turns with your head, while floor + grid stay world-fixed.
+    helmet_items = [head, nose] + frustums
+    for c in clouds.values():
+        helmet_items += [c.scatter, c.rays]
+
     reader = Reader(args)
     reader.start()
+
+    # IMU head orientation. The game-rotation-vector has an arbitrary yaw reference
+    # and the IMU is mounted at an unknown angle, so we "recenter": capture the
+    # current quaternion as the neutral pose and show every later orientation
+    # relative to it. (Yaw also drifts slowly with no magnetometer -> re-recenter.)
+    q_ref = [None]
+
+    def do_recenter():
+        if reader.quat is not None:
+            w, x, y, z = reader.quat
+            q_ref[0] = QtGui.QQuaternion(float(w), float(x), float(y), float(z))
+    recenter_btn.clicked.connect(do_recenter)
+
+    def apply_orientation():
+        q = reader.quat
+        if q is None:
+            return
+        try:
+            cur = QtGui.QQuaternion(float(q[0]), float(q[1]), float(q[2]), float(q[3]))
+            if q_ref[0] is None:
+                q_ref[0] = cur
+            rel = q_ref[0].conjugated() * cur      # orientation relative to neutral
+            m = QtGui.QMatrix4x4()
+            m.rotate(rel)
+            for it in helmet_items:
+                it.setTransform(m)
+        except Exception as e:
+            print("orientation skip:", e)
 
     frames = [0]; last = [time.time()]; fps = [0.0]
 
@@ -344,6 +395,7 @@ def main():
                     cloud.render(*d)
                 except Exception as e:
                     print("render skip:", e)
+        apply_orientation()
         frames[0] += 1
         now = time.time()
         if now - last[0] >= 0.5:

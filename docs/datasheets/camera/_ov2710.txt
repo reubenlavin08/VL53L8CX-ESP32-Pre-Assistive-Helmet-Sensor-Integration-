@@ -1,0 +1,7539 @@
+
+--- page 1 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+datasheet
+PRELIMINARY SPECIFICATION
+1/2.7" 1080p/720p HD color CMOS image sensor
+with OmniPixel3-HS™ technology
+OV2710
+
+
+--- page 2 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+
+
+--- page 3 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+i
+00Copyright © 2009 OmniVision Technologies, Inc. All rights reserved.
+This document is provided “as is” with no warranties whatsoever, including any warranty of merchantability, 
+non-infringement, fitness for any particular purpose, or any warranty otherwise arising out of any proposal, specification, 
+or sample.
+OmniVision Technologies, Inc. and all its affiliates disclaim all liability, including liability for infringement of any proprietary 
+rights, relating to the use of information in this document. No license, expressed or implied, by estoppel or otherwise, to 
+any intellectual property rights is granted herein.
+The information contained in this document is considered proprietary to OmniVision Technologies, Inc. and all its 
+affiliates. This information may be distributed to individuals or organizations authorized by OmniVision Technologies, Inc. 
+to receive said information. Individuals and/or organizations are not allowed to re-distribute said information.
+Trademark Information
+OmniVision and the OmniVision logo are registered trademarks of OmniVision Technologies, Inc. OmniPixel3-HS is a trademark of 
+OmniVision Technologies, Inc.
+All other trademarks used herein are the property of their respective owners.
+To learn more about OmniVision Technologies, visit www.ovt.com. 
+OmniVision Technologies is publicly traded on NASDAQ under the symbol OVTI.
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+datasheet (CSP3) 
+PRELIMINARY SPECIFICATION
+version 1.1 
+november 2009
+
+
+--- page 4 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 5 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+iii
+ordering information
+ 
+OV02710-A68A (color, lead-free)
+68-pin CSP3
+00applications
+ 
+notebook computers
+ 
+high-end video conferencing
+ 
+security
+00features
+ 
+programmable controls: gain, exposure, frame rate, 
+image size, horizontal mirror, vertical flip, cropping, 
+windowing, and panning
+ 
+automatic image control functions: automatic 
+exposure (AEC), automatic gain control (AGC), 
+automatic white balance (AWB) and automatic black 
+level calibration (ABLC)
+ 
+serial camera control bus (SCCB)
+ 
+lens correction (LENC)
+ 
+deffective pixel correction (DPC)
+ 
+digital video port (DVP) parallel output interface
+ 
+integrated auto focus filter
+ 
+support for digital video port (DVP)
+ 
+support for one lane MIPI interface (up to 800 Mbps)
+ 
+support for output formats: 8-/10-bit RAW RGB
+ 
+support for image sizes: 1080p @ 30 fps,
+cropped 720p @ 60 fps, and VGA @ 60 fps
+ 
+support for black sun cancellation 
+ 
+embedded one-time programmable (OTP) memory
+ 
+on-chip phase lock loop (PLL)
+ 
+built-in 1.5V regulator for core
+00key specifications
+ 
+active array size: 1920x1080
+ 
+power supply: 
+analog: 3.0~3.6V (3.3V typical)
+core: 1.425~1.575V (1.5V typical)
+I/O: 1.7~3.6V (1.8V typical)
+ 
+power requirements: TBD
+active: 350 mW
+power down: 70 µA
+ 
+temperature range: 
+operating: -30°C to 70°C (see table 8-2)
+stable image: 0°C to 50°C (see table 8-2)
+ 
+output interfaces: 10-bit parallel / one-lane MIPI
+ 
+output formats: RAW RGB (10-bit)
+ 
+lens size: 1/2.7"
+ 
+lens chief ray angle: 23.6° (see figure 10-2)
+ 
+input clock frequency: 6 ~ 27 MHz
+ 
+scan mode: progressive
+ 
+maximum image transfer rate: 
+1080p: 30 fps
+cropped 720p: 60 fps
+VGA: 120 fps
+QVGA: 240 fps
+ 
+sensitivity: 3300 mV/(Lux-sec)
+ 
+shutter: rolling
+ 
+S/N ratio: 39 dB
+ 
+dynamic range: 69 dB
+ 
+maximum exposure interval: 1096 tline
+ 
+pixel size: 3 µm x 3 µm
+ 
+dark current: 10 mV/sec @ 60°C
+ 
+well capacity: 13 Ke-
+ 
+fixed pattern noise (FPN): 1% of VPEAK-TO-PEAK
+ 
+image area: 5856 µm x 3276 µm
+ 
+package dimensions: 7465 µm x 5865 µm
+
+
+--- page 6 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 7 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+v
+00table of contents
+1   signal descriptions  
+1-1
+2   system level description  
+2-1
+2.1   overview  
+2-1
+2.2   architecture  
+2-1
+2.3   format and frame rate  
+2-6
+2.4   I/O control  
+2-6
+2.5   SCCB interface  
+2-8
+2.6   MIPI interface  
+2-9
+2.7   external components  
+2-9
+2.8   power up sequence  
+2-10
+2.8.1   power up with internal DVDD 
+2-10
+2.8.2   power up with external DVDD source 
+2-11
+2.9   power management  
+2-12
+2.10   power ON reset generation  
+2-12
+2.11   system clock control  
+2-12
+3   block level description  
+3-1
+3.1   pixel array structure  
+3-1
+3.2   binning  
+3-2
+4   image sensor core digital functions  
+4-1
+4.1   mirror and flip  
+4-1
+4.2   image windowing  
+4-2
+4.3   test pattern  
+4-3
+4.4   AEC/AGC algorithm  
+4-3
+4.4.1   overview 
+4-3
+4.4.2   AEC algorithm 
+4-4
+4.5   AEC/AGC steps  
+4-6
+4.5.1   auto exposure control (AEC) 
+4-6
+4.5.2   manual exposure control 
+4-7
+4.5.3   auto gain control (AGC) 
+4-7
+4.5.4   manual gain control 
+4-7
+4.6   black level calibration (BLC)  
+4-8
+5   image sensor processor digital functions  
+5-1
+5.1   system control  
+5-1
+
+
+--- page 8 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+6   image sensor output interface digital functions  
+6-1
+6.1   digital video port (DVP)  
+6-1
+6.1.1   overview 
+6-1
+6.2   mobile industry processor interface (MIPI)  
+6-1
+7   register tables  
+7-1
+8   operating specifications  
+8-1
+8.1   absolute maximum ratings  
+8-1
+8.2   functional temperature  
+8-1
+8.3   DC characteristics  
+8-2
+8.4   AC characteristics  
+8-3
+9   mechanical specifications  
+9-1
+9.1   physical specifications  
+9-1
+9.2   IR reflow specifications  
+9-2
+10   optical specifications  
+10-1
+10.1   sensor array center  
+10-1
+10.2   lens chief ray angle (CRA)  
+10-2
+
+
+--- page 9 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+vii
+00list of figures
+figure 1-1
+pin diagram 
+1-3
+figure 2-1
+OV2710 block diagram 
+2-2
+figure 2-2
+reference design schematic 
+2-3
+figure 2-3
+CSP3 flex module schematic 
+2-4
+figure 2-4
+CSP3 flex with MIPI schematic 
+2-5
+figure 2-5
+power up timing with internal DVDD 
+2-10
+figure 2-6
+power up timing with external DVDD source 
+2-11
+figure 3-1
+sensor array region color filter layout 
+3-1
+figure 3-2
+example of 2x2 binning 
+3-2
+figure 4-1
+mirror and flip samples 
+4-1
+figure 4-2
+image windowing 
+4-2
+figure 4-3
+test pattern 
+4-3
+figure 4-4
+desired convergence 
+4-5
+figure 9-1
+package specifications 
+9-1
+figure 9-2
+IR reflow ramp rate requirements 
+9-2
+figure 10-1
+sensor array center 
+10-1
+figure 10-2
+chief ray angle (CRA) 
+10-2
+
+
+--- page 10 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 11 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+ix
+00list of tables
+table 1-1     signal descriptions
+1-1
+table 2-1     formats and frame rates
+2-6
+table 2-2     driving capability and direction control for I/O pads
+2-6
+table 2-3     group sharing registers
+2-8
+table 2-4     group write register
+2-8
+table 3-1      binning-related registers
+3-2
+table 4-1     mirror and flip registers
+4-1
+table 4-2     image cropping control functions
+4-2
+table 4-3     test pattern selection control
+4-3
+table 4-4     AEC/AGC control functions
+4-4
+table 4-5     AEC control functions
+4-5
+table 4-6     BLC control functions
+4-8
+table 5-1     system control registers
+5-1
+table 6-1     DVP control registers
+6-1
+table 7-1     SC control registers
+7-1
+table 7-2     SCCB control registers
+7-4
+table 7-3     group sharing registers
+7-4
+table 7-4      analog registers
+7-5
+table 7-5     timing control registers
+7-5
+table 7-6     AEC/AGC registers
+7-6
+table 7-7     OTP registers
+7-9
+table 7-8     BLC registers
+7-11
+table 7-9     FC control registers
+7-12
+table 7-10     DVP registers
+7-12
+table 7-11     MIPI registers
+7-13
+table 7-12     ISP control registers
+7-17
+table 7-13     AWB control registers
+7-19
+table 7-14     AVG registers
+7-21
+table 7-15     DPC registers
+7-22
+table 7-16     LENC registers
+7-24
+table 7-17     AFC registers
+7-27
+table 8-1     absolute maximum ratings
+8-1
+
+
+--- page 12 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+table 8-2     functional temperature
+8-1
+table 8-3     DC characteristics (-30°C < TA < 70°C)
+8-2
+table 8-4     AC characteristics (TA = 25°C, VDD-A = 2.8V)
+8-3
+table 8-5     timing characteristics
+8-3
+table 9-1     package dimensions
+9-1
+table 9-2     reflow conditions
+9-2
+table 10-1     CRA versus image height plot
+10-2
+
+
+--- page 13 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+1-1
+1
+signal descriptions
+table 1-1 lists the signal descriptions and their corresponding pin numbers for the OV2710 image sensor. The package 
+information is shown in section 9.
+table 1-1
+signal descriptions (sheet 1 of 3)
+pin  
+number
+ 
+signal name
+pin  
+type
+ 
+description
+A1
+NC
+–
+no connect
+A2
+NC
+–
+no connect
+A3
+NC
+–
+no connect
+A4
+NC
+–
+no connect
+A5
+SVDD
+power
+power for sensor circuit
+A6
+SGND
+ground
+ground for sensor circuit
+A7
+SVDD
+power
+power for sensor circuit
+A8
+RESETB
+input
+reset (active low with internal pull up resistor)
+A9
+DOGND
+ground
+ground for I/O circuit
+A10
+VHT
+reference
+internal analog reference
+A11
+VN
+reference
+internal analog reference
+B1
+AVDD
+power
+power for analog circuit
+B2
+NC
+–
+no connect
+B3
+NC
+–
+no connect
+B4
+NC
+–
+no connect
+B5
+NC
+–
+no connect
+B6
+SGND
+ground
+ground for sensor circuit
+B7
+TMa
+input
+test mode (active high with internal pull down resistor)
+B8
+PWDN
+input
+power down (active high with internal pull down resistor)
+B9
+DOVDD
+power
+power for I/O circuit
+B10
+VH
+reference
+internal analog reference
+B11
+AVDD
+power
+power for analog circuit
+C1
+AGND
+ground
+ground for analog circuit
+C2
+NC
+–
+no connect
+C10
+NC
+–
+no connect
+C11
+AGND
+ground
+ground for analog circuit
+
+
+--- page 14 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+D1
+AVDD
+power
+power for analog circuit
+D2
+NC
+–
+no connect
+D10
+NC
+–
+no connect
+D11
+AGND
+ground
+ground for analog circuit
+E1
+NC
+–
+no connect
+E2
+NC
+–
+no connect
+E10
+NC
+–
+no connect
+E11
+AVDD
+power
+power for analog circuit
+F1
+NC
+–
+no connect
+F2
+NC
+–
+no connect
+F10
+NC
+–
+no connect
+F11
+NC
+–
+no connect
+G1
+DGND
+ground
+ground for digital circuit
+G2
+XVCLK
+input
+system input clock
+G3
+NC
+–
+no connect
+G4
+EVDD
+power
+power for MIPI
+G5
+D3
+I/O
+DVP data output 3
+G6
+DOVDD
+power
+power for I/O circuit
+G7
+NC
+–
+no connect
+G8
+NC
+–
+no connect
+G9
+SIOC
+input
+SCCB input clock
+G10
+DGND
+ground
+ground for digital circuit
+G11
+NC
+–
+no connect
+H1
+PVDD
+power
+power for PLL circuit
+H2
+VSYNC
+I/O
+DVP VSYNC output/ MIPI TX clock lane positive output
+H3
+HREF
+I/O
+DVP HREF output/ MIPI TX clock lane negative output
+H4
+D9
+I/O
+DVP data output 9 (MSB)/MIPI TX data lane positive output
+H5
+D7
+I/O
+DVP data output 7/MIPI TX data lane negative output
+H6
+DOVDD
+power
+power for I/O circuit
+H7
+DOGND
+ground
+ground for I/O circuit
+table 1-1
+signal descriptions (sheet 2 of 3)
+pin  
+number
+ 
+signal name
+pin  
+type
+ 
+description
+
+
+--- page 15 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+1-3
+figure 1-1
+pin diagram
+H8
+D2
+I/O
+DVP data output 2 (LSB for 8-bit mode)
+H9
+D6
+I/O
+DVP data output 6
+H10
+SIOD
+I/O
+SCCB data
+H11
+DVDD
+power
+power for digital circuit
+I1
+PVDD
+power
+power for PLL circuit
+I3
+EGND
+ground
+ground for MIPI
+I5
+D5
+I/O
+DVP data output 5
+I6
+D1
+I/O
+DVP data output 1
+I7
+PCLK
+I/O
+DVP PCLK output
+I8
+D0
+I/O
+DVP data output 0 (LSB for 10-bit mode)
+I9
+D4
+I/O
+DVP data output 4
+I10
+D8
+I/O
+DVP data output 8
+a. 
+should be connected to DOGND
+table 1-1
+signal descriptions (sheet 3 of 3)
+pin  
+number
+ 
+signal name
+pin  
+type
+ 
+description
+A1
+A2
+A3
+A4
+A5
+A6
+A7
+A8
+A9
+A10
+A11
+B1
+B2
+B3
+B4
+B5
+B6
+B7
+B8
+B9
+B10
+B11
+C1
+C2
+C10
+C11
+D1
+D2
+D10
+D11
+E1
+E2
+E10
+E11
+F1
+F2
+F10
+F11
+G1
+G2
+G3
+G4
+G5
+G6
+G7
+G8
+G9
+G10
+G11
+H1
+H2
+H3
+H4
+H5
+H6
+H7
+H8
+H9
+H10
+H11
+I1
+I3
+I5
+I6
+I7
+I8
+I9
+I10
+NC
+NC
+NC
+NC
+SVDD
+SGND
+SVDD
+RESETB DOGND
+VHT
+VN
+AVDD
+NC
+NC
+NC
+NC
+SGND
+TM
+PWDN
+DOVDD
+VH
+AVDD
+AGND
+NC
+NC
+AGND
+AVDD
+NC
+NC
+AGND
+NC
+NC
+NC
+AVDD
+NC
+NC
+NC
+NC
+DGND
+XVCLK
+NC
+EVDD
+D3
+DOVDD
+NC
+NC
+SIOC
+DGND
+NC
+PVDD
+VSYNC
+HREF
+D9
+D7
+DOVDD
+DOGND
+D2
+D6
+SIOD
+DVDD
+PVDD
+EGND
+D5
+D1
+PCLK
+D0
+D4
+D8
+OV2710
+2710_CSP_DS_1_1
+
+
+--- page 16 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 17 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-1
+2
+system level description
+2.1îýÅm overview
+The OV2710 (color) image sensor is a low voltage, high performance 1/2.7-inch full size HD CMOS image sensor that 
+provides the full functionality of a single 1080p (1920x1080) camera using OmniPixel3-HS™ technology in a small 
+footprint package. It provides full-frame, sub-sampled and windowed 10-bit images in various formats via the control of 
+the Serial Camera Control Bus (SCCB) interface or MIPI interface.
+The OV2710 has an image array capable of operating at up to 30 frames per second (fps) in 1080P resolution with 
+complete user control over image quality, formatting and output data transfer. All required image processing functions, 
+including exposure control, white balance, defective pixel canceling, lens shading correction etc., are programmable 
+through the SCCB interface. In addition, Omnivision image sensors use proprietary sensor technology to improve image 
+quality by reducing or eliminating common lighting/electrical sources of image contamination, such as fixed pattern noise, 
+smearing, etc., to produce a clean, fully stable, color image.
+For customized information purposes, the OV2710 includes a one-time programmable (OTP) memory.
+The OV2710 has a one lane MIPI interface and a traditional parallel digital video port (DVP).
+2.2ƒaœ architecture
+The OV2710 sensor core generates stream pixel data at a constant frame rate, indicated by HREF, VSYNC, and PCLK. 
+figure 2-1 shows the functional block diagram of the OV2710 image sensor.
+The timing generator outputs signals to access the rows of the image array, precharging and sampling the rows of array 
+in series. In the time between pre-charging and sampling a row, the charge in the pixels decreases with the time exposed 
+to the incident light. This is known as exposure time.
+The exposure time is controlled by adjusting the time interval between precharging and sampling. After the data of the 
+pixels in the row has been sampled, it is processed through analog circuitry to correct the offset and multiply the data 
+with corresponding gain. Following analog processing is the ADC which outputs 10-bit data for each pixel in the array.
+
+
+--- page 18 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+figure 2-1
+OV2710 block diagram
+column
+sample/hold
+image sensor core
+OV2710
+image sensor
+processor
+image output
+interface
+row select
+PLL
+control register bank
+SCCB slave interface
+timing generator and system control logic
+image
+array
+gain
+control
+XVCLK
+PWDN
+RESETB
+TM
+VSYNC
+HREF
+PCLK
+SIOC
+SIOD
+AMP
+10-bit
+ADC
+MIPI
+DVP
+MCP/N (VSYNC/HREF)
+MDP/N (D9/D7)
+D[9:0]
+FIFO
+LENC
+DPC
+format
+2710_DS_2_1
+
+
+--- page 19 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-3
+figure 2-2
+reference design schematic
+ 
+note 1
+note 2
+note 3
+assemble only for MIPI testing
+do not assemble if MIPI is used
+please do not assemble R19
+U2
+OV2710
+CSP3
+D0
+D0
+I8
+D1
+D1
+I6
+D2
+D2
+H8
+D3
+D3
+G5
+D4
+D4
+I9
+D5
+D5
+I5
+D6
+D6
+H9
+D7
+D7
+H5
+D8
+D8
+I10
+D9
+D9
+H4
+VSYNC
+VSYNC
+H2
+HREF
+HREF
+H3
+PCLK
+PCLK
+I7
+XVCLK
+XVCLK
+G2
+SIOD
+SIOD
+H10
+SIOC
+SIOC
+G9
+3
+NC A1
+NC A2
+NC A3
+NC A4
+NC B2
+NC B3
+NC B4
+NC B5
+NC C2
+NC C10
+NC D2
+NC D10
+NC E1
+NC E2
+NC E10
+NC F1
+NC F2
+NC F10
+NC F11
+NC G3
+NC G7
+NC G8
+NC G11
+AVDD
+B1
+AVDD
+B11
+AVDD
+D1
+AVDD
+E11
+PVDD
+H1
+PVDD
+I1
+EVDD
+G4
+SVDD
+A5
+SVDD
+A7
+DVDD
+H11
+DOVDD
+B9
+DOVDD
+G6
+AGND
+C1
+AGND
+C11
+AGND
+D11
+SGND
+A6
+SGND
+B6
+EGND
+I3
+DGND
+G1
+DGND
+G10
+DOGND
+A9
+DOGND
+H7
+VN
+DVDD
+VN
+A11
+VH
+VH
+B10
+VHT
+VHT
+A10
+TM
+TM
+B7
+RESETB
+RESETB
+A8
+PWDN
+PWDN
+B8
+DOVDD
+H6
+AVDD
+PVDD
+AVDD
+DVDD
+DOVDD
+EVDD
+C9
+0.1μF-0603
+C28
+0.1μF-0603
+C18
+0.1μF-0603
+C19
+0.1μF-0603
+C20
+0.1μF-0603
+C26
+0.1μF-0603
+C1
+0.1μF-0603
+C7
+0.1μF-0603
+C16
+0.1μF-0603
+C23
+0.1μF-0603
+C22
+0.1μF-0603
+C17
+0.1μF-0603
+C12
+0.1μF-0603
+C13
+0.1μF-0603
+C15
+0.1μF-0603
+C14
+0.1μF-0603
+R2
+10K-0603
+R5
+0-0603
+J2 CON32A
+D2
+D2 2
+D4
+D4 4
+D6
+D6 6
+D3
+D3
+1
+D5
+D5
+3
+D7
+D7_P
+5
+D8
+D8 8
+D9
+D9_P
+7
+PWDN
+PWDN 10
+RESET
+9
+SIOD
+SIOD 12
+NC
+11
+SIOC
+SIOC 14
+HREF
+HREF_P
+13
+GND 16
+VSYNC
+VSYNC_P 15
+GND 18
+PCLK
+PCLK
+17
+XVCLK
+XCLK 20
+PWR
+19
+GND 22
+PWR
+21
+D0
+D0 24
+D1
+D1
+23
+NC 26
+NC
+25
+NC 28
+NC
+27
+NC 30
+NC
+29
+GND 32
+GND
+31
+PWR
+L5
+3.3μH-L1008
+R4
+10-0603
+T5
+T1
+T2
+T3
+T4
+T6
+C27
+10μF/6V-EIA-A
++
+AGND
+PGND
+DGND
+DOGND
+AGND
+VN
+VH
+AGND
+DGND
+OUT
+VIN
+2
+GND
+1
+U1 XC62FP3302-SOT89 3.3V
+C2
+1μF-0603
+C4
+0.1μF-0603
+PWR
+C29
+10μF/6V-EIA-A
+C3
+10μF/6V-EIA-A
+C6
+0.1μF-0603
+C5
+10μF/6V-EIA-A
+L1
+3.3μH-L1008
+L2
+3.3μH-L1008
+PVDD
+AVDD
+3
+DGND
+OUT
+VIN
+2
+GND
+1
+U3 XC6206P152PR 1.5V
+C8
+1μF-0603
+PWR
+C30
+10μF/6V-EIA-A
+C11
+0.1μF-0603
+C10
+10μF/6V-EIA-A
+L3
+3.3μH-L1008
+DVDD
+3
+DGND
+OUT
+VIN
+2
+GND
+1
+U4 XC62FP1802-SOT89 1.8V
+C21
+1μF-0603
+PWR
+C31
+10μF/6V-EIA-A
+C25
+0.1μF-0603
+C24
+10μF/6V-EIA-A
+L4
+3.3μH-L1008
+DOVDD
+EVDD
+RESETB
+R1
+10K-0603
+DOVDD
+C32
+1μF-0603
+1
+MDP
+2
+MDN
+3
+MCP
+4
+MCN
+MCN
+D7
+R6
+50-0603
+R7
+50-0603
+R8
+50-0603
+R9
+50-0603
+R16
+0-0603
+MCP
+D9
+R14
+0-0603
+MDN
+HREF
+R12
+0-0603
+MDP
+VSYNC
+note 1
+R10
+0-0603
+J1 HEADER4X1
+note 2
+D7_P
+D7
+R17
+0-0603
+D9_P
+D9
+R15
+0-0603
+HREF_P
+HREF
+R13
+0-0603
+VSYNC_P
+VSYNC
+R11
+0-0603
+note 3
+VH
+VHT
+AVDD
+R18
+0-0603
+R19
+0-0603
+2710_CSP_DS_2_2
+
+
+--- page 20 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+figure 2-3
+CSP3 flex module schematic
+U1
+OV2710
+CSP3
+AVDD
+B1
+AVDD
+B11
+AVDD
+D1
+AVDD
+E11
+PVDD
+H1
+PVDD
+I1
+EVDD
+G4
+SVDD
+A5
+SVDD
+A7
+DVDD
+H11
+DOVDD
+B9
+DOVDD
+G6
+DOVDD
+H6
+D0 I8
+D0
+D1 I6
+D1
+D2 H8
+D2
+D3 G5
+D3
+D4 I9
+D4
+D5 I5
+D5
+D6 H9
+D6
+D7 H5
+D7
+D8 I10
+D8
+D9 H4
+D9
+VSYNC H2
+VSYNC
+HREF H3
+HREF
+PCLK I7
+PCLK
+XVCLK G2
+XVCLK
+SIOD H10
+SIOD
+SIOC G9
+SIOC
+NC A1
+NC A2
+NC A3
+NC A4
+NC B2
+NC B3
+NC B4
+NC B5
+NC C2
+NC C10
+NC D2
+NC D10
+NC E1
+NC E2
+NC E10
+NC F1
+NC F2
+NC F10
+NC F11
+NC G3
+NC G7
+NC G8
+NC G11
+AGND
+C1
+AGND
+C11
+AGND
+D11
+SGND
+A6
+SGND
+B6
+EGND
+I3
+DGND
+G1
+DGND
+G10
+DOGND
+A9
+DOGND
+H7
+VN
+A11
+VN
+VH
+B10
+VH
+VHT
+A10
+VHT
+TM
+B7
+RESETB
+A8
+RESETB
+PWDN
+B8
+PWDN
+2710_CSP_DS_2_3
+note 1
+note 2
+note 3
+note 4
+note 5
+note 6
+note 7
+note 8
+note 9
+note 10
+PWDN should be connected to ground outside of module if unused.
+RESETB should be connected to DOVDD outside of module if unused.
+AVDD is 3.0~3.6V of sensor analog power (clean). 3.3V is typical.
+DOVDD is 1.7~3.6V of sensor digital IO power (clean). 1.8V is typical.
+DVDD is 1.5V of sensor core power (clean). Internal regulator (no external 1.5V DVDD is needed) is recommended for 1.8V DOVDD.
+External 1.5V DVDD is recommended for 2.8V DOVDD.
+sensor AGND and DGND should be separated and connected to a single point outside PCB (do not connect inside module).
+DGND and EGND should be two separated nets, and only connected at a single point close to pin 39 or 40 of JP1.
+capacitors should be close to the related sensor pins.
+if more space available, use cap of 1μF-0402 for C5 between DVDD and DGND.
+D[9:0] (D9:MSB, D0:LSB) is sensor RGB RAW 10-bit output. D[9:2] (D9:MSB, D2:LSB) is RGB RAW 8-bit output.
+AVDD
+DOVDD
+DVDD
+C8
+0.1μF-0201
+C7
+0.1μF-0201
+C6
+0.1μF-0201
+C4
+0.1μF-0201
+C5
+0.1μF-0201
+AVDD
+C1
+0.1μF-0201
+C2
+0.1μF-0201
+C3
+0.1μF-0201
+JP1flex cable to Molex 52437-2491
+1
+2
+AGND
+3
+SIOD
+4
+AVDD
+5
+SIOC
+6
+RESETB
+7
+VSYNC
+8
+PWDN
+9
+HREF
+10
+DVDD
+11
+DOVDD
+12
+D9
+13
+XVCLK
+14
+D8
+15
+DGND
+16
+D7
+17
+PCLK
+18
+D6
+19
+D2
+20
+D5
+21
+D3
+22
+D4
+23
+D1
+24
+D0
+
+
+--- page 21 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-5
+figure 2-4
+CSP3 flex with MIPI schematic
+U1
+OV2710
+CSP3
+AVDD
+B1
+AVDD
+B11
+AVDD
+D1
+AVDD
+E11
+PVDD
+H1
+PVDD
+I1
+EVDD
+G4
+SVDD
+A5
+SVDD
+A7
+DVDD
+H11
+DOVDD
+B9
+DOVDD
+G6
+DOVDD
+H6
+D0 I8
+D0
+D1 I6
+D1
+D2 H8
+D2
+D3 G5
+D3
+D4 I9
+D4
+D5 I5
+D5
+D6 H9
+D6
+D7 H5
+D7_MDN
+D8 I10
+D8
+D9 H4
+D9_MDP
+VSYNC H2 VSYNC_MCP
+HREF H3
+HREF_MCN
+PCLK I7
+PCLK
+XVCLK G2
+XVCLK
+SIOD H10
+SIOD
+SIOC G9
+SIOC
+NC A1
+NC A2
+NC A3
+NC A4
+NC B2
+NC B3
+NC B4
+NC B5
+NC C2
+NC C10
+NC D2
+NC D10
+NC E1
+NC E2
+NC E10
+NC F1
+NC F2
+NC F10
+NC F11
+NC G3
+NC G7
+NC G8
+NC G11
+AGND
+C1
+AGND
+C11
+AGND
+D11
+SGND
+A6
+SGND
+B6
+EGND
+I3
+DGND
+G1
+DGND
+G10
+DOGND
+A9
+DOGND
+H7
+VN
+A11
+VN
+VH
+B10
+VH
+VHT
+A10
+VHT
+TM
+B7
+RESETB
+A8
+RESETB
+PWDN
+B8
+PWDN
+note 1
+note 2
+note 3
+note 4
+note 5
+note 6
+note 7
+note 8
+note 9
+note 10
+note 11
+note 12
+PWDN should be connected to ground outside of module if unused.
+RESETB should be connected to DOVDD outside of module if unused.
+AVDD is 3.0~3.6V of sensor analog power (clean). 3.3V is typical.
+DOVDD is 1.7~3.6V of sensor digital IO power (clean). 1.8V is typical.
+DVDD is 1.5V of sensor core power (clean). Internal regulator (no external 1.5V DVDD is needed) is recommended for 1.8V DOVDD.
+External 1.5V DVDD is recommended for 2.8V DOVDD.
+sensor AGND and DGND should be separated and connected to a single point outside PCB (do not connect inside module).
+DGND and EGND should be two separated nets, and only connected at a single point close to pin 39 or 40 of JP1.
+capacitors should be close to the related sensor pins.
+if more space available, use cap of 1μF-0402 for C5 between DVDD and DGND.
+D[9:0] (D9:MSB, D0:LSB) is sensor RGB RAW 10-bit output. D[9:2] (D9:MSB, D2:LSB) is RGB RAW high 8-bit output.
+EVDD/EGND are power/ground for MIPI core. In MIPI mode, D9_MDP and D7_MDN are MIPI data lane positive and negative output.
+VSYNC_MCP and HREF_MCN are MIPI clock lane positive and negative output.
+traces of D9_MDP, D7_MDN, VSYNC_MCP and HREF_MCN should have the same or similar length.
+impedance transmission lines should be controlled at 100 Ohm.
+JP1 <HRS FX12B-40S-0.4SV>
+2
+1
+AGND
+4
+3
+6
+5
+SIOD
+AVDD
+8
+7
+SIOC
+10
+9
+RESETB
+12
+11
+PCLK
+14
+13
+VSYNC_MCP
+16
+15
+HREF_MCN
+18
+17
+PWDN
+DGND
+20
+19
+D9_MDP
+VSYNC_MCP
+22
+21
+D8
+HREF_MCN
+24
+23
+D7_MDN
+DGND
+26
+25
+D6
+D9_MDP
+28
+27
+D5
+D7_MDN
+30
+29
+D4
+DGND
+32
+31
+D3
+XVCLK
+34
+33
+D2
+DVDD
+36
+35
+D1
+DOVDD
+38
+37
+D0
+DGND
+40
+39
+DGND
+AVDD
+DOVDD
+DVDD
+C8
+0.1μF-0201
+C7
+0.1μF-0201
+C6
+0.1μF-0201
+C4
+0.1μF-0201
+C5
+0.1μF-0201
+AVDD
+2710_CSP_DS_2_4
+C1
+0.1μF-0201
+C2
+0.1μF-0201
+C3
+0.1μF-0201
+
+
+--- page 22 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+2.3`#ú format and frame rate
+The OV2710 supports RAW RGB output with 10-bit DVP and 1-lane MIPI interface.
+2.4ð¬'Š I/O control
+The OV2710 I/O pad direction and driving capability can be easily adjusted. table 2-2 lists the driving capability and 
+direction control registers of the I/O pads.
+table 2-1
+formats and frame rates
+format
+resolution
+frame rate
+scaling method
+pixel clock (RAW)
+1080p
+1920 x 1080
+30 fps
+full
+80 MHz
+720p
+1280 x 720
+60 fps
+cropping
+80 MHz
+VGA
+640 x 480
+120 fps
+subsampling and cropping
+80 MHz
+VGA
+640 x 480
+60 fps
+subsampling, binning and cropping
+80 MHz
+QVGA
+320 x 240
+240 fps
+subsampling and cropping
+80 MHz
+QVGA
+320 x 240
+60 fps
+subsampling, binning and cropping
+80 MHz
+table 2-2
+driving capability and direction control for I/O pads (sheet 1 of 2)
+function
+register
+R/W
+description
+output drive capability 
+control
+0x302C
+RW
+Bit[7:6]:
+Output drive capability
+00:
+1x
+01:
+2x
+10:
+3x
+11:
+4x
+D[9:0] I/O control
+0x73017[3:0], 
+0x3018[7:2]
+RW
+input/output selection for the D[9:0] pins
+0:
+input
+1:
+output
+D[9:0] output select
+0x301D[3:0], 
+0x301E[7:2]
+RW
+output selection for the D[9:0] pins
+0:
+normal data path
+1:
+register-controlled value
+D[9:0] output value
+0x301A[3:0], 
+0x301B[7:2]
+RW
+D[9:0] output value
+D[9:0] input value
+0x3041[3:0], 
+0x3042[7:2]
+R
+D[9:0] input value
+VSYNC I/O control
+0x3017
+RW
+Bit[6]:
+input/output selection for the VSYNC pin
+0:
+input
+1:
+output
+
+
+--- page 23 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-7
+VSYNC output select
+0x301D
+RW
+Bit[6]:
+output selection for the VSYNC pin
+0:
+normal data path
+1:
+register-controlled value
+VSYNC output value
+0x301A
+RW
+Bit[6]:
+VSYNC output value
+VSYNC input value
+0x3041
+R
+Bit[6]:
+VSYNC input value
+HREF I/O control
+0x3017
+RW
+Bit[6]:
+input/output selection for the HREF pin
+0:
+input
+1:
+output
+HREF output select
+0x301D
+RW
+Bit[5]:
+output selection for the HREF pin
+0:
+normal data path
+1:
+register-controlled value
+HREF output value
+0x301A
+RW
+Bit[5]:
+HREF output value
+HREF input value
+0x3041
+R
+Bit[5]:
+HREF input value
+PCLK I/O control
+0x3017
+RW
+Bit[4]:
+input/output selection for the PCLK pin
+0:
+input
+1:
+output
+PCLK output select
+0x301D
+RW
+Bit[4]:
+output selection for the PCLK pin
+0:
+normal data path
+1:
+register-controlled value
+PCLK output value
+0x301A
+RW
+Bit[4]:
+PCLK output value
+PCLK input value
+0x3041
+R
+Bit[4]:
+PCLK input value
+STROBE I/O control
+0x3016
+RW
+Bit[1]:
+input/output selection for the STROBE 
+pin
+0:
+input
+1:
+output
+STROBE output select
+0x301C
+RW
+Bit[1]:
+Output selection for the STROBE pin
+0:
+normal data path
+1:
+register-controlled value
+STROBE output value
+0x3019
+RW
+Bit[1]:
+STROBE output value
+STROBE input value
+0x3040
+R
+Bit[1]:
+STROBE input value
+table 2-2
+driving capability and direction control for I/O pads (sheet 2 of 2)
+function
+register
+R/W
+description
+
+
+--- page 24 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+2.5«ŽØì SCCB interface
+The Serial Camera Control Bus (SCCB) interface controls the image sensor operation. Refer to the OmniVision 
+Technologies Serial Camera Control Bus (SCCB) Specification for detailed usage of the serial control port.
+Group write is supported in order to update a group of registers in the same frame. These registers are guaranteed to 
+be written prior to the internal latch at the frame boundary.
+The OV2710 supports up to four groups. These groups share 1 KB RAM and the size of each group is programmable by 
+adjusting the start address.
+The group write function is controlled by register 0x3212.
+The SCCB will enter group write mode after writing to register 0x3212 with a valid group ID. The subsequent registers 
+will be held to the buffer specified by the group_id instead of writing to the registers. Make sure the number of registers 
+does not exceed the capacity of the group. Setting group_hold_end to 1 will exit the group write mode. After that, both 
+group_launch and group_launch_en should be set to 1 in order to write the buffered values to the real registers. Multiple 
+table 2-3
+group sharing registers
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3200
+GROUP ADDR0
+0x40
+RW
+Start Address for Group0
+{group_addr0[7:0], 4’h0}
+0x3201
+GROUP ADDR1
+0x4A
+RW
+Start Address for Group1
+{group_addr1[7:0], 4’h0}
+0x3202
+GROUP ADDR2
+0x54
+RW
+Start Address for Group2
+{group_addr2[7:0], 4’h0}
+0x3203
+GROUP ADDR3
+0x5E
+RW
+Start Address for Group3
+{group_addr3[7:0], 4’h0}
+table 2-4
+group write register
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3212
+GROUP ACCESS
+0x00
+RW
+Bit[7]:
+group_launch_en
+Bit[6]:
+Debug mode (must be 0)
+Bit[5]:
+group_launch
+Bit[4]:
+group_hold_end
+Bit[3:0]:
+group_id
+00~11: ID of the group to 
+hold register
+
+
+--- page 25 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-9
+groups of registers can be prepared before writing to the real registers but be sure the correct group_id is specified when 
+the group write is launched.
+The following is an example demonstrating the group write operation:
+78
+3212
+00
+Enable group0
+78
+3600
+00
+Write registers to be held in group0
+78
+3601
+01
+78
+3212
+10
+End group0
+78
+3212
+01
+Enable group1
+78
+3602
+02
+Write registers to be held in group1
+78
+3603
+03
+78
+3212
+11
+End group1
+.........................
+Other direct register access
+78
+3212
+02
+Enable group2
+78
+3604
+04
+Write registers to be held in group2
+78
+3605
+05
+78
+3212
+12
+End group2
+78
+3212
+A0
+Launch group0
+.........................
+Other direct register access
+78
+3212
+03
+Enable group3
+78
+3606
+06
+Write registers to be held in group3
+78
+3607
+07
+78
+3212
+13
+End group3
+78
+3212
+A1
+Launch group1
+78
+3212
+A2
+Launch group2
+78
+3212
+A3
+Launch group3
+2.6† MIPI interface
+The OV2710 supports 1-lane MIPI transmitter interface with maximum 800Mbps per lane MIPI interface.
+2.7”e)î external components
+Image sensor analog power is provided from a 3.3V (typical) power circuit coming from the system. An internal regulator 
+provides 1.5V for core logic with I/O power (DOVDD). I/O PAD power supports 1.7 to 3.60V.
+
+
+--- page 26 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+2.8*t©_ power up sequence
+Based on the system power configuration, the power up sequence will differ.
+2.8.1ÖR power up with internal DVDD
+When powering up with the internal DVDD and SCCB access during the power ON period, the following conditions must 
+occur:
+1.
+if VDD-IO and VDD-A are turned ON at the same time, make sure VDD-IO becomes stable before VDD-A 
+becomes stable
+2.
+PWDN is active high with an asynchronized design (does not need clock)
+3.
+PWDN must go high during the power up period
+4.
+for PWDN to go low, power must first become stable (AVDD to PWDN > 5 ms)
+5.
+RESETB is active low with an asynchronized design
+6.
+state of RESETB does not matter during power up period once DOVDD is up
+7.
+master clock XVCLK should provide at least 1 ms before host accesses sensor’s I2C
+8.
+host can access I2C bus (if shared) during entire period. 20 ms after PWDN goes low or 20 ms after RESETB 
+goes high if reset is inserted after PWDN goes low, host can access sensor’s SCCB to initialize sensor
+figure 2-5
+power up timing with internal DVDD
+VDD_IO
+(DOVDD)
+VDD_A
+(AVDD)
+SCCB activity is okay during entire period
+power down
+VDD_IO first, then VDD_A, and rising time is less than 5 ms
+PWDN
+SCCB
+note T0 ≥ 0 ms: delay from VDD_IO stable to VDD_A stable
+T2 ≥ 5 ms: delay from VDD_A stable to sensor power up stable
+T0
+T2
+power on period
+2710_DS_2_3
+
+
+--- page 27 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+2-11
+2.8.2⁄\QT power up with external DVDD source
+When powering up with an external DVDD source and I2C access during the power ON period, the following conditions 
+must occur:
+1.
+if VDD-IO and VDD-A are turned ON at the same time, make sure VDD-IO becomes stable before VDD-A 
+becomes stable
+2.
+if VDD-A and VDD-D are turned ON at the same time, make sure VDD-A becomes stable before VDD-D becomes 
+stable
+3.
+PWDN is active high with an asynchronized design (does not need clock)
+4.
+for PWDN to go low, power must first become stable (DVDD to PWDN > 5 ms)
+5.
+all powers are cut off when the camera is not in use (power down mode is not recommended
+6.
+RESETB is active low with an asynchronized design
+7.
+state of RESETB does not matter during power up period once DOVDD is up
+8.
+master clock XVCLK should provide at least 1 ms before host accesses sensor’s I2C
+9.
+host can access I2C bus (if shared) during entire period. 20 ms after PWDN goes low or 20 ms after RESETB 
+goes high if reset is inserted after PWDN goes high, host can access sensor’s I2C to initialize sensor
+figure 2-6
+power up timing with external DVDD source
+VDD_IO
+(DOVDD)
+VDD_A
+(AVDD)
+VDD_D
+(DVDD)
+SCCB activity is okay during entire period
+cut off power
+VDD_IO first, then VDD_A, followed by VDD_D, and rising time is less than 5 ms
+PWDN
+SCCB
+note T0 ≥ 0 ms: delay from VDD_IO stable to VDD_A stable
+T1 ≥ 0 ms: delay from VDD_A stable to VDD_D stable
+T2 ≥ 5 ms: delay from VDD_D stable to sensor power up stable
+T0
+T1
+T2
+power on period
+2710_DS_2_4
+
+
+--- page 28 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+2.9㎕N power management
+Only system related functions are always powered ON. Sensor and ISP functions are cut off during power down mode. 
+Also, during the power on stage of the whole chip, these functions will power up after system functions power up.
+During power down, all registers keep their values. So, during the resume state, all the registers are restored to their 
+original values.
+In power down mode, the clock input from the system must be turned off even when the external clock source is still 
+clocking.
+2.109Ł¨Á power ON reset generation
+The power on reset can be controlled by an external pin. However, inside this device, there is a power ON reset 
+generation function to auto detect core power at a stable state.
+2.11èYÓr system clock control
+The OV2710 has an on-chip PLL which generates the system clock with a 6~27 MHz input clock. A programmable clock 
+divider is needed to generate different frequencies for the system.
+
+
+--- page 29 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+3-1
+3
+block level description
+3.1„Tþæ pixel array structure
+The OV2710 sensor has an image array of 1952 columns by 1092 rows (2,131,584 pixels). figure 3-1 shows a 
+cross-section of the image sensor array.
+The color filters are arranged in a Bayer pattern. The primary color BG/GR array is arranged in line-alternating fashion. 
+Of the 2,131,584 pixels, 2,073,600 (1920x1080) are active pixels and can be output. The other pixels are used for black 
+level calibration and interpolation.
+The sensor array design is based on a field integration read-out system with line-by-line transfer and an electronic shutter 
+with a synchronous pixel read-out scheme.
+figure 3-1
+sensor array region color filter layout
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+0
+1
+2
+3
+6
+7
+8
+9
+0
+1
+2
+3
+rows
+columns
+2710_DS_3_1
+1942
+1943
+1944
+1945
+active
+pixel
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+1088
+1089
+1090
+1091
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+16
+17
+18
+19
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+1072
+1073
+1074
+1075
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+B Gb
+Gr R
+1948
+1949
+1950
+1951
+dummy
+dummy
+active
+pixel
+dummy
+dummy
+
+
+--- page 30 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+3.2Kg binning
+Binning mode is usually used for subsampling. During subsampling, information is periodically dropped when data is 
+output. When the binning function is ON, voltage levels of adjacent pixels are averaged before being sent to the ADC. If 
+the binning function is OFF, the pixels, which are not output, are merely skipped. The OV2710 supports 2x2, and 2x1 
+binning. figure 3-2 illustrates 2x2 binning, where the voltage levels of four (2x2) adjacent same-color pixels are averaged 
+before entering the ADC.
+figure 3-2
+example of 2x2 binning
+table 3-1
+ binning-related registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x370D
+SENSOR REG0D
+0x0C
+RW
+Bit[6]:
+Vertical binning
+0x3621
+ANA ARRAY 01
+0x10
+RW
+Array Control
+Bit[7]:
+Horizontal binning
+Bit[6]:
+Horizontal skip
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+B G
+G R
+2710_DS_3_2
+
+
+--- page 31 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+4-1
+4
+image sensor core digital functions
+4.1â3¤Ä mirror and flip
+The OV2710 provides Mirror and Flip readout modes, which respectively reverse the sensor data readout order 
+horizontally and vertically (see figure 4-1). In flip, the OV2710 does not need additional settings because the ISP block 
+will auto-detect whether the pixel is in the red line or blue line and make the necessary adjustments.
+figure 4-1
+mirror and flip samples
+table 4-1
+mirror and flip registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3818
+TIMING CONTROL 18
+0x80
+RW
+Bit[6]:
+Horizontal mirror
+Bit[5]:
+Vertical flip
+F
+original image
+F
+flipped image
+F
+mirrored image
+F
+mirrored and flipped
+image
+2710_DS_4_1
+
+
+--- page 32 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+4.2>¬áË image windowing
+An image windowing area is defined by four parameters, horizontal start (HS), horizontal width (HW), vertical start (VS), 
+and vertical height (VH). By properly setting the parameters, any portion within the sense array size can be cropped as 
+a visible area. This cropping is achieved by simply masking the pixels outside the cropping window; thus, it will not affect 
+original timings. It will also not conflict with the flip and mirror functions.
+figure 4-2
+image windowing
+\
+table 4-2
+image cropping control functions
+function
+register
+description
+horizontal start
+{0x3800, 0x3801}
+HS[11:8] = 0x3800
+HS[7:0] = 0x3801
+vertical starta
+a. 
+VS can only be an even number
+{0x3802, 0x3803}
+VS[11:8] = 0x3802
+VS[7:0] = 0x3803
+horizontal width
+{0x3804, 0x3805}
+HW[11:8] = 0x3804
+HW[7:0] = 0x3805
+vertical height
+{0x3806, 0x3807}
+VH[11:8] = 0x3806
+VH[7:0] = 0x3807
+sensor array size X
+2710_DS_4_2
+sensor array size
+valid pixel (cropping) size
+sensor array
+size Y
+(HS, VS)
+(0, 0)
+VH
+HW
+
+
+--- page 33 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+4-3
+4.3² test pattern
+For testing purposes, the OV2710 offers one type of test pattern, color bar.
+figure 4-3
+test pattern
+4.4‡5ª AEC/AGC algorithm
+4.4.1!îŁ/ overview
+The Auto Exposure Control (AEC) and Auto Gain Control (AGC) allows the image sensor to adjust the image brightness 
+to a desired range by setting the proper exposure time and gain applied to the image. Besides automatic control, 
+exposure time and gain can be set manually from external control. The related registers are listed in table 4-4 
+table 4-3
+test pattern selection control
+function
+register
+description
+color bar
+0x503D
+Bit[7]:
+Color bar enable
+0:
+Color bar OFF
+1:
+Color bar enable
+0x503D
+Bit[5:4]:
+Color bar pattern select
+10: Color bar pattern
+color bar
+
+
+--- page 34 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+4.4.2ֈʑ AEC algorithm
+The AEC controls image luminance using registers AEC CONTROL 0F (0x3A0F), AEC CONTROL 10 (0x3A10), AEC 
+CONTROL 1B (0x3A1B), and AEC CONTROL 1E (0x3A1E). The value of register AEC CONTROL 0F (0x3A0F) 
+indicates the high threshold value, and the value of register AEC CONTROL 10 (0x3A10) indicates the low threshold 
+value. The value of register AEC CONTROL 1B (0x3A1B) indicates the high threshold value for image change from 
+stable state to unstable state and the value of register AEC CONTROL 1E (0x3A1E) indicates the low threshold value 
+for image change from stable state to unstable state. When the target image luminance average value AVERAGE 
+CTRL10 (0x568A) is within the range specified by registers AEC CONTROL 1B (0x3A1B) and AEC CONTROL 1E 
+(0x3A1E), the AEC keeps the image exposure and gain. When register AEC CONTROL 10 (0x568A) is greater than the 
+value in register AEC CONTROL 1B (0x3A1B), the AEC will decrease the image exposure and gain until it falls into the 
+range of {0x3A10, 0x3A0F}. When register AEC CONTROL 10 (0x568A) is less than the value in register AEC 
+CONTROL 1E (0x3A1E), the AEC will increase the image exposure and gain until it falls into the range of {0x3A10, 
+0x3A1F}. Accordingly, the value in register AEC CONTROL 0F (0x3A0F) should be greater than the value in register 
+table 4-4
+AEC/AGC control functions
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3500
+AEC EXPO 
+0x00
+RW
+AEC Exposure
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Exposure[19:16]
+0x3501
+AEC EXPO
+0x00
+RW
+AEC Exposure
+Bit[7:0]:
+Exposure[15:8]
+0x3502
+AEC EXPO
+0x00
+RW
+AEC Exposure
+Bit[7:0]:
+Exposure[7:0]
+0x3503
+AEC MANUAL
+0x00
+RW
+AEC Manual Mode Control
+Bit[7:2]:
+Not used
+Bit[1]:
+AGC manual enable
+0:
+Auto enable
+1:
+Manual enable
+Bit[0]:
+AEC manual enable
+0:
+Auto enable
+1:
+Manual enable
+0x350A
+AEC AGC ADJ
+0x00
+RW
+Gain Output to Sensor
+Bit[0]:
+Gain high bit
+Gain = (0x350A[0]+1) × (0x350B[7]+1) × 
+(0x350B[6]+1) × (0x350B[5]+1) × 
+(0x350B[4]+1) × (0x350B[3:0]/16+1)
+0x350B
+AEC AGC ADJ
+0x00
+RW
+Gain Output to Sensor
+Bit[7:0]:
+Gain low bits
+Gain = (0x350A[0]+1) × (0x350B[7]+1) × 
+(0x350B[6]+1) × (0x350B[5]+1) × 
+(0x350B[4]+1) × (0x350B[3:0]/16+1)
+
+
+--- page 35 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+4-5
+AEC CONTROL 10 (0x3A10). The gap between the values of registers AEC CONTROL 1B (0x3A1B) and AEC 
+CONTROL 1E (0x3A1E) controls the image stability.
+As shown in figure 4-4, the AEC/AGC convergence uses two regions, the inner stable operating region and the outer 
+control zone, which defines the convergence step size of fast and slow conditions.
+figure 4-4
+desired convergence
+As for auto mode, the AEC will automatically calculate the steps needed based on the difference between target and 
+current values. So, the outer control zone is meaningless for this mode.
+table 4-5
+AEC control functions
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3A0F
+AEC CONTROL 0F
+0x78
+RW
+Stable Range High Limit (enter)
+Bit[7:0]:
+Upper limit of unstable to stable range
+0x3A10
+AEC CONTROL 10
+0x68
+RW
+Stable Range Low Limit (enter)
+Bit[7:0]:
+Lower limit of unstable to stable range
+0x3A1B
+AEC CONTROL 1B
+0x78
+RW
+Stable Range High Limit (go out)
+Bit[7:0]:
+Upper limit of stable to unstable range
+0x3A1E
+AEC CONTROL 1E
+0x68
+RW
+Stable Range Low Limit (go out)
+Bit[7:0]:
+Lower limit of stable to unstable range
+0x3A11
+AEC CONTROL 11
+0xD0
+RW
+Step Manual Mode - fast zone high limit
+Bit[7:0]:
+Upper limit of fast AEC/AGC control zone
+0x3A1F
+AEC CONTROL 1F
+0x40
+RW
+Step Manual Mode - fast zone low limit
+Bit[7:0]:
+Lower limit of fast AEC/AGC control zone
+control zone
+stable operating region
+desired convergence
+2710_DS_4_4
+
+
+--- page 36 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+4.5ˆ6b, AEC/AGC steps
+The AEC and AGC work together to obtain adequate exposure/gain based on the current environmental illumination. In 
+order to achieve the best SNR, extending the exposure time is always preferred rather than raising the gain when the 
+current illumination is getting brighter. Vice versa, under dark conditions, the action to decrease the gain is always taken 
+prior to shortening the exposure time. 
+4.5.1”äòQ auto exposure control (AEC)
+The function of the AEC is to calculate the integration time of the next frame and send the information to the timing control 
+block. Based on the statistics of previous frames, the AEC is able to determine whether the integration time should 
+increase, decrease, fast increase, fast decrease, or remain the same. 
+In extremely bright situations, the LAEC activates, allowing integration time to be less than one row. In extremely dark 
+situations, the night mode activates, allowing integration time to be larger than one frame. 
+To avoid image flickering under a periodic light source, the integration time can be adjusted in steps of integer multiples 
+of the period of the light source. This AEC step system is called the banding filter, suggesting that the exposure time is 
+not continuous but falls in some steps. 
+4.5.1.1 LAEC
+If the integration time is only one row period but the image is too bright, AEC will enter LAEC mode. Within LAEC, 
+the integration time can be further decreased to the minimal of 1/16 row. LAEC ON/OFF can be set in register bit 
+0x3A00[6].
+4.5.1.2 banding mode ON with AEC
+In Banding ON mode, the exposure time will fall in steps of integer multiples of the period of light intensity. This 
+design is to reject image flickering when the light source is not steady but periodical. 
+For a given light flickering frequency, the band step can be expressed in units of row period.
+Band Step = 'period of light intensity' × 'frame rate' × 'rows per frame'. 
+The band steps for 50Hz and 60Hz light sources can be set in registers {0x3A08[1:0], 0x3A09[7:0]} and 
+{0x3A0A[1:0], 0x3A0B[7:0]}, respectively. 
+4.5.1.3 banding mode OFF with AEC
+When banding mode is OFF, integration time increases/decreases as normal. It is not necessarily multiples of band 
+steps.
+4.5.1.4 night mode
+The OV2710 supports long integration time such as 1 frame, 2 frames, 3 frames, 4 frames, 5 frames, 6 frames, 
+7 frames, and 8 frames in dark conditions. This is achieved by slowing down the original frame rate and waiting for 
+exposure. Night mode ceiling can be set in register bits {0x3A02[3:0], 0x3A03[7:0], 0x3A04[7:0]} and {0x3A14[3:0], 
+0x3A15[7:0], 0x3A16[7:0]} for 60Hz and 50Hz, respectively. When banding is OFF, the ceiling is still set by these 
+registers depending on register bits 0x3C01[7] and 0x3C00[2]. Night mode can be disabled by setting register bit 
+0x3A00[2] to 0. Also, when in night mode, the increase and decrease step can be based on band or frames, 
+depending on register 0x3A05[6]. The minimal increase/decrease step can be one band. The step can be based 
+both on bands and frames.
+
+
+--- page 37 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+4-7
+4.5.2`+:» manual exposure control
+To manually change exposure value, you must first set both 0x3503[0] and 0x3503[2], where 0x3503[0] enables manual 
+exposure control and 0x3503[2] enables manual frame length - the number of lines in each frame or maximum exposure 
+time, which is defined by registers 0x350C and 0x350D. In auto exposure mode, the maximum exposure values in 
+registers 0x350C/0x350D automatically change. In manual exposure mode, these registers will not automatically 
+change. The manually set exposure in registers 0x3500~0x03502 must be less than the maximum exposure value in 
+0x350C/0x350D. The exposure value in registers 0x3500~0x3502 is in units of line period/16, the low 4 bits (0x3502[3:0]) 
+is the fraction of line in 1/16 steps, and the maximum value in 0x350C/0x350D is in units of lines. If the manually set 
+exposure value is less than one pre-defined frame period (e.g., 1/15 second in 15fps), there is no need to change 
+0x350C/0x350D. If the exposure value needs to be set beyond the pre-defined frame period; in another words, if the 
+frame period needs to be extended to extend exposure time, then the maximum frame value in 0x350C/0x350D needs 
+to be set first, then the exposure can be set in registers 0x3500~0x3502 accordingly.
+4.5.3œ−Þ auto gain control (AGC)
+Unlike prolonging integration time, increasing gain will amplify both signal and noise. Thus, AGC usually starts after AEC 
+is full. However, in cases where adjacent AEC step changes are too large (>1/16), AGC steps should be inserted in 
+between; otherwise, the integration time will keep switching between two adjacent steps and the image flickers.
+4.5.3.1 integration time between 1~16 rows
+When integration time is less than 16 rows, the changes between adjacent AEC steps are larger than 1/16, which 
+may possibly make the image oscillate between two AEC levels; thus, some AGC steps are added in between. 
+4.5.3.2 gain insertion between AEC banding steps
+When banding mode is ON, the integration time changes in step of the period of light intensity. For the first 16 band 
+steps, since the exposure time change between adjacent steps is larger than 1/16, AGC steps are inserted to ensure 
+image stability. 
+4.5.3.3 gain insertion between night mode steps
+Between night mode steps (e.g., integration time = 1 frame and 2 frames), AGC steps are inserted to ensure no 
+adjacent step change is larger than 1/16. 
+4.5.3.4 when AEC reaches maximum
+When AEC reaches its maximum step while the image is still too dark, the gain starts to increase until the new frame 
+average falls into the stable range or AGC reaches its maximum step. The AGC ceiling can be set in {0x3A18[9:8], 
+0x3A19[7:0]}.
+4.5.4 ™÷G manual gain control
+To manually change gain, first set register bit 0x3503[1] to enable manual control, then change the values in 
+0x350A/0x350B for the manual gain. The OV2710 has a maximum of 16x analog gain and 4x digital gain.
+
+
+--- page 38 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+4.6ëÿÃó black level calibration (BLC)
+The pixel array contains several optically shielded (black) lines. These lines are used as reference for black level 
+calibration. There are two main functions of the BLC:
+•
+adjusting all normal pixel values based on the values of the black levels
+•
+applying multiplication to all pixel values based on digital gain
+Black level adjustments can be made with registers 0x4000 through 0x401D shown in table 4-6. 
+table 4-6
+BLC control functions 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4000
+BLC CTRL00
+0x05
+RW
+Bit[7:1]:
+Not used
+Bit[0]:
+BLC enable
+0:
+Disable
+1:
+Enable
+0x4006
+BLACK LEVEL 
+TARGET
+0x00
+RW
+Black Level Target 
+Bit[1:0]:
+l_blacklevel_target[9:8]
+Black level target
+0x4007
+BLACK LEVEL 
+TARGET
+0x20
+RW
+Black Level Target
+Bit[7:0]:
+l_blacklevel_target[7:0]
+Black level target
+0x401D
+BLC FRAME 
+CONTROL
+0x22
+RW
+Bit[1]:
+Format change enable
+0:
+BLC does not change 
+when format changes
+1:
+Do n frames of BLC when 
+image format changes
+Bit[0]:
+Not used
+
+
+--- page 39 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+5-1
+5
+image sensor processor digital functions
+5.1€½ë5 system control
+table 5-1
+system control registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3008
+SYSTEM 
+CONTROL00
+0x02
+RW
+System Control
+Bit[7]:
+System software reset
+0:
+Normal work mode
+1:
+Software reset mode
+Bit[6]:
+System sleep mode
+0:
+Normal work mode
+1:
+Software sleep power down mode
+Bit[5:1]:
+Debug only
+Changing these values are not allowed
+Bit[0]:
+Not used
+0x300F
+PLL1 CTRL00
+0x8A
+RW
+Bit[7:6]:
+Not used
+Bit[5:3]:
+Charge pump control
+Bit[2]:
+Not used
+Bit[1:0]:
+PLL SELD5 divider
+0x:
+Bypass
+10:
+Divided by 4 when in 8-bit mode
+11:
+Divided by 5 when in 10-bit mode
+0x3010
+PLL1 CTRL01
+0x00
+RW
+Bit[7:4]:
+PLL DIVS divider
+System divider ratio
+Bit[3:0]:
+PLL DIVM divider
+MIPI divider ratio
+0x3011
+PLL1 CTRL02
+0x0A
+RW
+Bit[7]:
+PLL bypass
+Bit[5:0]:
+PLL DIVP
+0x3012
+PLL PREDIVIDER
+0x00
+RW
+Bit[2:0]:
+PLL pre-divider ratio
+000: 1
+001: 1.5
+010: 2
+011: 2.5
+100: 3
+101: 4
+110: 6
+111: 8
+
+
+--- page 40 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 41 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+6-1
+6
+image sensor output interface digital functions
+6.1²x1² digital video port (DVP)
+6.1.1VÁz> overview
+The Digital Video Port (DVP) provides 10-bit parallel data output in all formats supported and extended features including 
+compression mode, CCIR656 format, HSYNC mode and test pattern output.
+6.2P®˛¯ mobile industry processor interface (MIPI)
+MIPI provides a single uni-directional clock lane and two bi-directional data lane solution for communication links 
+between components inside a mobile device. The two data lanes have full support for HS (uni-direction) and LP 
+(bi-direction) data transfer mode. Contact your local OmniVision FAE for more details.
+table 6-1
+DVP control registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4732
+CCIR656 FS
+0x01
+RW
+CCIR656 SYNC Code
+Frame start
+0x4733
+CCIR656 FE
+0x0F
+RW
+CCIR656 SYNC Code
+Frame end
+0x4734
+CCIR656 LS
+0x00
+RW
+CCIR6656 SYNC Code
+Line start
+0x4735
+CCIR656 LE
+0x00
+RW
+CCIR656 SYNC Code
+Line end
+0x4740
+POLARITY CTRL00
+0x20
+RW
+DVP output polarity control
+Bit[5]:
+PCLK polarity
+0:
+Active low
+1:
+Active high
+Bit[4]:
+Reserved
+Bit[3]:
+Gate PCLK under VSYNC
+Bit[2]:
+Gate PCLK under HREF
+Bit[1]:
+HREF polarity
+0:
+Active low
+1:
+Active high
+Bit[0]:
+VSYNC polarity
+0:
+Active low
+1:
+Active high
+
+
+--- page 42 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 43 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-1
+7
+register tables
+The following tables provide descriptions of the device control registers contained in the OV2710. For all registers 
+enable/disable bits, ENABLE = 1 and DISABLE = 0. The device slave addresses are 0x6C for write and 0x6D for read.
+table 7-1
+SC control registers (sheet 1 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3008
+SYSTEM CONTROL00
+0x02
+RW
+System Control
+Bit[7]:
+System software reset
+0:
+Normal work mode
+1:
+Software reset mode
+Bit[6]:
+System sleep mode
+0:
+Normal work mode
+1:
+Software sleep power down 
+mode
+Bit[5:1]:
+Debug only
+Changing these values are not 
+allowed
+Bit[0]:
+Not used
+0x3009
+NOT USED
+–
+–
+Not Used
+0x300A
+PIDH
+0x27
+R
+Product ID High Byte MSBs
+0x300B
+PIDL
+0x10
+R
+Product ID Low Byte LSBs
+0x300C~ 
+0x300D
+NOT USED
+–
+–
+Not Used
+0x300E
+MIPI CTRL00
+0x00
+RW
+Bit[7:5]:
+Not used
+Bit[4]:
+MIPI high speed power down 
+control
+0:
+Enable MIPI PHY HS TX 
+module
+1:
+Power down MIPI PHY HS TX 
+module
+Bit[3]:
+MIPI low power, power-down 
+control 
+0:
+Enable MIPI PHY HS RX 
+module
+1:
+Power down MIPI PHY LP RX 
+module 
+Bit[2]:
+MIPI enable
+0:
+DVP enable
+1:
+MIPI enable
+Bit[1]:
+MIPI system suspend control
+0:
+MIPI power ON
+1:
+MIPI suspend
+Bit[0]:
+Not used
+
+
+--- page 44 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x300F
+PLL CTRL00
+0x8A
+RW
+Bit[7:6]:
+Not used
+Bit[5:3]:
+Charge pump control
+Bit[2]:
+Not used
+Bit[1:0]:
+PLL SELD5 divider
+0x:
+Bypass
+10:
+Divided by 4 when in 8-bit 
+mode
+11:
+Divided by 5 when in 10-bit 
+mode
+0x3010
+PLL CTRL01
+0x00
+RW
+Bit[7:4]:
+PLL DIVS divider
+System divider ratio
+Bit[3:0]:
+PLL DIVM divider
+MIPI divider ratio
+0x3011
+PLL CTRL02
+0x0A
+RW
+Bit[7]:
+PLL bypass
+Bit[5:0]:
+PLL DIVP
+0x3012
+PLL PREDIVIDER
+0x00
+RW
+Bit[7:3]:
+Not used
+Bit[2:0]:
+PLL1 pre-divider ratio
+000: 1
+001: 1.5
+010: 2
+011: 2.5
+100: 3
+101: 4
+110: 6
+111: 8
+0x3013~ 
+0x3015
+NOT USED
+–
+–
+Not Used
+0x3016
+PAD OUTPUT ENABLE00
+0x00
+RW
+Input/Output Control (0: input; 1: output)
+Bit[7:2]:
+Not used
+Bit[1]:
+Strobe OEN
+Bit[0]:
+SDA OEN
+0x3017
+PAD OUTPUT ENABLE01
+0x00
+RW
+Input/Output Control (0: input; 1: output)
+Bit[7]:
+Not used
+Bit[6]:
+VSYNC OEN
+Bit[5]:
+HREF OEN
+Bit[4]:
+PCLK OEN
+Bit[3:0]:
+D[9:6] OEN
+0x3018
+PAD OUTPUT ENABLE02
+0x00
+RW
+Input/Output Control (0: input; 1: output)
+Bit[7:2]:
+D[5:0] OEN
+Bit[1:0]:
+Not used
+0x3019
+PAD OUTPUT VALUE00
+0x00
+RW
+GPIO Output Value
+Bit[7:2]:
+Not used
+Bit[1]:
+Strobe
+Bit[0]:
+SDA
+table 7-1
+SC control registers (sheet 2 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 45 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-3
+0x301A
+PAD OUTPUT VALUE01
+0x00
+RW
+GPIO Output Value
+Bit[7]:
+Not used
+Bit[6]:
+VSYNC
+Bit[5]:
+HREF
+Bit[4]:
+PCLK
+Bit[3:0]:
+D[9:6] output
+0x301B
+PAD OUTPUT VALUE02
+0x00
+RW
+GPIO Output Value
+Bit[7:2]:
+D[5:0] output
+Bit[1:0]:
+Not used
+0x301C
+PAD OUTPUT SELECT00
+0x00
+RW
+Output Selection for GPIO (0: normal data path; 
+1: register controlled GPIO)
+Bit[7:2]:
+Not used
+Bit[1]:
+Strobe select
+Bit[0]:
+SDA select
+0x301D
+PAD OUTPUT SELECT01
+0x00
+RW
+Output Selection for GPIO (0: normal data path; 
+1: register controlled GPIO)
+Bit[7]:
+Not used
+Bit[6]:
+VSYNC select
+Bit[5]:
+HREF select
+Bit[4]:
+PCLK select
+Bit[3:0]:
+D[9:6] select
+0x301E
+PAD OUTPUT SELECT02
+0x00
+RW
+Output Selection for GPIO (0: normal data path; 
+1: register controlled GPIO)
+Bit[7:2]:
+D[5:0] select
+Bit[1:0]:
+Not used
+0x3025
+CHIP REVISION
+0x01
+R
+Chip Revision ID (for Rev 1C only)
+0x302C
+PAD OUTPUT DRIVE 
+CAPABILITY
+0x02
+RW
+Bit[7:6]:
+Output drive capability
+00:
+1x
+01:
+2x
+10:
+3x
+11:
+4x
+Bit[5:0]:
+Not used
+0x3040
+PAD INPUT VALUE00
+–
+R
+Pad Input Status
+Bit[7:6]:
+Not used
+Bit[5]:
+TM
+Bit[4]:
+Not used
+Bit[3]:
+PWDN
+Bit[2]:
+PWUP
+Bit[1]:
+SCL
+Bit[0]:
+SDA
+table 7-1
+SC control registers (sheet 3 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 46 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x3041
+PAD INPUT VALUE01
+–
+R
+Pad Input Status
+Bit[7]:
+OTP
+Bit[6]:
+VSYNC
+Bit[5]:
+HREF
+BIt[4]:
+PCLK
+Bit[3:0]:
+D[9:6] input
+0x3042
+PAD INPUT VALUE02
+–
+R
+Pad Input Status
+Bit[7:2]:
+D[5:0] input
+Bit[1:0]:
+Not used
+table 7-2
+SCCB control registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3100
+SCCB ID
+0x6C
+RW
+SCCB Slave ID
+0x3103
+PLL CLOCK SELECT
+0x01
+RW
+PLL Clock Select
+Bit[7:2]:
+Not used
+Bit[1]:
+Select PLL input clock
+0:
+From pad clock
+1:
+From pre divider 
+(clock modulator)
+0x3104
+SCCB PAD CLOCK DIVIDER
+0x01
+RW
+Pad Clock Divider for SCCB Clock
+table 7-3
+group sharing registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3200
+GROUP ADDR0
+0x40
+RW
+Start Address for Group0
+{group_addr0[7:0], 4’h0}
+0x3201
+GROUP ADDR1
+0x4A
+RW
+Start Address for Group1
+{group_addr1[7:0], 4’h0}
+0x3202
+GROUP ADDR2
+0x54
+RW
+Start Address for Group2
+{group_addr2[7:0], 4’h0}
+0x3203
+GROUP ADDR3
+0x5E
+RW
+Start Address for Group3
+{group_addr3[7:0], 4’h0}
+table 7-1
+SC control registers (sheet 4 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 47 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-5
+ 
+0x3212
+GROUP ACCESS
+0x00
+RW
+Bit[7]:
+group_launch_en
+Bit[6]:
+Debug mode (must be 0)
+Bit[5]:
+group_launch
+Bit[4]:
+group_hold_end
+Bit[3:0]:
+group_id
+00~11: ID of the group to 
+hold register
+table 7-4
+ analog registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3621
+ANA ARRAY 01
+0x10
+RW
+Array Control
+Bit[7]:
+Horizontal binning
+Bit[6]:
+Horizontal skip
+0x370D
+SENSOR REG0D
+0x0C
+RW
+Bit[7]:
+Debug mode
+Bit[6]:
+Vertical binning
+Bit[5:0]:
+Debug mode
+table 7-5
+timing control registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3800
+TIMING CONTROL HS HIGHBYTE
+0x01
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+HREF horizontal start 
+point[11:8]
+0x3801
+TIMING CONTROL VH LOWBYTE
+0x08
+RW
+Bit[7:0]:
+HREF horizontal start 
+point[7:0]
+0x3802
+TIMING CONTROL VH HIGHBYTE
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+HREF vertical start 
+point[11:8]
+0x3803
+TIMING CONTROL VH LOW BYTE
+0x0A
+RW
+Bit[7:0]:
+HREF vertical start point[7:0]
+0x3804
+TIMING CONTROL HW HIGHBYTE
+0x08
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+HREF horizontal width[11:8]
+0x3805
+TIMING CONTROL HW LOWBYTE
+0x00
+RW
+Bit[7:0]:
+HREF horizontal width[7:0]
+0x3806
+TIMING CONTROL VH HIGHBYTE
+0x06
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+HREF vertical height[11:8]
+0x3807
+TIMING CONTROL VH LOW BYTE
+0x00
+RW
+Bit[7:0]:
+HREF vertical height[7:0]
+table 7-3
+group sharing registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 48 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x3808
+TIMING CONTROL DVP HSIZE
+0x08
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+DVP output horizontal 
+width[11:8]
+0x3809
+TIMING CONTROL DVP HSIZE 
+LOW
+0x00
+RW
+Bit[7:0]:
+DVP output horizontal 
+width[7:0]
+0x380A
+TIMING CONTROL DVP VSIZE 
+HIGH
+0x06
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+DVP output vertical 
+height[11:8]
+0x380B
+TIMING CONTROL DVP VSIZE 
+LOW
+0x00
+RW
+Bit[7:0]:
+DVP output vertical 
+height[7:0]
+0x380C
+TIMING CONTROL HTS HIGHBYTE
+0x09
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Total horizontal size[11:8]
+0x380D
+TIMING CONTROL HTS LOWBYTE
+0x48
+RW
+Bit[7:0]:
+Total horizontal size[7:0]
+0x380E
+TIMING CONTROL VTS HIGHBYTE
+0x06
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Total vertical size[11:8]
+0x380F
+TIMING CONTROL VTS LOWBYTE
+0x18
+RW
+Bit[7:0]:
+Total vertical size[7:0]
+0x3810
+TIMING CONTROL HV OFFSET
+0xC2
+RW
+Bit[7:4]:
+Horizontal offset
+Bit[3:0]:
+Vertical offset
+0x3814~ 
+0x3815
+NOT USED
+–
+–
+Not Used
+0x3818
+TIMING CONTROL18
+0x80
+RW
+Bit[7]:
+Not used
+Bit[6]:
+Horizontal mirror
+Bit[5]:
+Vertical flip
+Bit[4:2]:
+Not used
+Bit[1]:
+Vertical subsample /4
+Bit[0]:
+Vertical subsample /2
+table 7-6
+AEC/AGC registers (sheet 1 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3500
+AEC PK EXPO
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AEC exposure[19:16]
+0x3501
+AEC PK EXPO
+0x00
+RW
+Bit[7:0]:
+AEC exposure[15:8]
+0x3502
+AEC PK EXPO
+0x20
+RW
+Bit[7:0]:
+AEC exposure[7:0]
+table 7-5
+timing control registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 49 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-7
+0x3503
+AEC PK MANUAL
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[2]:
+VTS manual enable
+Bit[1]:
+AGC manual enable
+Bit[0]:
+AEC manual enable
+0x3505~ 
+0x3509
+NOT USED
+–
+–
+Not Used
+0x350A
+AEC AGC ADJ
+0x00
+RW
+Gain Output to Sensor
+Bit[7:1]:
+Not used
+Bit[0]:
+Gain high bit
+Gain = (0x350A[0]+1) × (0x350B[7]+1) × 
+(0x350B[6]+1) × (0x350B[5]+1) × 
+(0x350B[4]+1) × (0x350B[3:0]/16+1)
+0x350B
+AEC AGC ADJ
+0x00
+RW
+Gain Output to Sensor
+Bit[7:0]:
+Gain low bits
+Gain = (0x350A[0]+1) × (0x350B[7]+1) × 
+(0x350B[6]+1) × (0x350B[5]+1) × 
+(0x350B[4]+1) × (0x350B[3:0]/16+1)
+0x350C
+AEC PK VTS
+0x00
+RW
+Bit[7:0]:
+AEC VTS[15:8]
+0x350D
+AEC PK VTS
+0x00
+RW
+Bit[7:0]:
+AEC VTS[7:0]
+0x3A00
+AEC CONTROL0
+0x7C
+RW
+Bit[7]:
+Not used
+Bit[6]:
+Less 1 line enable
+0:
+Less 1 line function 
+disable
+1:
+Less 1 line function 
+enable
+Bit[5]:
+Band enable
+0:
+Band function disable
+1:
+Band function enable
+Bit[4]:
+Auto band enable
+0:
+Exposure can not be less 
+than 1 band
+1:
+Exposure can be less 
+than 1 band
+Bit[3]:
+Line complete
+0:
+Fractional line enable
+1:
+Fractional line disable
+Bit[2]:
+Night mode
+0:
+Night mode disable
+1:
+Night mode enable
+Bit[1]:
+Not used 
+Bit[0]:
+Freeze
+0:
+Freeze disable
+1:
+Freeze enable
+table 7-6
+AEC/AGC registers (sheet 2 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 50 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x3A01
+AEC CONTROL1
+0x04
+RW
+Bit[7:0]:
+Minimum exposure
+0x3A02
+AEC MAX EXPO 60
+0x02
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AEC maximum exposure for 
+60Hz[19:16]
+0x3A03
+AEC MAX EXPO 60
+0x28
+RW
+Bit[7:0]:
+AEC maximum exposure for 
+60Hz[15:8]
+0x3A04
+AEC MAX EXPO 60
+0x00
+RW
+Bit[7:0]:
+AEC maximum exposure for 
+60Hz[7:0]
+0x3A05~ 
+0x3A07
+NOT USED
+–
+–
+Not Used
+0x3A08
+AEC B50 STEP
+0x11
+RW
+Bit[7:6]:
+Not used
+Bit[5:0]:
+AEC band50 step[13:8]
+0x3A09
+AEC B50 STEP
+0x40
+RW
+Bit[7:0]:
+AEC band50 step[7:0]
+0x3A0A
+AEC B60 STEP
+0x11
+RW
+Bit[7:6]:
+Not used
+Bit[5:0]:
+AEC band60 step[13:8]
+0x3A0B
+AEC B60 STEP
+0x40
+RW
+Bit[7:0]:
+AEC band60 step[7:0]
+0x3A0C
+NOT USED
+–
+–
+Not Used
+0x3A0D
+AEC CONTROLD
+0x04
+RW
+Bit[7:6]:
+Not used
+Bit[5:0]:
+Band60 max[5:0]
+0x3A0E
+AEC CONTROLE
+0x03
+RW
+Bit[7:6]:
+Not used
+Bit[5:0]:
+Band50 max[5:0]
+0x3A0F
+AEC CONTROLF
+0x78
+RW
+Bit[7:0]:
+Stable range high threshold 1
+0x3A10
+AEC CONTROL10
+0x68
+RW
+Bit[7:0]:
+Stable range low threshold 1
+0x3A11
+AEC CONTROL11
+0xD0
+RW
+Bit[7:0]:
+Fast zone high threshold
+0x3A12
+AEC CONTROL12
+0x00
+RW
+Bit[7:0]:
+Manual average setting
+0x3A13
+AEC CONTROL13
+0x50
+RW
+Bit[7:6]:
+Not used
+Bit[5]:
+Pre gain enable
+Bit[4:0]:
+Pre gain
+0x3A14
+AEC MAX EXPO50
+0x02
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AEC maximum exposure for 
+50Hz[19:16]
+0x3A15
+AEC MAX EXPO 50
+0x28
+RW
+Bit[7:0]:
+AEC maximum exposure for 
+50Hz[15:8]
+0x3A16
+AEC MAX EXPO 50
+0x00
+RW
+Bit[7:0]:
+AEC maximum exposure for 
+50Hz[7:0]
+table 7-6
+AEC/AGC registers (sheet 3 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 51 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-9
+0x3A17
+AEC CONTROL17
+0x89
+RW
+Bit[7:2]:
+Not used
+Bit[1:0]:
+Gain night threshold[1:0]
+00:
+Night mode gain 
+threshold as 1x
+01:
+Night mode gain 
+threshold as 2x
+10:
+Night mode gain 
+threshold as 4x
+11:
+Not used
+0x3A18
+AEC G CEIL
+0x03
+RW
+Bit[7:1]:
+Not used
+Bit[0]:
+AEC gain ceiling
+0x3A19
+AEC G CEIL
+0xE0
+RW
+Bit[7:0]:
+AEC gain ceiling
+0x3A1A
+NOT USED
+–
+–
+Not Used
+0x3A1B
+AEC CONTROL1B
+0x78
+RW
+Bit[7:0]:
+Stable range high threshold 2
+0x3A1C
+AEC LED ADD ROW
+0x06
+RW
+Bit[7:0]:
+Row adding number[15:8] in 
+AEC LED mode
+0x3A1D
+AEC LED ADD ROW
+0x18
+RW
+Bit[7:0]:
+Row adding number[7:0] in 
+AEC LED mode
+0x3A1E
+AEC CONTROL1E
+0x68
+RW
+Bit[7:0]:
+Stable range low threshold 2
+0x3A1F
+AEC CONTROL1F
+0x40
+RW
+Bit[7:0]:
+Fast zone low threshold
+0x3A20
+AEC CONTROL20
+0x20
+RW
+Bit[7:3]:
+Not used
+Bit[2]:
+Strobe option
+Bit[1]:
+Manual average enable
+0:
+Average data manual set 
+disable
+1:
+Average data manual set 
+enable
+Bit[0]:
+Not used
+0x3A2E~ 
+0x3A30
+NOT USED
+–
+–
+Not Used
+table 7-7
+OTP registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3D00
+OTP DATA 0
+0x00
+RW
+OTP Dump/Load Data 0
+0x3D01
+OTP DATA 1 
+0x00
+RW
+OTP Dump/Load Data 1
+table 7-6
+AEC/AGC registers (sheet 4 of 4)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 52 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x3D02
+OTP DATA 2
+0x00
+RW
+OTP Dump/Load Data 2
+0x3D03
+OTP DATA 3
+0x00
+RW
+OTP Dump/Load Data 3
+0x3D04
+OTP DATA 4
+0x00
+RW
+OTP Dump/Load Data 4
+0x3D05
+OTP DATA 5
+0x00
+RW
+OTP Dump/Load Data 5
+0x3D06
+OTP DATA 6
+0x00
+RW
+OTP Dump/Load Data 6
+0x3D07
+OTP DATA 7
+0x00
+RW
+OTP Dump/Load Data 7
+0x3D08
+OTP DATA 8
+0x00
+RW
+OTP Dump/Load Data 8
+0x3D09
+OTP DATA 9
+0x00
+RW
+OTP Dump/Load Data 9
+0x3D0A
+OTP DATA A
+0x00
+RW
+OTP Dump/Load Data A
+0x3d0b
+OTP DATA B
+0x00
+RW
+OTP Dump/Load Data B
+0x3d0c
+OTP DATA C
+0x00
+RW
+OTP Dump/Load Data C
+0x3D0D
+OTP DATA D
+0x00
+RW
+OTP Dump/Load Data D
+0x3D0E
+OTP DATA E
+0x00
+RW
+OTP Dump/Load Data E
+0x3D0F
+OTP DATA F
+0x00
+RW
+OTP Dump/Load Data F
+0x3D10
+OTP CONTROL
+0x00
+RW
+Bit[7:3]:
+Not used
+Bit[2]:
+OTP load option
+0:
+Fast 
+1:
+Slow
+Bit[1:0]:
+OTP mode
+00:
+OTP OFF
+01:
+Load/dump OTP
+10:
+Write/program OTP
+11:
+OTP OFF
+table 7-7
+OTP registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 53 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-11
+table 7-8
+BLC registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4000
+BLC CONTROL 00
+0x01
+RW
+Bit[7:4]:
+Not used
+Bit[3]:
+AVG frame enable
+0:
+BLC is the calculating 
+value
+1:
+BLC will be the 
+average of the 
+calculating value and 
+the original BLC
+Bit[2]:
+Not used
+Bit[1]:
+Freeze enable
+0:
+BLC will be updated in 
+some cases
+1:
+BLC will be keep 
+original value
+Bit[0]:
+BLC enable
+0:
+Disable
+1:
+Enable
+0x4001
+BLC CONTROL 01
+0x00
+RW
+Bit[7:5]:
+Not used
+Bit[4:0]:
+Start line
+Start statistic black line 
+Range from 0 to 31
+0x4002
+BLC CONTROL 02
+0x00
+RW
+Bit[7]:
+Not used
+Bit[6]:
+Manual offset enable
+Bit[5:0]:
+Not used
+0x4003~ 
+0x401C
+NOT USED
+–
+–
+Not Used
+0x401D
+BLC FRAME CONTROL
+0x22
+RW
+Bit[7:6]:
+Not used
+Bit[5:4]:
+BLC enable mode
+00:
+Always update
+10:
+Update when gain 
+changes
+x1:
+No update
+Bit[3:2]:
+Not used
+Bit[1]:
+Format change enable
+Bit[0]:
+Not used
+
+
+--- page 54 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+table 7-9
+FC control registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4201
+FRAME CTRL00
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Frame ON number
+Control passed frame number
+When both ON and OFF numbers are set 
+to 0x00, frame control is in bypass mode.
+0x4202
+FRAME CTRL01
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Frame OFF number
+Control masked frame number
+When both ON and OFF numbers are set 
+to 0x00, frame control is in bypass mode.
+table 7-10
+DVP registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4700
+DVP CTRL00
+0x04
+RW
+Bit[7:4]:
+Not used
+Bit[3]:
+CCIR656 v select
+Bit[2]:
+CCIR656 f value
+Bit[1]:
+CCIR656 mode enable
+Bit[0]:
+HSYNC mode enable
+0x4701~ 
+0x4703
+NOT USED
+–
+–
+Not Used
+0x4704
+DVP CTRL01
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:2]:
+Debug only
+Changing these values is not 
+recommended
+Bit[1:0]:
+VSYNC mode enable
+00:
+VSYNC1 mode enabled
+01:
+VSYNC2 mode enabled
+10:
+VSYNC3 mode enabled
+11:
+Not used
+0x4705~ 
+0x4707
+NOT USED
+–
+–
+Not Used
+0x4708
+DVP CTRL02
+0x01
+RW
+Bit[7]:
+CLK DDR mode enable
+Bit[6]:
+Not used
+Bit[5]:
+VSYNC gate CLK enable
+Bit[4]:
+HREF gate CLK enable
+Bit[3]:
+Not used
+Bit[2]:
+HREF polarity
+Bit[1]:
+VSYNC polarity
+Bit[0]:
+PCLK gate low enable
+
+
+--- page 55 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-13
+0x4709
+DVP CTRL03
+0x00
+RW
+Bit[7]:
+Video FIFO bypass mode
+Bit[6:4]:
+Data bit swap
+000:
+Output data is the same order 
+as input that is [9:0]
+001:
+Output data is reversed, [0:9]
+010:
+Output data is reordered as 
+{[2:9], [1:0]}
+011:
+Output data is reordered as 
+{[7:0], [9:8]}
+100:
+Output data is reordered as 
+{[9:8], [0:7]}
+101:
+Output data is reordered as {[9], 
+[0:8]}
+110:
+Output data is reordered as 
+{[1:9], [0]}
+111:
+Output data is reordered as 
+{[8:0], [9]}
+Bit[3]:
+Test mode
+Bit[2]:
+Test mode 10-bit
+Bit[1]:
+Test mode 8-bit
+Bit[0]:
+Test mode enable
+table 7-11
+MIPI registers (sheet 1 of 5)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x4800
+MIPI CTRL 00
+0x04
+RW
+Bit[7:6]:
+Not used
+Bit[5]:
+Clock lane gate enable
+0:
+Enable
+1:
+Disable
+Bit[4]:
+Line sync enable
+0:
+Do not send line short packet 
+for each line
+1:
+Send line short packet for 
+each line
+Bit[3]:
+Lane select
+0:
+Use lane1 as default data 
+lane
+1:
+Use lane2 as default data 
+lane
+Bit[2]:
+Idle status
+0:
+MIPI bus will be LP00 when 
+no packet is transmitted
+1:
+MIPI bus will be LP11 when 
+no packet is transmitted
+Bit[1:0]:
+Not used
+table 7-10
+DVP registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 56 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x4801
+MIPI CTRL 01
+0x04
+RW
+Bit[7]:
+Long packet data type manual 
+enable
+0:
+Use MIPI data type
+1:
+Use manual data type
+Bit[6]:
+Short packet data type manual 
+enable
+0:
+Use auto value
+1:
+Use manual value as short 
+packet data
+Bit[5]:
+Short packet WORD COUNTER 
+manual enable
+0:
+Use frame counter or line 
+counter
+1:
+Select manual value
+Bit[4]:
+PH bit order for ECC
+0:
+{DI[7:0],WC[7:0], WC[15:8]}
+1:
+{DI[0:7],WC[0:7], WC[8:15]}
+Bit[3]:
+PH byte order for ECC
+0:
+{DI,WC_l,WC_h}
+1:
+{DI,WC_h,WC_l}
+Bit[2]:
+PH byte order2 for ECC
+0:
+{DI,WC}
+1:
+{WC,DI}
+Bit[1]:
+MARK1 enable for data lane1
+0:
+Disable MARK1
+1:
+When resume, lane1 should 
+send MARK1
+Bit[0]:
+MARK1 enable for data lane2
+0:
+Disable MARK1
+1:
+When resume, lane2 should 
+send MARK1
+0x4802
+NOT USED
+–
+–
+Not Used
+0x4803
+MIPI CTRL 03
+0x5F
+RW
+Bit[7:4]:
+Not used
+Bit[3]:
+Enable LP CD when HS TX for 
+lane1
+0:
+Disable
+1:
+Enable 
+Bit[2]:
+Enable LP CD when HS TX for 
+lane2
+0:
+Disable
+1:
+Enable 
+Bit[1]:
+Enable LP CD when LP TX for 
+lane2
+0:
+Disable
+1:
+Enable 
+Bit[0]:
+Enable LP CD when LP TX for 
+lane1
+0:
+Disable
+1:
+Enable
+table 7-11
+MIPI registers (sheet 2 of 5)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 57 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-15
+0x4804
+MIPI CTRL 04
+0x8C
+RW
+Bit[7:5]:
+Not used
+BIt[4]:
+Enable MIPI LP RX to read/write 
+registers
+0:
+Disable, RX LP data will write 
+to VFIFO
+1:
+Enable 
+Bit[3]:
+Address read/write register will auto 
+add 1
+0:
+Disable
+1:
+Enable
+Bit[2]:
+LP TX lane select
+0:
+Select lane1 to transmit LP 
+data
+1:
+Select lane2 to transmit LP 
+data
+Bit[1:0]:
+Not used
+0x4805
+MIPI CTRL 05
+0x10
+RW
+Bit[7]:
+MIPI lane2 disable
+0:
+Enable lane2
+1:
+Disable MIPI data lane1, lane1 
+will be LP00
+Bit[6]:
+MIPI lane1 disable
+0:
+Enable lane1
+1:
+Disable MIPI data lane1, lane1 
+will be LP00
+Bit[5]:
+LPX Global timing select
+0:
+Auto calculate T LPX in 
+PCLK2X domain, unit CLK2X
+1:
+Use lp_p_min[7:0]
+Bit[4:3]:
+Not used
+Bit[2]:
+MIPI read/write registers disable
+0:
+Enable MIPI access SRB
+1:
+Disable MIPI access SRB
+Bit[1:0]:
+Not used
+0x4810
+MAX FCNT H
+0xFF
+RW
+High Byte of Max Frame Counter of Frame Sync 
+Short Packet
+0x4811
+MAX FCNT L
+0xFF
+RW
+Low Byte of Max Frame Counter of Frame Sync 
+Short Packet
+0x4812
+MIN SPKT WC REG H
+0x00
+RW
+High Byte of Manual Short Packet Word Counter
+0x4813
+MIN SPKT WC REG L
+0x00
+RW
+Low Byte of Manual Short Packet Word Counter
+0x4814
+MIPI CTRL 14
+0x2A
+RW
+Bit[7:6]:
+Virtual channel of MIPI packet
+Bit[5:0]:
+Data type manual
+0x4815
+MIPI SPKT DT
+0x00
+RW
+Manual Data Type for Short Packet
+0x4818
+MIN HS ZERO H
+0x00
+RW
+High Byte of Minimum Value of hs_zero, unit ns
+table 7-11
+MIPI registers (sheet 3 of 5)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 58 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x4819
+MIN HS ZERO L
+0x96
+RW
+Low Byte of Minimum Value of hs_zero
+hs_zero_real = hs_zero_min_o + tui × 
+ui_hs_zero_min_o
+0x481A
+MIN MIPI HS TRAIL H
+0x00
+RW
+High Byte of Minimum Value of hs_trail, unit ns
+0x481B
+MIN MIPI HS TRAIL L
+0x3C
+RW
+Low Byte of Minimum Value of hs_trail
+hs_trail_real = hs_trail_min_o + tui × 
+ui_hs_trail_min_o
+0x481C
+MIN MIPI CLK ZERO H
+0x01
+RW
+High Byte of Minimum Value of clk_zero, unit ns
+0x481D
+MIN MIPI CLK ZERO L
+0x86
+RW
+Low Byte of Minimum Value of clk_zero
+clk_zero_real = clk_zero_min_o + tui × 
+ui_clk_zero_min_o
+0x481E
+MIN MIPI CLK PREPARE H
+0x00
+RW
+High Byte of Minimum Value of clk_prepare,  
+unit ns
+0x481F
+MIN MIPI CLK PREPARE L
+0x3C
+RW
+Low Byte of Minimum Value of clk_prepare
+clk_prepare_real = clk_prepare_min_o + tui × 
+ui_clk_prepare_min_o
+0x4820
+MIN CLK POST H
+0x00
+RW
+High Byte of Minimum Value of clk_post, unit ns
+0x4821
+MIN CLK POST L
+0x56
+RW
+Low Byte of Minimum Value of clk_post
+clk_post_real = clk_post_min_o + tui × 
+ui_clk_post_min_o
+0x4822
+MIN CLK TRAIL H
+0x00
+RW
+High Byte of Minimum Value of clk_trail, unit ns
+0x4823
+MIN CLK TRAIL L
+0x3C
+RW
+Low Byte of Minimum Value of clk_trail
+clk_trail_real = clk_trail_min_o + tui × 
+ui_clk_trail_min_o
+0x4824
+MIN LPX PCLK H
+0x00
+RW
+High Byte of Minimum Value of lpx_p, unit ns
+0x4825
+MIN LPX PCLK L
+0x32
+RW
+Low Byte of Minimum Value of lpx_p
+lpx_p_real = lpx_p_min_o + tui × ui_lpx_p_min_o
+0x4826
+MIN HS PREPARE H
+0x00
+RW
+High Byte of Minimum Value of hs_prepare, 
+unit ns
+0x4827
+MIN HS PREPARE L
+0x32
+RW
+Low Byte of Minimum Value of hs_prepare
+hs_prepare_real = hs_prepare_min_o + tui × 
+ui_hs_prepare_min_o
+0x4828
+MIN HS EXIT H
+0x00
+RW
+High Byte of Minimum Value of hs_exit, unit ns
+0x4829
+MIN HS EXIT L
+0x64
+RW
+Low Byte of Minimum Value of hs_exit
+hs_exit_real = hs_exit_min_o + tui × 
+ui_hs_exit_min_o
+0x482A
+MIN HS ZERO/UI
+0x05
+RW
+Minimum UI Value of hs_zero, unit UI
+0x482B
+MIN HS TRAIL/UI
+0x04
+RW
+Minimum UI Value of hs_trail, unit UI
+table 7-11
+MIPI registers (sheet 4 of 5)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 59 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-17
+0x482C
+MIN CLK ZERO/UI
+0x00
+RW
+Minimum UI Value of clk_zero, unit UI
+0x482D
+MIN CLK PREPARE/UI
+0x00
+RW
+Minimum UI Value of clk_prepare, unit UI
+0x482E
+MIN CLK POST/UI
+0x34
+RW
+Minimum UI Value of clk_post, unit UI
+0x482F
+MIN CLK TRAIL/UI
+0x00
+RW
+Minimum UI Value of clk_trail, unit UI
+0x4830
+MIN LPX PCLK/UI
+0x00
+RW
+Minimum UI Value of lpx_p (pclk2x domain), 
+unit UI
+0x4831
+MIN HS PREPARE/UI
+0x04
+RW
+Minimum UI Value of hs_prepare, unit UI
+0x4832
+MIN HS EXIT/UI
+0x00
+RW
+Minimum UI Value of hs_exit, unit UI
+0x4865
+NOT USED
+–
+–
+Not Used
+table 7-12
+ISP control registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x5000
+ISP CONTROL0
+0xDF
+RW
+Bit[7]:
+LENC enable
+0:
+Disable
+1:
+Enable
+Bit[6:3]:
+Not used
+Bit[2]:
+Black pixel cancellation enable
+0:
+Disable
+1:
+Enable
+Bit[1]:
+White pixel cancellation enable
+0:
+Disable
+1:
+Enable
+Bit[0]:
+Not used
+0x5001
+ISP CONTROL1
+0x4F
+RW
+Bit[7:1]:
+Not used
+Bit[0]:
+AWB enable
+0:
+Disable
+1:
+Enable
+0x5002
+ISP CONTROL2
+0xE0
+RW
+Bit[73]:
+Not used
+Bit[2]:
+VAP enable
+0:
+Disable
+1:
+Enable
+Bit[1:0]:
+Not used
+0x5003~ 
+0x5004
+NOT USED
+–
+–
+Not Used
+table 7-11
+MIPI registers (sheet 5 of 5)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 60 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x5005
+ISP CONTROL5
+0xDC
+RW
+Bit[7:5]:
+Not used
+Bit[4]:
+AWB bias ON
+BIt[3:0]:
+Not used
+0x5006~ 
+0x501E
+NOT USED
+–
+–
+Not Used
+0x501F
+ISP CONTROL31
+0x03
+RW
+Bit[7:3]:
+Not used
+Bit[2:0]:
+Format select
+000: Not used
+001: Not used
+010: Not used
+011: ISP RAW
+100: INT CIF RAW
+101: Not used
+111: Not used
+0x5020~ 
+0x503C
+NOT USED
+–
+–
+Not Used
+0x503D
+ISP TEST
+0x00
+RW
+Bit[7]:
+Color bar enable
+0:
+Color bar OFF
+1:
+Color bar enable
+Bit[6]:
+Not used
+Bit[5:4]:
+Color bar pattern select
+10:
+Color bar pattern
+Bit[3]:
+Not used
+Bit[2]:
+Color bar rolling enable
+Bit[1:0]:
+Not used
+0x503E
+ISP SENSOR BIAS 
+READOUT
+–
+R
+ISP Sensor Bias Readout
+0x503F
+ISP SENSOR GAIN 
+READOUT
+–
+R
+ISP Sensor Gain Readout
+table 7-12
+ISP control registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 61 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-19
+table 7-13
+AWB control registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x3400
+AWB GAIN PK RED 
+GAIN
+0x04
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AWB R GAIN[11:8]
+0x3401
+AWB GAIN PK RED 
+GAIN
+0x00
+RW
+Bit[7:0]:
+AWB R GAIN[7:0]
+0x3402
+AWB GAIN PK 
+GREEN GAIN
+0x04
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AWB G GAIN[11:8]
+0x3403
+AWB GAIN PK 
+GREEN GAIN
+0x00
+RW
+Bit[7:0]:
+AWB G GAIN[7:0]
+0x3404
+AWB GAIN PK BLUE 
+GAIN
+0x04
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AWB B GAIN[11:8]
+0x3405
+AWB GAIN PK BLUE 
+GAIN
+0x00
+RW
+Bit[7:0]:
+AWB B GAIN[7:0]
+0x3406
+AWB GAIN PK AWB 
+MAN CTRL
+0x00
+RW
+Bit[7:1]:
+Not used
+Bit[0]:
+AWB manual control
+0:
+AWB gain automatically updated
+1:
+AWB gain manual enable
+0x5180
+AWB CONTROL 00
+0x40
+R/W
+Bit[7]:
+Not used
+Bit[6]:
+fast_awb
+Bit[5]:
+freeze_gain_en
+Bit[4]:
+freeze_sum_en
+Bit[3]:
+Not used
+Bit[2]:
+start_sel
+Bit[1:0]:
+Not used
+0x5181
+AWB CONTROL 01
+0x02
+R/W
+Bit[7:0]:
+Delta
+0x5182
+AWB CONTROL 02
+0x04
+RW
+Bit[7:0]:
+Stable range
+0x5183
+STABLE RANGE 
+WIDE
+0x08
+RW
+Bit[7:0]:
+Stable range to determine whether it is in 
+stable status when it is already in stable 
+status
+0x5184~ 
+0x518B
+NOT USED
+–
+–
+Not Used
+0x518C
+RED GAIN LIMIT
+0xF0
+RW
+Bit[7:4]:
+Red gain up limit
+Maximum red gain is:
+red gain up limit *256 + 0xFF
+Bit[3:0]:
+Red gain down limit
+Minimum red gain is:
+red gain down limit *256 + 0
+
+
+--- page 62 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x518D
+GREEN GAIN LIMIT
+0xF0
+RW
+Bit[7:4]:
+Green gain up limit
+Maximum green gain is:
+green gain up limit*256 + 0xFF
+Bit[3:0]:
+Green gain down limit
+Minimum green gain is:
+green gain down limit*256 + 0
+0x518E
+BLUE GAIN LIMIT
+0xF0
+RW
+Bit[7:4]:
+Blue gain up limit
+Maximum blue gain is:
+blue gain up limit*256 + 0xFF
+Bit[3:0]:
+Blue gain down limit
+Minimum blue gain is:
+blue gain down limit*256 + 0
+0x518F
+AWB FRAME 
+COUNTER
+0x04
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Number of frames to do AWB when AWB 
+is in stable mode
+0x5190~ 
+0x5195
+NOT USED
+–
+–
+Not Used
+0x5196
+RED BEFORE GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+Before AWB gain's red data average
+0x5197
+GREEN BEFORE 
+GAIN AVERAGE
+–
+R
+Bit[7:0]:
+Before AWB gain's green data average
+0x5198
+BLUE BEFORE GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+Before AWB gain's blue data average
+0x5199
+RED AFTER GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's red data average high 
+byte
+0x519A
+RED AFTER GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's red data average low 
+byte
+0x519B
+GREEN AFTER 
+GAIN AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's green data average 
+high byte
+0x519C
+GREEN AFTER 
+GAIN AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's green data average 
+low byte
+0x519D
+BLUE AFTER GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's blue data average high 
+byte
+0x519E
+BLUE AFTER GAIN 
+AVERAGE
+–
+R
+Bit[7:0]:
+After AWB gain's blue average low byte
+0x519F~ 
+0x51BD
+NOT USED
+–
+–
+Not Used
+table 7-13
+AWB control registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 63 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-21
+table 7-14
+AVG registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x5680
+AVG START POSITION AT 
+HORIZONTAL 
+0x00
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AVG start position[11:8] at 
+horizontal 
+0x5681
+AVG START POSITION AT 
+HORIZONTAL 
+0x00
+RW
+Bit[7:0]:
+AVG start position[7:0] at 
+horizontal 
+0x5682
+AVG END POSITION AT 
+HORIZONTAL 
+0x08
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+AVG end position[11:8] at 
+horizontal 
+0x5683
+AVG END POSITION AT 
+HORIZONTAL 
+0x00
+RW
+Bit[7:0]:
+AVG end position[7:0] at 
+horizontal 
+0x5684
+AVG START POSITION AT 
+VERTICAL
+0x00
+RW
+Bit[7:3]:
+Not used
+Bit[2:0]:
+AVG start position[10:8] at 
+vertical
+0x5685
+AVG START POSITION AT 
+VERTICAL
+0x80
+RW
+Bit[7:0]:
+AVG start position[7:0] at 
+vertical
+0x5686
+AVG END POSITION AT VERTICAL
+0x00
+RW
+Bit[7:3]:
+Not used
+Bit[2:0]:
+AVG end position[10:8] at 
+vertical
+0x5687
+AVG END POSITION AT VERTICAL
+0x38
+RW
+Bit[7:0]:
+AVG end position[7:0] at 
+vertical
+0x5688~ 
+0x568F
+NOT USED
+–
+–
+Not Used
+0x5690
+AVG R10
+–
+R
+Bit[7:0]:
+Average of raw image[9:2]
+0x5691
+NOT USED
+–
+–
+Not Used
+
+
+--- page 64 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+table 7-15
+DPC registers (sheet 1 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x5780
+DPC CTRL00
+0x7F
+RW
+Bit[7]:
+Not used
+Bit[6]:
+Keep vertical channel
+0:
+Do not keep vertical line
+1:
+Keep vertical line
+Bit[5]:
+Enable same channel 
+connected
+0:
+Disable removing the 
+same channel connected 
+defected pixels
+1:
+Enable removing the 
+same channel connected 
+defected pixels
+Bit[4]:
+Enable different channel 
+connected
+0:
+Disable removing the 
+different channel 
+connected defected 
+pixels
+1:
+Enable removing the 
+different channel 
+connected defected 
+pixels 
+Bit[3:2]:
+Matching index selection
+00:
+No matching point check
+01:
+Check the before and 
+after pixels from the third 
+to fourth pixels
+10:
+Check the before and 
+after pixels from the third 
+to fifth pixels
+11:
+Check the before and 
+after pixels from the third 
+to sixth pixels
+Bit[1:0]:
+Not used
+0x5781
+WHITE THRESHOLD LIST0
+0x20
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+White pixel threshold list 0
+0x5782
+WHITE THRESHOLD LIST1
+0x18
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+White pixel threshold list 1
+0x5783
+WHITE THRESHOLD LIST2
+0x08
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+White pixel threshold list 2
+0x5784
+WHITE THRESHOLD LIST3
+0x04
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+White pixel threshold list 3
+0x5785
+BLACK THRESHOLD LIST0
+0x40
+RW
+Bit[7:0]:
+Black pixel threshold list 0 
+0x5786
+BLACK THRESHOLD LIST1
+0x18
+RW
+Bit[7:0]:
+Black pixel threshold list 1
+0x5787
+BLACK THRESHOLD LIST2
+0x08
+RW
+Bit[7:0]:
+Black pixel threshold list 2
+
+
+--- page 65 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-23
+0x5788
+BLACK THRESHOLD LIST3
+0x04
+RW
+Bit[7:0]:
+Black pixel threshold list 3
+0x5789
+GAIN LIST1
+0x08
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+Gain list 1
+0x578A
+GAIN LIST2
+0x20
+RW
+Bit[7]:
+Not used
+Bit[6:0]:
+Gain list 2
+0x578B
+DPC CTRL01
+0x07
+RW
+Bit[7:4]:
+Not used
+Bit[3]:
+Mode 1 enable
+0:
+Disable
+1:
+Enable only remove 
+cluster
+Bit[2]:
+Mode 2 enable
+0:
+Disable
+1:
+Enable
+Bit[1]:
+Not used
+Bit[0]:
+Enable mode 3
+0:
+Disable
+1:
+Enable
+0x578C
+DPC SATURATE
+0x00
+RW
+Saturate Value Set for Cross Cluster
+0x5790
+PATTERN THRESHOLD 
+LIST0
+0x00
+RW
+Bit[7:2]:
+Not used
+Bit[1:0]:
+Pattern threshold list 0[9:8]
+0x5791
+PATTERN THRESHOLD 
+LIST0
+0x08
+RW
+Bit[7:0]:
+Pattern threshold list 0[7:0]
+0x5792
+PATTERN THRESHOLD 
+LIST1
+0x00
+RW
+Bit[7:2]:
+Not used
+Bit[1:0]:
+Pattern threshold list 1[9:8]
+0x5793
+PATTERN THRESHOLD 
+LIST1
+0x18
+RW
+Bit[7:0]:
+Pattern threshold list 1[7:0]
+0x5794
+PATTERN THRESHOLD 
+LIST2
+0x00
+RW
+Bit[7:2]:
+Not used
+Bit[1:0]:
+Pattern threshold list 2[9:8]
+0x5795
+PATTERN THRESHOLD 
+LIST2
+0x80
+RW
+Bit[7:0]:
+Pattern threshold list 2[7:0]
+0x5796
+PATTERN THRESHOLD 
+LIST3
+0x01
+RW
+Bit[7:2]:
+Not used
+Bit[1:0]:
+Pattern threshold list 3[9:8]
+0x5797
+PATTERN THRESHOLD 
+LIST3
+0x00
+RW
+Bit[7:0]:
+Pattern threshold list 3[7:0]
+table 7-15
+DPC registers (sheet 2 of 2)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 66 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+table 7-16
+LENC registers (sheet 1 of 3)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x5800
+LENC RED X0
+0x00
+RW
+Bit[7:0]:
+Red center horizontal position 
+(x0) high bits
+0x5801
+LENC RED X0
+0x0C
+RW
+Bit[7:0]:
+Red center horizontal position 
+(x0) low eight bits
+0x5802
+LENC RED Y0
+0x00
+RW
+Bit[7:0]:
+Red center vertical position 
+(y0) high bits
+0x5803
+LENC RED Y0
+0x06
+RW
+Bit[7:0]:
+Red center vertical position 
+(y0) low eight bits
+0x5804
+LENC RED A1
+0x22
+RW
+Bit[7:0]:
+Red parameter a1
+a1 and a2 are used to generate 
+the a parameter
+0x5805
+LENC RED A2
+0x07
+RW
+Bit[7:0]:
+Red parameter a2
+a1 and a2 are used to generate 
+the parameter a
+0x5806
+LENC RED B1
+0xC2
+RW
+Bit[7]:
+Sign bit
+0:
+b1 is positive
+1:
+b1 is negative 
+Bit[6:0]:
+Red parameter b1
+b1 and b2 are used to generate 
+the parameter b
+0x5807
+LENC RED B2
+0x08
+RW
+Bit[3:0]:
+Red parameter b2
+b1 and b2 are used to generate 
+the parameter b
+0x5808
+LENC GRN X0
+0x00
+RW
+Bit[7:0]:
+Green center horizontal 
+position (x0) high bits
+0x5809
+LENC GRN X0
+0x0C
+RW
+Bit[7:0]:
+Green center horizontal 
+position (x0) low eight bits
+0x580A
+LENC GRN Y0
+0x00
+RW
+Bit[7:0]:
+Green center vertical position 
+(y0) high bits
+0x580B
+LENC GRN Y0
+0x06
+RW
+Bit[7:0]:
+Green center vertical position 
+(y0) low eight bits
+0x580C
+LENC GRN A1
+0x22
+RW
+Bit[7:0]:
+Green parameter a1
+a1 and a2 are used to generate 
+the parameter a
+0x580D
+LENC GRN A2
+0x07
+RW
+Bit[7:0]:
+Green parameter a2
+a1 and a2 are used to generate 
+the parameter a
+
+
+--- page 67 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-25
+0x580E
+LENC GRN B1
+0xC2
+RW
+Bit[7]:
+Sign bit
+0:
+b1 is positive
+1:
+b1 is negative 
+Bit[6:0]:
+Green parameter b1
+b1 and b2 are used to generate 
+the parameter b
+0x580F
+LENC GRN B2
+0x08
+RW
+Bit[3:0]:
+Green parameter b2
+b1 and b2 are used to generate 
+the parameter b
+0x5810
+LENC BLU X0
+0x00
+RW
+Bit[7:0]:
+Blue center horizontal position 
+(x0) high bits
+0x5811
+LENC BLU X0
+0x0C
+RW
+Bit[7:0]:
+Blue center horizontal position 
+(x0) low eight bits
+0x5812
+LENC BLU Y0
+0x00
+RW
+Bit[7:0]:
+Blue center vertical position 
+(y0) high bits
+0x5813
+LENC BLU Y0
+0x06
+RW
+Bit[7:0]:
+Blue center vertical position 
+(y0) low eight bits
+0x5814
+LENC BLU A1
+0x22
+RW
+Bit[7:0]:
+Blue parameter a1
+a1 and a2 are used to generate 
+the parameter a
+0x5815
+LENC BLU A2
+0x07
+RW
+Bit[7:0]:
+Blue parameter a2
+a1 and a2 are used to generate 
+the parameter a
+0x5816
+LENC BLU B1
+0xC2
+RW
+Bit[7:0]:
+Sign bit
+0:
+b1 is positive
+1:
+b1 is negative 
+Bit[6:0]:
+blue parameter b1
+b1 and b2 are used to generate 
+the parameter b
+0x5817
+LENC BLU B2
+0x08
+RW
+Bit[7:4]:
+Not used
+Bit[3:0]:
+Blue parameter b2
+b1 and b2 are used to generate 
+the parameter b
+table 7-16
+LENC registers (sheet 2 of 3)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 68 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+0x5818
+LENC CTRL00
+0x04
+RW
+Bit[7:3]:
+Not used
+Bit[2]:
+Round enable
+0:
+Round disable, do not 
+use random round bit
+1:
+Round enable, generate 
+random round bit
+Bit[1]:
+Coefficient manual enable
+0:
+Disable coefficient 
+manual mode
+1:
+Enable coefficient 
+manual mode, use auto 
+mode to calculate the 
+coefficient
+Bit[0]:
+gain coefficient enable
+0:
+Use the gain = 128 to 
+calculate the coefficient
+1:
+Use the sensor gain to 
+calculate the coefficient
+0x5819
+LENC COEF TH
+0x80
+RW
+Bit[7:0]:
+LENC coefficient threshold
+0x581A
+LENC GAIN THRE1
+0x00
+RW
+Bit[7:0]:
+LENC gain low threshold (t1)
+0x581B
+LENC GAIN THRE2
+0x00
+RW
+Bit[7:0]:
+LENC gain high threshold (t2)
+0x581C
+LENC COEF MAN
+0x80
+RW
+Bit[7:0]:
+Coefficient manual input
+table 7-16
+LENC registers (sheet 3 of 3)
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+
+
+--- page 69 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+7-27
+table 7-17
+AFC registers 
+ 
+address
+ 
+register name
+default 
+value
+ 
+R/W
+ 
+description
+0x6000
+AFC CTRL00
+0x1F
+RW
+Bit[7:5]:
+Not used
+Bit[4]:
+Edge filter enable
+0:
+afc_edge module will not update
+1:
+afc_edge module will update
+Bit[3]:
+Edge filter b select
+0:
+DGE selects b2
+1:
+Edge selects b1
+Bit[2:0]:
+Edge filter a select
+000:
+Edge selects a1
+001:
+Edge selects a2
+010:
+Edge selects a3
+100:
+Edge selects a4
+101:
+Edge selects a5
+0x6001
+AFC CTRL01
+0x01
+RW
+Bit[7:0]:
+Edge window0 left coordinate
+0x6002
+AFC CTRL02
+0x00
+RW
+Bit[7:0]:
+Edge window0 top coordinate
+0x6003
+AFC CTRL03
+0x76
+RW
+Bit[7:0]:
+Edge window0 right coordinate
+0x6004
+AFC CTRL04
+0x42
+RW
+Bit[7:0]:
+Edge window0 bottom coordinate
+This bottom must be larger than any other
+0x6005
+AFC CTRL05
+0x01
+RW
+Bit[7:0]:
+Edge window1 left coordinate
+0x6006
+AFC CTRL06
+0x00
+RW
+Bit[7:0]:
+Edge window1 top coordinate
+0x6007
+AFC CTRL07
+0x76
+RW
+Bit[7:0]:
+Edge window1 right coordinate
+0x6008
+AFC CTRL08
+0x42
+RW
+Bit[7:0]:
+Edge window1 bottom coordinate
+0x6009
+AFC CTRL09
+0x01
+RW
+Bit[7:0]:
+Edge window2 left coordinate
+0x600A
+AFC CTRL10
+0x00
+RW
+Bit[7:0]:
+Edge window2 top coordinate
+0x600B
+AFC CTRL11
+0x76
+RW
+Bit[7:0]:
+Edge window2 right coordinate
+0x600C
+AFC CTRL12
+0x42
+RW
+Bit[7:0]:
+Edge window2 bottom coordinate
+0x600D
+AFC CTRL13
+0x01
+RW
+Bit[7:0]:
+Edge window3 left coordinate
+0x600E
+AFC CTRL14
+0x00
+RW
+Bit[7:0]:
+Edge window3 top coordinate
+0x600F
+AFC CTRL15
+0x76
+RW
+Bit[7:0]:
+Edge window3 right coordinate
+0x6010
+AFC CTRL16
+0x42
+RW
+Bit[7:0]:
+Edge window3 bottom coordinate
+0x6011
+AFC CTRL17
+0x01
+RW
+Bit[7:0]:
+Edge window4 left coordinate
+0x6012
+AFC CTRL18
+0x00
+RW
+Bit[7:0]:
+Edge window4 top coordinate
+0x6013
+AFC CTRL19
+0x76
+RW
+Bit[7:0]:
+Edge window4 right coordinate
+0x6014
+AFC CTRL20
+0x42
+RW
+Bit[7:0]:
+Edge window4 bottom coordinate
+0x6015~ 
+0x603C
+NOT USED
+–
+–
+Not Used
+
+
+--- page 70 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 71 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+8-1
+8
+operating specifications
+8.1¯”ÙÃ absolute maximum ratings
+8.2Èž¼m functional temperature
+table 8-1
+absolute maximum ratings
+parameter
+absolute maximum ratinga
+a. 
+exceeding the absolute maximum ratings shown above invalidates all AC and DC electrical specifications and may 
+result in permanent damage to the device. Exposure to absolute maximum rated conditions for extended periods 
+may affect device reliability.
+ambient storage temperature
+-40°C to +125°C
+supply voltage (with respect to ground)
+VDD-A
+4.5V
+VDD-D
+3V
+VDD-IO
+4.5V
+electro-static discharge (ESD)
+human body model
+2000V
+machine model
+200V
+all input/output voltages (with respect to ground)
+-0.3V to VDD-IO + 1V
+I/O current on any input or output pin
+±200 mA
+peak solder temperature (10 second dwell time)
+260°C
+table 8-2
+functional temperature
+parameter
+range
+operating temperature rangea
+a. 
+sensor functions but image quality may be noticeably different at temperatures outside of stable image range
+-30°C to +70°C
+stable image temperature rangeb
+b. 
+image quality remains stable throughout this temperature range
+0°C to +50°C
+
+
+--- page 72 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+8.3ü¤gÜ DC characteristics
+table 8-3
+DC characteristics (-30°C < TA < 70°C)
+symbol
+parameter
+min
+typ
+max
+unit
+supply
+VDD-A
+supply voltage (analog)
+3.0
+3.3
+3.6
+V
+VDD-D
+a
+a. 
+using the internal DVDD regulator is strongly recommended for minimum power down current
+supply voltage (digital core)
+1.425
+1.5
+1.575
+V
+VDD-IO
+supply voltage (digital I/O)
+1.7
+1.8
+3.6
+V
+IDD-A
+active (operating) current
+80
+90
+mA
+IDD-IO
+b, c
+b. 
+active current is based on sensor resolution at full size and at full speed
+c. 
+with MIPI function, the active current needs an additional 20mA
+48
+60
+mA
+IDDS-SCCB
+standby current
+0.6
+1
+mA
+IDDS-PWDN
+70
+120
+µA
+digital inputs (typical conditions: AVDD = 3.3V, DVDD = 1.5V, DOVDD = 1.8V)
+VIL
+input voltage LOW
+0.54
+V
+VIH
+input voltage HIGH
+1.26
+V
+CIN
+input capacitor
+10
+pF
+digital outputs (standard loading 25 pF)
+VOH
+output voltage HIGH
+1.62
+V
+VOL
+output voltage LOW
+0.18
+V
+serial interface inputsd
+d. 
+based on DOVDD = 1.8V.
+VIL
+SIOC and SIOD
+-0.5
+0
+0.54
+V
+VIH
+SIOC and SIOD
+1.26
+1.8
+2.3
+V
+
+
+--- page 73 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+8-3
+8.4ª)W’ AC characteristics
+table 8-4
+AC characteristics (TA = 25°C, VDD-A = 2.8V)
+symbol
+parameter
+min
+typ
+max
+unit
+ADC parameters
+B
+analog bandwidth
+40
+MHz
+DLE
+DC differential linearity error
+0.5
+LSB
+ILE
+DC integral linearity error
+1
+LSB
+settling time for hardware reset
+<1
+ms
+settling time for software reset
+<1
+ms
+settling time for resolution mode change
+<1
+ms
+settling time for register setting
+<300
+ms
+table 8-5
+timing characteristics
+symbol
+parameter
+min
+typ
+max
+unit
+oscillator and clock input
+fOSC
+frequency (XVCLK)
+6
+24
+27
+MHz
+tr, tf
+clock input rise/fall time
+5 (10a)
+a. 
+if using internal PLL
+ns
+
+
+--- page 74 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 75 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+9-1
+9
+mechanical specifications
+9.1-öı” physical specifications
+figure 9-1
+package specifications
+table 9-1
+package dimensions 
+parameter
+symbol
+min
+typ
+max
+unit
+package body dimension x
+A
+7440
+7465
+7490
+µm
+package body dimension y
+B
+5840
+5865
+5890
+µm
+package height
+C
+720
+780
+840
+µm
+ball height
+C1
+130
+160
+190
+µm
+package body thickness
+C2
+575
+620
+665
+µm
+cover glass thickness
+C3
+425
+445
+465
+µm
+ball diameter
+D
+270
+300
+330
+µm
+total pin count
+N
+68 (23 NC)
+pin count x-axis
+N1
+11
+pin count y-axis
+N2
+9
+pins pitch x-axis
+J1
+640
+µm
+pins pitch y-axis
+J2
+600
+µm
+edge-to-pin center distance analog x
+S1
+503
+533
+563
+µm
+edge-to-pin center distance analog y
+S2
+503
+533
+563
+µm
+8
+9
+10
+11
+4
+3
+2
+1
+A
+B
+C
+D
+E
+A
+A
+B
+C
+D
+E
+7
+6
+5
+4
+3
+2
+1
+F
+G
+H
+I
+5
+6
+7
+8
+9 10 11
+F
+G
+H
+I
+J1
+S1
+2710_CSP_DS_9_1
+center of BGA (die) =
+center of the package
+B
+J2
+C2
+C1
+glass
+die
+C
+C3
+S2
+bottom view
+(bumps up)
+top view
+(bumps down)
+side view
+D
+W X Y Z
+A B C D
+
+
+--- page 76 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+9.27*$ IR reflow specifications
+figure 9-2
+IR reflow ramp rate requirements
+note
+ 
+The OV2710 uses a 
+lead-free package. 
+table 9-2
+reflow conditionsa
+a. 
+maximum number of reflow cycles = 3
+zone
+description
+exposure
+ramp up
+heating from room temperature to 150°C
+temperature slope ≤ 3°C per second
+soaking
+heating from 150°C to 200°C
+90 ~ 150 seconds
+reflow
+temperature higher than 217°C
+30 ~ 120 seconds
+peak
+maximum temperature in SMT
+260°C
+cooling
+cooling from 217°C to room temperature
+temperature slope ≤ 6°C per second
+time (sec)
+soaking
+reflow
+cooling
+temperature (°C)
+0
+20
+40
+60
+80
+100
+120
+140
+160
+180
+200
+380
+360
+340
+320
+300
+280
+260
+240
+220
+400
+0.0
+220.0
+240.0
+260.0
+200.0
+180.0
+140.0
+160.0
+120.0
+100.0
+80.0
+60.0
+40.0
+20.0
+ramp up
+2710_DS_9_2
+
+
+--- page 77 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+10-1
+10 optical specifications
+10.1;@6D sensor array center
+figure 10-1
+sensor array center
+5856 μm
+3276 μm
+A1
+A2
+A3
+A4
+A5
+A6
+A7
+A8
+A9
+A10
+A11
+package center
+(0 μm, 0 μm)
+array center
+(248 μm, 176 μm)
+first pixel readout
+(3176 μm, 1814 μm)
+OV2710
+sensor
+array
+note 1
+note 2
+this drawing is not to scale and is for reference only.
+as most optical assemblies invert and mirror the image, the chip is
+typically mounted with pins A1 to A11 oriented down on the PCB.
+top view
+2710_CSP_DS_10_1
+
+
+--- page 78 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+10.2ÈW™o lens chief ray angle (CRA)
+figure 10-2
+chief ray angle (CRA)
+table 10-1
+CRA versus image height plot (sheet 1 of 2)
+ 
+field (%)
+ 
+image height (mm)
+ 
+CRA (degrees)
+maximum +4 
+degree
+minimum +4 
+degree
+0
+0.000
+0.0
+4.0
+-4.0
+0.05
+0.165
+1.0
+5.0
+-3.0
+0.1
+0.330
+2.1
+6.1
+-1.9
+0.15
+0.496
+3.1
+7.1
+-0.9
+0.2
+0.661
+4.2
+8.2
+0.2
+0.25
+0.826
+5.2
+9.2
+1.2
+0.3
+0.991
+6.3
+10.3
+2.3
+0.35
+1.156
+7.4
+11.4
+3.4
+0.4
+1.322
+8.5
+12.5
+4.5
+0.000
+0.500
+1.000
+1.500
+2.000
+2.500
+3.000
+3.500
+-5.0
+0.0
+5.0
+10.0
+15.0
+20.0
+25.0
+30.0
+min (-4)
+image height (mm)
+CRA (degree)
+CRA
+max (+4)
+2710_DS_10_2
+
+
+--- page 79 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+10-3
+0.45
+1.487
+9.7
+13.7
+5.7
+0.5
+1.652
+10.8
+14.8
+6.8
+0.55
+1.817
+12.0
+16.0
+8.0
+0.6
+1.982
+13.2
+17.2
+9.2
+0.65
+2.148
+14.4
+18.4
+10.4
+0.7
+2.313
+15.7
+19.7
+11.7
+0.75
+2.478
+16.9
+20.9
+12.9
+0.8
+2.643
+18.2
+22.2
+14.2
+0.85
+2.808
+19.5
+23.5
+15.5
+0.9
+2.974
+20.9
+24.9
+16.9
+0.95
+3.139
+22.2
+26.2
+18.2
+1
+3.304
+23.6
+27.6
+19.6
+table 10-1
+CRA versus image height plot (sheet 2 of 2)
+ 
+field (%)
+ 
+image height (mm)
+ 
+CRA (degrees)
+maximum +4 
+degree
+minimum +4 
+degree
+
+
+--- page 80 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+
+
+--- page 81 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+11.19.2009
+PRELIMINARY SPECIFICATION
+proprietary to OmniVision Technologies
+rev-1
+revision history
+version 1.0
+05.20.2009
+•
+initial release
+version 1.1
+11.19.2009
+•
+in title on cover page, in key specifications section on page iii, and in chapter 2 on page 2-1, 
+changed optical format from 1/3" to 1/2.7"
+•
+in key specifications on page iii, added power requirements for active and power down
+•
+in key specifications on page iii, changed sensitivity from TBD to 3300 mV/(Lux-sec)
+•
+in key specifications on page iii, changed S/N ratio from TBD to 39 dB
+•
+in key specifications on page iii, changed dynamic range from TBD to 69 dB
+•
+in key specifications on page iii, changed maximum exposure interval from TBD to 1096 tline
+•
+in key specifications on page iii, changed dark current from TBD to 10 mV/sec @ 60°C
+•
+in key specifications on page iii, changed well capacity from TBD to 13 Ke-
+•
+in key specifications on page iii, changed fixed pattern noise (FPN) from TBD to 1% of 
+VPEAK-TO-PEAK
+•
+in table 1-1, added footnote a to pin B7 (TM)
+•
+in table 2-1, added 80 MHz to pixel clock column of QVGA row
+•
+after table 2-4, changed sentence "After that, setting both group_launch and group_launch_en to 1 
+will write the buffered values to the real registers" to "After that, both group_launch and 
+group_launch_en should be set to 1 in order to write the buffered values to the real registers"
+•
+in section 2.8, deleted first paragraph and replaced it with "Based on the system power 
+configuration, the power up sequence will differ."
+•
+corrected figure 3-1
+•
+in subsection 4.5.1.4, changed third sentence to "Night mode ceiling can be set in register bits 
+{0x3A02[3:0], 0x3A03[7:0], ..."
+•
+in section 4.5.2, changed sentence "The exposure value in registers 0x3500~0x3502 is in units of 
+line*16 - the low 4 bits (0x3502[3:0]) is the fraction of line, the maximum value in 0x350C/0x350D is 
+in unit of line." to "The exposure value in registers 0x3500~0x3502 is in units of line period/16, the 
+low 4 bits (0x3502[3:0]) is the fraction of line in 1/16 steps, and the maximum value in 
+0x350C/0x350D is in units of lines. "
+•
+in table 5-1, changed descriptions of register bits 0x3008[5:0]
+•
+in table 7-1, changed descriptions of register bits 0x3008[5:0]
+•
+in table 7-1 on page 7-3, added description of register 0x3025
+•
+deleted table 7-4 and moved all rows to table 7-3, group sharing registers
+•
+deleted table 7-5 and moved all rows to (number adjusted) table 7-13, AWB control registers
+•
+deleted table 7-6 and moved all rows to (number adjusted) table 7-6, AEC/AGC registers
+•
+deleted table 7-8 and moved all rows to (number adjusted) table 7-4, analog registers
+•
+in (number adjusted) table 7-10, changed descriptions of register bits 0x4704[3:0]
+
+
+--- page 82 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+1080p/720p HD color CMOS image sensor with OmniPixel3-HS™ technology
+OV2710
+proprietary to OmniVision Technologies
+PRELIMINARY SPECIFICATION
+version 1.1
+•
+in table 8-3, changed TBDs for IDD-A to 80 typ and 90 max
+•
+in table 8-3, changed TBDs for IDD-IO to 48 typ and 60 max
+•
+in table 8-3, changed TBDs for IDDS-SCCB to 0.6 typ and 1 max
+•
+in table 8-3, changed TBDs for IDDS-PWDN to 70 typ and 120 max
+•
+in table 8-4, changed TBDs for analog bandwidth to 40 typ
+•
+in table 8-4, changed TBDs for DC differential linearity error to 0.5 typ
+•
+in table 8-4, changed TBDs for DC integral linearity error to 1 typ
+•
+in table 8-4, changed TBDs for settling time for hardware reset to <1 max
+•
+in table 8-4, changed TBDs for settling time for software reset to <1 max
+•
+in table 8-4, changed TBDs for settling time for resolution mode time change to <1 max
+•
+in table 8-4, changed TBDs for settling time for register setting to <300 max
+
+
+--- page 83 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+
+
+--- page 84 ---
+Confidential for Zoran Digital Technologies (Shenzhen) Limited Only
+the clear advantage™
+website:  www.ovt.com
+OmniVision Technologies, Inc.
+UNITED STATES
+4275 Burton Drive
+Santa Clara, CA 95054
+tel: + 1 408 567 3000
+fax: + 1 408 567 3001
+email: salesamerican@ovt.com
+UNITED KINGDOM
+Hampshire + 44 1256 744 610
+FINLAND
+Mouhijärvi + 358 3 341 1898
+GERMANY
+Munich +49 89 63 81 99 88
+CHINA
+Beijing + 86 10 6580 1690
+Shanghai + 86 21 6105 5100
+Shenzhen + 86 755 8384 9733
+Hong Kong + 852 2403 4011
+JAPAN
+Tokyo + 81 3 5765 6321
+KOREA
+Seoul + 82 2 3478 2812
+SINGAPORE + 65 6562 8250
+TAIWAN
+Taipei + 886 2 2657 9800 - 
+ext.#100
