@@ -40,6 +40,7 @@ Keys: q quit  s snapshot  y toggle detector  t zone distance text  m calib toggl
       a toggle audio
 """
 import argparse
+import json
 import pathlib
 import threading
 import time
@@ -48,6 +49,161 @@ import cv2
 import numpy as np
 
 import fusion_overlay as fo          # projection machinery + serial reader
+
+# ── helmet-firmware source (post-flash) ──────────────────────────────────────
+# The flashed helmet firmware streams over USB-serial AND TCP:3333:
+#   DATA:d0..d15   sensor A     DATAT:d0..d15  sensor B     Q:w,x,y,z,st,acc
+# Invalid zones arrive as 4000 (MAX_DISTANCE_MM), not 0 -- remapped here so all
+# downstream logic keeps its ">0 = valid" convention. TCP is the default so the
+# viewer never fights another tool for the COM port.
+imu_quat = None          # latest [w,x,y,z], helmet firmware only
+imu_stamp = 0.0
+
+
+def helmet_reader(host, tcp_port):
+    global imu_quat, imu_stamp
+    import socket
+    buf = b""
+    while fo.running:
+        try:
+            sk = socket.create_connection((host, tcp_port), timeout=3)
+            sk.settimeout(1.0)
+        except OSError:
+            time.sleep(1.0)
+            continue
+        while fo.running:
+            try:
+                chunk = sk.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                s = line.decode("utf-8", "replace").strip()
+                if s.startswith("DATA:") or s.startswith("DATAT:"):
+                    S = "B" if s.startswith("DATAT:") else "A"
+                    p = s.split(":", 1)[1].split(",")
+                    if len(p) != 16:
+                        continue
+                    try:
+                        v = np.array([int(x) for x in p], float).reshape(4, 4)
+                    except ValueError:
+                        continue
+                    v[v >= 4000] = 0.0          # firmware sends invalid as 4000
+                    with fo.lock:
+                        fo.latest[S] = v
+                        fo.stamp[S] = time.monotonic()
+                elif s.startswith("Q:"):
+                    try:
+                        q = [float(x) for x in s[2:].split(",")[:4]]
+                    except ValueError:
+                        continue
+                    imu_quat = q
+                    imu_stamp = time.monotonic()
+        try:
+            sk.close()
+        except OSError:
+            pass
+
+
+def quat_to_R(w, x, y, z):
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def open_camera(idx):
+    """Open a camera index at 720p MJPG; None if it gives no usable frames.
+    USB re-enumeration swaps indices between sessions (bit us 2026-08-17: the
+    helmet cam moved 1 -> 0 and the viewer showed the dark laptop cam), so
+    --cam auto probes 0-3 and keeps the BRIGHTEST working feed."""
+    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        return None, -1.0
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    for _ in range(3):
+        cap.read()
+    ok, f = cap.read()
+    if not ok or f is None:
+        cap.release()
+        return None, -1.0
+    return cap, float(f.mean())
+
+
+# ── 3D attitude inset: wireframe pod + compass, pure cv2 lines ───────────────
+# Helmet-frame (X right, Y forward, Z up) vertices, mm-ish. A recognisable
+# cartoon of the rig: base plate, two ToF stubs yawed ±22.5°, camera barrel,
+# and an up-post so vertical is legible at a glance.
+def _pod_wireframe():
+    def yawed(deg, sign):
+        a = np.deg2rad(deg)
+        c, s = np.cos(a), np.sin(a)
+        # small square panel facing forward, yawed about Z
+        pts = np.array([[-8, 0, -8], [8, 0, -8], [8, 0, 8], [-8, 0, 8]], float)
+        R = np.array([[c, -sign * s, 0], [sign * s, c, 0], [0, 0, 1]])
+        return pts @ R.T + np.array([sign * 20, 24, 0])
+    plate = np.array([[-30, -12, -4], [30, -12, -4], [30, 20, -4], [-30, 20, -4],
+                      [-30, -12, 4], [30, -12, 4], [30, 20, 4], [-30, 20, 4]], float)
+    cam = np.array([[-6, 20, -6], [6, 20, -6], [6, 32, 0], [-6, 32, 0],
+                    [-6, 20, 6], [6, 20, 6]], float)
+    up = np.array([[0, 0, 4], [0, 0, 26], [-4, 0, 20], [4, 0, 20]], float)
+    segs = []
+    for i, j in [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4),
+                 (0, 4), (1, 5), (2, 6), (3, 7)]:
+        segs.append((plate[i], plate[j], (200, 200, 200)))
+    for q, col in ((yawed(22.5, -1), (255, 220, 80)),     # A = wearer LEFT, cyan
+                   (yawed(22.5, +1), (60, 230, 230))):    # B = RIGHT, yellow
+        for i in range(4):
+            segs.append((q[i], q[(i + 1) % 4], col))
+    for i, j in [(0, 1), (0, 2), (1, 3), (2, 3), (4, 5), (0, 4), (1, 5)]:
+        if max(i, j) < len(cam):
+            segs.append((cam[i], cam[j], (90, 200, 90)))
+    segs.append((up[0], up[1], (80, 255, 160)))
+    segs.append((up[2], up[1], (80, 255, 160)))
+    segs.append((up[3], up[1], (80, 255, 160)))
+    return segs
+
+
+POD_SEGS = _pod_wireframe()
+# fixed isometric view of the WORLD frame: from behind-right-above the wearer
+_ca, _sa = np.cos(np.deg2rad(35)), np.sin(np.deg2rad(35))
+_ce, _se = np.cos(np.deg2rad(25)), np.sin(np.deg2rad(25))
+VIEW = np.array([[_ca, _sa, 0],
+                 [_sa * _se, -_ca * _se, _ce]])   # rows: screen x, screen y(up)
+
+
+def draw_attitude_inset(view, R_hw, yaw_deg, size=210):
+    """Top-right inset: the pod wireframe rotated by helmet->world R, plus a
+    yaw compass ring (boot-relative -- the IMU is mag-free by design)."""
+    H, W = view.shape[:2]
+    x0, y0 = W - size - 10, 10
+    cx, cy = x0 + size // 2, y0 + size // 2 + 8
+    cv2.rectangle(view, (x0, y0), (x0 + size, y0 + size), (30, 30, 30), -1)
+    cv2.rectangle(view, (x0, y0), (x0 + size, y0 + size), (90, 90, 90), 1)
+    sc = size / 110.0
+    for a, b, col in POD_SEGS:
+        pa = VIEW @ (R_hw @ a); pb = VIEW @ (R_hw @ b)
+        cv2.line(view, (int(cx + pa[0] * sc), int(cy - pa[1] * sc)),
+                 (int(cx + pb[0] * sc), int(cy - pb[1] * sc)), col, 1, cv2.LINE_AA)
+    # compass ring (top strip of the inset)
+    rcx, rcy, rr = x0 + size - 30, y0 + 26, 18
+    cv2.circle(view, (rcx, rcy), rr, (120, 120, 120), 1, cv2.LINE_AA)
+    ya = np.deg2rad(yaw_deg)
+    cv2.line(view, (rcx, rcy),
+             (int(rcx + rr * np.sin(ya)), int(rcy - rr * np.cos(ya))),
+             (80, 255, 160), 2, cv2.LINE_AA)
+    cv2.putText(view, "yaw", (rcx - 14, rcy + rr + 12),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (120, 120, 120), 1, cv2.LINE_AA)
+    cv2.putText(view, "attitude", (x0 + 8, y0 + 16),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SIDE = fo.SIDE
@@ -131,10 +287,13 @@ def speech_worker():
             if rng > prev[1] - RANGE_DELTA_MM:
                 continue
         speech_last[key] = (now, rng)
+        global speaking
         try:
+            speaking = True                # ticker mutes so words stay audible
             if tier == "directive":
                 import winsound            # TCAS-style pre-cue: tone buys parse time
-                winsound.Beep(1250, 90)
+                winsound.PlaySound(str(CUE_WAV),
+                                   winsound.SND_FILENAME | winsound.SND_NODEFAULT)
             eng = pyttsx3.init()
             eng.setProperty("rate", SPEECH_RATE)
             eng.say(text)
@@ -143,31 +302,57 @@ def speech_worker():
             del eng
         except Exception as e:
             print(f"tts: {e}")
+        finally:
+            speaking = False
 
 
 # shared with the ticker thread: current hazard range (mm) or None when clear
 tick_range = None
+speaking = False          # ticker mutes while an utterance plays (masking)
+
+
+def _make_tone(path, freq, ms, amp):
+    """Small sine WAV with a 5 ms fade envelope. winsound.Beep is full-volume
+    with no gain control and drowned the speech (user feedback 2026-08-17);
+    PlaySound with a quiet file gives us amplitude control."""
+    import wave, struct
+    sr = 22050
+    n = int(sr * ms / 1000)
+    env = np.minimum(1, np.minimum(np.arange(n), n - np.arange(n)) / (sr * 0.005))
+    s = (amp * env * np.sin(2 * np.pi * freq * np.arange(n) / sr) * 32767).astype(np.int16)
+    with wave.open(str(path), "w") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes(struct.pack(f"<{n}h", *s))
+
+
+import tempfile
+_SND = pathlib.Path(tempfile.gettempdir())
+TICK_WAV = _SND / "helmet_tick.wav"
+CUE_WAV = _SND / "helmet_cue.wav"
+_make_tone(TICK_WAV, 600, 40, 0.10)      # quiet blip
+_make_tone(CUE_WAV, 1250, 90, 0.22)      # directive pre-cue, present not painful
 
 
 def ticker_worker():
     """Proximity as repetition rate -- the parking-sensor pattern every shipped
-    product uses instead of speaking numbers. 40 ms 600 Hz blips, period
+    product uses instead of speaking numbers. Quiet 40 ms blips, period
     interpolated TICK_FAR_S..TICK_NEAR_S over CAUTION_MM..DIRECTIVE_MM.
-    Spectrally sparse with real silence between blips (bone-conduction masking
-    evidence: May & Walker 2017)."""
+    MUTES while speech is playing -- ticks were masking the words."""
     import winsound
     while running:
         r = tick_range
-        if r is None:
+        if r is None or speaking:
             time.sleep(0.1)
             continue
         f = np.clip((r - DIRECTIVE_MM) / (CAUTION_MM - DIRECTIVE_MM), 0, 1)
         period = TICK_NEAR_S + f * (TICK_FAR_S - TICK_NEAR_S)
         try:
-            winsound.Beep(600, 40)
+            winsound.PlaySound(str(TICK_WAV),
+                               winsound.SND_FILENAME | winsound.SND_ASYNC
+                               | winsound.SND_NODEFAULT)
         except Exception:
             pass
-        time.sleep(max(0.05, period - 0.04))
+        time.sleep(max(0.05, period))
 
 
 def direction_word(az_deg):
@@ -236,12 +421,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM9")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--cam", type=int, default=1)
+    ap.add_argument("--cam", type=int, default=-1,
+                    help="-1 = auto (USB re-enumeration moves indices)")
     ap.add_argument("--no-audio", action="store_true", help="start with audio off")
     ap.add_argument("--mode", default="plain", choices=["plain", "brevity"],
                     help="callout language (docs/CALLOUT-PROTOCOL.md)")
     ap.add_argument("--rate", type=int, default=240,
                     help="TTS words/min (blind users parse far faster than sighted)")
+    ap.add_argument("--source", default="helmet", choices=["helmet", "pintest"],
+                    help="helmet = flashed firmware via TCP (default); "
+                         "pintest = tof_pin_test GRID: over serial")
+    ap.add_argument("--host", default="192.168.1.228", help="helmet firmware IP")
+    ap.add_argument("--tcp-port", type=int, default=3333)
     args = ap.parse_args()
 
     # F8 toggles audio GLOBALLY (no window focus needed) via GetAsyncKeyState —
@@ -265,14 +456,43 @@ def main():
     ring = fo.zone_boundary_tans()
     P = ring.shape[2]
 
-    threading.Thread(target=fo.reader, args=(args.port, args.baud), daemon=True).start()
-    cap = cv2.VideoCapture(args.cam, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    if not cap.isOpened():
+    if args.source == "helmet":
+        threading.Thread(target=helmet_reader, args=(args.host, args.tcp_port),
+                         daemon=True).start()
+    else:
+        threading.Thread(target=fo.reader, args=(args.port, args.baud),
+                         daemon=True).start()
+
+    # IMU mount calibration (visualizer/imu_mount_cal.py) -- optional
+    mount_cal = None
+    mc_path = ROOT / "visualizer" / "imu_mount_cal.json"
+    if mc_path.exists():
+        mount_cal = np.array(json.loads(mc_path.read_text())["R_chip_to_helmet"], float)
+        print("IMU mount calibration loaded")
+    if args.cam < 0:
+        # auto = find the helmet camera BY NAME ("HBV HD CAMERA"). Brightness
+        # heuristics fail when the pod is lying lens-down (picked the laptop
+        # webcam, 2026-08-17). DirectShow name order matches OpenCV indices.
+        cam_idx = None
+        try:
+            from pygrabber.dshow_graph import FilterGraph
+            names = FilterGraph().get_input_devices()
+            print("cameras:", names)
+            for i, n in enumerate(names):
+                if "HBV" in n.upper():
+                    cam_idx = i
+                    break
+        except Exception as e:
+            print(f"name enumeration failed ({e}); falling back to index 1")
+        if cam_idx is None:
+            cam_idx = 1
+        print(f"using camera {cam_idx} (helmet)")
+        cap, _ = open_camera(cam_idx)
+    else:
+        cap, _ = open_camera(args.cam)
+    if cap is None or not cap.isOpened():
         running = False
-        raise SystemExit(f"cannot open camera {args.cam}")
+        raise SystemExit("no usable camera found")
 
     frame_box = {"id": 0, "frame": None}
     fb_lock = threading.Lock()
@@ -303,6 +523,9 @@ def main():
     blind_said = False
     f8_was_down = False
     f9_was_down = False
+    level_mode = False
+    level_done = False
+    level_last_say = 0.0
     rng_hist = {}          # key -> [(t, range_mm)] for 1 s median smoothing
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
@@ -470,7 +693,7 @@ def main():
         tick_range = (near_path if audio_on and near_path is not None
                       and near_path < CAUTION_MM else None)
 
-        if audio_on:
+        if audio_on and not level_mode:
             if near_path is not None and near_path < DIRECTIVE_MM:
                 # DIRECTIVE: command, chosen by where the free space is
                 left = [zn["z"] for zn in upper if zn["az"] < -10]
@@ -578,6 +801,81 @@ def main():
                 speech_next = (text, f"QUERY{now}", 0, "query", now)
         f9_was_down = f9_now
 
+        # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
+        # The pod hangs on a ball camera mount; every re-clamp needs squaring.
+        # A blind user can't watch a bubble, so the device coaches: "tilt up 5"
+        # ... "level, lock it". Hazard speech + ticker pause while active.
+        if level_mode and imu_quat is not None and now - imu_stamp < 1.0 \
+                and mount_cal is not None:
+            w_, x_, y_, z_ = imu_quat
+            Rw_ = quat_to_R(w_, x_, y_, z_) @ mount_cal.T
+            fwd_ = Rw_ @ np.array([0, 1, 0])
+            rgt_ = Rw_ @ np.array([1, 0, 0])
+            p_ = np.degrees(np.arcsin(np.clip(-fwd_[2], -1, 1)))   # + = nose down
+            r_ = np.degrees(np.arcsin(np.clip(-rgt_[2], -1, 1)))   # + = right down
+            tick_range = None
+            if now - level_last_say > 1.5:
+                level_last_say = now
+                if abs(p_) < 1.0 and abs(r_) < 1.0:
+                    if not level_done:
+                        level_done = True
+                        msg = "level, lock it"
+                    else:
+                        msg = None
+                        level_mode = False        # auto-exit once confirmed
+                else:
+                    level_done = False
+                    if abs(p_) >= abs(r_):
+                        msg = f"tilt {'up' if p_ > 0 else 'down'} {abs(round(p_))}"
+                    else:
+                        msg = f"tilt {'left' if r_ > 0 else 'right'} {abs(round(r_))}"
+                if msg:
+                    with speech_lock:
+                        speech_next = (msg, f"LVL{now}", 0, "query", now)
+            cv2.putText(view, f"LEVELING  pitch {p_:+5.1f}  roll {r_:+5.1f}",
+                        (12, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                        (60, 200, 255), 2, cv2.LINE_AA)
+
+        # ── IMU HUD: artificial horizon + attitude readout ───────────────────
+        # Camera boresight is pitched 22.5° down when the helmet is level, so
+        # the horizon sits ~22.5° ABOVE image centre at rest and moves with
+        # head pitch; the line banks with roll. Small-angle fisheye mapping
+        # (y ≈ fy·θ) is plenty for a HUD.
+        if imu_quat is not None and now - imu_stamp < 1.0:
+            w_, x_, y_, z_ = imu_quat
+            if mount_cal is not None:
+                Rw = quat_to_R(w_, x_, y_, z_) @ mount_cal.T   # helmet -> world
+                fwd = Rw @ np.array([0, 1, 0])
+                rgt = Rw @ np.array([1, 0, 0])
+                pitch = np.degrees(np.arcsin(np.clip(-fwd[2], -1, 1)))
+                roll = np.degrees(np.arcsin(np.clip(-rgt[2], -1, 1)))
+                yaw = np.degrees(np.arctan2(-fwd[0], fwd[1]))
+                cam_pitch = pitch + 22.5          # boresight vs horizon
+                cy_off = int(K[1, 1] * np.deg2rad(cam_pitch))
+                cx0, cy0 = int(K[0, 2]), int(K[1, 2]) - cy_off
+                th = np.deg2rad(roll)
+                dx, dy = int(400 * np.cos(th)), int(400 * np.sin(th))
+                cv2.line(view, (cx0 - dx, cy0 - dy), (cx0 + dx, cy0 + dy),
+                         (80, 255, 160), 2, cv2.LINE_AA)
+                for s_ in (-1, 1):                 # wing ticks
+                    cv2.line(view, (cx0 + s_ * dx, cy0 + s_ * dy),
+                             (cx0 + s_ * dx, cy0 + s_ * dy + 12),
+                             (80, 255, 160), 2, cv2.LINE_AA)
+                cv2.putText(view, f"pitch {pitch:+5.1f}  roll {roll:+5.1f}  "
+                            f"yaw {yaw:+6.1f}", (12, 84),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 255, 160), 1,
+                            cv2.LINE_AA)
+                draw_attitude_inset(view, Rw, yaw)
+            else:
+                # no mount cal yet: show the chip frame raw so rotation is at
+                # least visible; axes will look wrong until the cal is run
+                Rw = quat_to_R(w_, x_, y_, z_)
+                draw_attitude_inset(view, Rw, 0.0)
+                cv2.putText(view, "IMU live (uncalibrated -- run "
+                            "visualizer/imu_mount_cal.py)", (12, 84),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (100, 200, 255), 1,
+                            cv2.LINE_AA)
+
         mode = "JOINT" if (use_joint and joint) else "CAD"
         voice = "BREVITY" if brevity else "plain"
         cv2.putText(view, f"CV fusion  [{mode}]  det {'on' if show_det else 'OFF'}  "
@@ -595,6 +893,9 @@ def main():
             audio_on = not audio_on
         elif k == ord("b"):
             brevity = not brevity
+        elif k == ord("l"):
+            level_mode = not level_mode
+            level_done = False
         elif k == ord("t"):
             show_text = not show_text
         elif k == ord("m") and joint is not None:

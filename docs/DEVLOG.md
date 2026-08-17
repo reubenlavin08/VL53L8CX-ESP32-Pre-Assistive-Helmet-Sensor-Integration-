@@ -4,6 +4,58 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-17 — Helmet firmware flashed, IMU live, unified viewer, voice-guided leveling
+
+### Firmware flashed + full stack verified
+Flashed last night's rebuild (final ToF pins, perpendicular-distance fix) to
+COM9. Boot log: sensor A ranging, sensor B online, WiFi up (192.168.1.228, TCP
+3333 + HTTP viewer). **User wired the IMU onto sensor A's bus (6/7)** per
+`docs/WIRING.md` — BNO085 online at 0x4A, handshake in 130 ms. The early
+"no device at 0x4A" probe warning is cosmetic (fires before the IMU boots).
+Only the 3 haptic motors remain unwired. **Hardware buzzer CANCELLED** (user
+decision): the compute device's digital sounds replace it.
+
+### Unified viewer: cv_fusion now speaks helmet-firmware
+- New `--source helmet` (default): TCP reader for `DATA:`/`DATAT:`/`Q:` lines —
+  ToF grids + IMU quaternion over WiFi, no COM-port contention. Firmware sends
+  invalid zones as 4000, remapped to the ">0 = valid" convention.
+- **Camera-index trap, twice in one morning**: USB re-enumeration moved the
+  helmet cam 1→0; a brightness-based auto-pick then chose the LAPTOP webcam
+  because the pod was lying lens-down. Fix: select by DirectShow device NAME
+  ("HBV HD CAMERA") via pygrabber. Names, not indices, not brightness.
+- **3D attitude inset** (top-right): cv2-wireframe of the pod (plate, cyan/
+  yellow ±22.5° sensor panels, camera stub, up-post) rotating live with the
+  IMU, plus a yaw compass ring. Artificial horizon on the main view once the
+  mount cal exists.
+- **winsound.Beep is full-volume with no gain control** — it drowned the
+  speech (user: "can't hear what the commands are"). Replaced ticker + cue
+  with generated low-amplitude WAVs (0.10 / 0.22 FS) via PlaySound, and the
+  ticker now MUTES during utterances.
+
+### IMU mount calibration + ball-mount leveling
+- `visualizer/imu_mount_cal.py`: two-pose gravity alignment (level, nose-down)
+  → R_chip_to_helmet. User's insight simplified it: the IMU board is mounted
+  FLAT and SQUARE on the pod base, so the result is **snapped to the nearest
+  of the 24 cardinal orientations**; the snap deviation doubles as a
+  mounting-error measurement. NOT YET RUN — needs his hands.
+- The pod hangs on a **ball camera mount** (new info) — attitude vs the helmet
+  drifts on every re-clamp, which makes the IMU the alignment instrument:
+  - `visualizer/mount_level.py`: standalone bubble level (bench use).
+  - **cv_fusion key `l` = voice-guided leveling mode**: "tilt up 5" → "tilt
+    left 2" → "level, lock it", auto-exits when confirmed. Hazard voice +
+    ticker pause during it. The blind-user version of a spirit level.
+
+### Open before next session
+1. **Run `imu_mount_cal.py`** (2 min, user's hands) — everything IMU-labelled
+   waits on it: horizon, attitude model truth, leveling-mode directions.
+2. Wire 3 motors (user supplies pins) → firmware pin update + ID pulse test →
+   temple-haptics direction channel (the [HW] track in MASTER-SYNTHESIS).
+3. Walk-test the v2 voice + M3 demo captures.
+4. IMU next uses: sterile-cockpit gate (suppress speech during fast head
+   turns), ToF↔camera de-rotation, ground-plane bbox ranging.
+
+---
+
 ## 2026-08-16 (night, autonomous run 2) — Callout engine v2: research says we were 30× too chatty
 
 Third research stream landed (`research-sources/blv-usefulness-2026-08-16.md`)
