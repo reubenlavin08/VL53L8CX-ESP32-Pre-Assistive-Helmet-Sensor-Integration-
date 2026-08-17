@@ -118,6 +118,48 @@ def quat_to_R(w, x, y, z):
     ])
 
 
+# ── cylindrical dewarp for the DETECTOR ONLY (2026-08-17) ────────────────────
+# YOLO mislabelled half the room ("thinks half the things in my room are tvs")
+# because COCO detectors are trained on straight lenses. Borrowed from the
+# ubc-cam project's finding: the detector degrades before anything else, so
+# dewarp ITS input and leave all geometry on the raw frame. Cylindrical keeps
+# the full 120° horizontal field (rectilinear at 120° would stretch the edges
+# absurdly). Mapping precomputed once; per-frame cost is one cv2.remap.
+CYL_W, CYL_H = 832, 416
+CYL_HFOV, CYL_VFOV = np.deg2rad(114), np.deg2rad(57)
+
+
+def build_cyl(K, D):
+    """Returns (map_x, map_y) for remap raw->cyl, and cyl_to_raw(pts Nx2)."""
+    u = (np.arange(CYL_W) / CYL_W - 0.5) * CYL_HFOV          # azimuth
+    v = (np.arange(CYL_H) / CYL_H - 0.5) * CYL_VFOV          # elevation (down +)
+    az, el = np.meshgrid(u, v)
+    # direction in camera frame (+x right, +y down, +z fwd), then to the
+    # normalized plane the fisheye model distorts from
+    x = np.sin(az) * np.cos(el)
+    y = np.sin(el)
+    z = np.cos(az) * np.cos(el)
+    pts = np.stack([x / z, y / z], -1).reshape(1, -1, 2)
+    px = cv2.fisheye.distortPoints(pts.astype(np.float64), K, D).reshape(CYL_H, CYL_W, 2)
+    map_x = px[..., 0].astype(np.float32)
+    map_y = px[..., 1].astype(np.float32)
+
+    def cyl_to_raw(p):
+        """Map Nx2 cylindrical pixels back to raw-fisheye pixels."""
+        p = np.asarray(p, float)
+        a = (p[:, 0] / CYL_W - 0.5) * CYL_HFOV
+        e = (p[:, 1] / CYL_H - 0.5) * CYL_VFOV
+        d = np.stack([np.sin(a) * np.cos(e) / (np.cos(a) * np.cos(e)),
+                      np.sin(e) / (np.cos(a) * np.cos(e))], -1)
+        return cv2.fisheye.distortPoints(d.reshape(1, -1, 2), K, D).reshape(-1, 2)
+
+    return map_x, map_y, cyl_to_raw
+
+
+use_dewarp = True        # key 'w' toggles; A/B the mislabel rate live
+_cyl = {"maps": None, "fn": None}
+
+
 def open_camera(idx):
     """Open a camera index at 720p MJPG; None if it gives no usable frames.
     USB re-enumeration swaps indices between sessions (bit us 2026-08-17: the
@@ -398,18 +440,31 @@ def detector_worker(get_frame):
         # OBJECT, so a second person entering the frame can't inherit the
         # first one's history. Distance itself is still re-derived from the
         # current ToF frame every cycle (red-team #5: never a track attribute).
-        r = model.track(frame, imgsz=IMGSZ, conf=CONF, persist=True,
+        dw = use_dewarp and _cyl["maps"] is not None
+        inp = (cv2.remap(frame, *_cyl["maps"], cv2.INTER_LINEAR)
+               if dw else frame)
+        r = model.track(inp, imgsz=IMGSZ, conf=CONF, persist=True,
                         tracker="bytetrack.yaml", verbose=False)[0]
         dets = []
         polys = r.masks.xy if r.masks is not None else [None] * len(r.boxes)
         for b, poly in zip(r.boxes, polys):
             name = names[int(b.cls)]
             tid = int(b.id) if b.id is not None else None
+            xyxy = b.xyxy[0].tolist()
+            poly_ok = poly is not None and len(poly) >= 3
+            if dw:
+                # map results back to RAW-fisheye coordinates: all geometry,
+                # association and display stay on the raw frame
+                if poly_ok:
+                    poly = _cyl["fn"](poly).astype(np.float32)
+                x0, y0, x1, y1 = xyxy
+                corners = _cyl["fn"]([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+                xyxy = [float(corners[:, 0].min()), float(corners[:, 1].min()),
+                        float(corners[:, 0].max()), float(corners[:, 1].max())]
             dets.append({"name": name, "conf": float(b.conf),
-                         "xyxy": b.xyxy[0].tolist(),
+                         "xyxy": xyxy,
                          "tid": tid,
-                         "poly": None if poly is None or len(poly) < 3
-                                 else poly.astype(np.float32),
+                         "poly": poly.astype(np.float32) if poly_ok else None,
                          "tier1": name in TIER1})
         with det_lock:
             det_latest = dets
@@ -417,7 +472,7 @@ def detector_worker(get_frame):
 
 
 def main():
-    global running
+    global running, use_dewarp
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM9")
     ap.add_argument("--baud", type=int, default=115200)
@@ -451,6 +506,9 @@ def main():
     cal = np.load(ROOT / "camera" / "calibration_720p.npz")
     K = cal["K"]
     D = cal["D"].reshape(4, 1)
+    mx, my, cyl_fn = build_cyl(K, D)
+    _cyl["maps"] = (mx, my)
+    _cyl["fn"] = cyl_fn
     joint, cadex, eff = fo.load_extrinsics()
     use_joint = joint is not None
     ring = fo.zone_boundary_tans()
@@ -878,7 +936,8 @@ def main():
 
         mode = "JOINT" if (use_joint and joint) else "CAD"
         voice = "BREVITY" if brevity else "plain"
-        cv2.putText(view, f"CV fusion  [{mode}]  det {'on' if show_det else 'OFF'}  "
+        cv2.putText(view, f"CV fusion  [{mode}]  det {'on' if show_det else 'OFF'}"
+                    f"{'/dewarp' if use_dewarp else '/raw'}  "
                     f"audio {'on' if audio_on else 'OFF'} ({voice})  zones {len(zones)}",
                     (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (240, 240, 240), 2,
                     cv2.LINE_AA)
@@ -896,6 +955,8 @@ def main():
         elif k == ord("l"):
             level_mode = not level_mode
             level_done = False
+        elif k == ord("w"):
+            use_dewarp = not use_dewarp
         elif k == ord("t"):
             show_text = not show_text
         elif k == ord("m") and joint is not None:
