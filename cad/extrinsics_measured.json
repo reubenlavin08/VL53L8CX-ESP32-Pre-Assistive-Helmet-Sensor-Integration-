@@ -1,0 +1,474 @@
+{
+ "_README": "Measured CAD geometry for ToF<->camera fusion (Stage 3/4). Machine-readable source of truth. Solver + verifier: docs/extrinsics_solve.py",
+ "units": "mm",
+ "frame": "DEFAULT assembly coordinate frame of Assem1double tof test fov.SLDASM",
+ "frame_axes": "+X = screen-right viewing the FRONT of the assembly; +Y = up; +Z = out toward the viewer, i.e. the direction the sensors look",
+ "_ABSOLUTE_VS_RELATIVE": "As of 2026-08-16 no component in the assembly was marked (f) -- the whole thing was an unanchored rigid raft, so every part showed (-) even though the parts are correctly mated to EACH OTHER (dragging the camera dragged the entire assembly). Consequence: the raw XYZ below are absolute assembly coordinates, but everything derived from them is relative (ToF->ToF, ToF->camera) and is invariant under rigid motion of the raft.",
+ "_RAW_POINTS_ARE_STALE": "!! The assembly WAS subsequently dragged on 2026-08-16, by ~157 mm. Every raw XYZ in this file therefore describes the PRE-DRAG position and will NOT match a fresh Measure. The motion was rigid (whole raft together), so all derived quantities -- boresights, frames, baselines, and transforms_tof_to_camera -- remain exactly correct and are what you should use. Do NOT 're-measure to check' against the raw points and conclude something is broken. If you need absolute coordinates to be reproducible again: Fix Part13 (the extrusion both ToF sensors mate to) to anchor the chain, then re-measure the full set.",
+ "measured_on": "2026-08-16",
+ "measured_by": "SOLIDWORKS Tools > Evaluate > Measure, vertex picks, 4 decimal places",
+ "source_file": "cad/solidworks/Assem1double tof test fov.SLDASM",
+ "design_intent": {
+  "construction": "yaw each ToF LEVEL at +/-22.5 deg, group them, then tilt the WHOLE GROUP 22.5 deg down as one rigid rotation",
+  "yaw_deg": 22.5,
+  "group_tilt_deg": 22.5,
+  "_warning": "ORDER MATTERS. Pitching each sensor then yawing about world-vertical is the SUPERSEDED order that produced the 2.02 deg seam. Composing in the wrong order makes a correct model look ~2.3 deg off -- this cost a debugging round on 2026-08-16.",
+  "boresight_left": [
+   -0.38268343,
+   -0.35355339,
+   0.85355339
+  ],
+  "boresight_right": [
+   0.38268343,
+   -0.35355339,
+   0.85355339
+  ]
+ },
+ "sensor_identity": {
+  "_CRITICAL": "Which firmware sensor maps to which CAD frame. Confirmed on hardware 2026-08-16 with tof_pin_test/tof_id_viewer.py (wave at one sensor, see which panel reacts). Get this backwards and every depth point lands MIRRORED across the image while every geometric self-check still passes -- it is not detectable downstream, only by looking at fused output and noticing obstacles are on the wrong side.",
+  "_WHY_IT_FLIPS": "Two opposite 'left' conventions were in play. The CAD sections in this file use 'left' = left of screen when viewing the FRONT of the assembly, i.e. standing where the sensors aim and looking BACK at them -- that is the WEARER'S RIGHT. The user's natural convention is looking along the camera's direction (from behind the pod) -- that is the WEARER'S LEFT. The two are mirror images of each other.",
+  "sensor_A": {
+   "firmware_pins": "SDA=6, SCL=7, PWREN=4, I2C_NUM_0",
+   "physical_side": "WEARER'S LEFT",
+   "cad_frame": "tof_right",
+   "optical_centre_x_mm": 18.6694
+  },
+  "sensor_B": {
+   "firmware_pins": "SDA=15, SCL=16, PWREN=5, I2C_NUM_1",
+   "physical_side": "WEARER'S RIGHT",
+   "cad_frame": "tof_left",
+   "optical_centre_x_mm": -17.5794
+  },
+  "_INDEPENDENT_CHECK": "frame_axes says +X = screen-right viewing the FRONT of the assembly. Viewing the front means facing the pod, so +X is the WEARER'S LEFT. tof_right sits at X = +18.67, therefore tof_right is on the wearer's left, therefore tof_right = sensor A. This derivation is independent of the hardware wave test and agrees with it.",
+  "_APPLY_IT": "When fusing: data from sensor A (pins 6/7/4) must use transforms_tof_to_camera.tof_right. Data from sensor B (pins 15/16/5) must use transforms_tof_to_camera.tof_left."
+ },
+ "_EDGE_CONVENTION": "Both sensors use the board's OWN LEFT EDGE as the long axis. A yaw rotation never flips handedness, so screen-left == board-left on both. NOTE the left edge is OUTBOARD on the left sensor (X -25.93) but INBOARD on the right sensor (X +8.97). Using mirror-corresponding edges instead would flip the roll while every other check still passed.",
+ "tof_left": {
+  "_note": "'left' = left of screen viewing the FRONT of the assembly. SOLIDWORKS instance TOFSLOT_1mmMARGINS_withrefs_andflattop<1>.",
+  "pcb_front_face": {
+   "top_vertex_left_edge": [
+    -25.9326,
+    -144.1699,
+    332.3782
+   ],
+   "bottom_vertex_left_edge": [
+    -25.9326,
+    -191.7497,
+    312.67
+   ],
+   "bottom_right_vertex": [
+    -7.917,
+    -194.6054,
+    319.5643
+   ]
+  },
+  "sensor_optical_centre": [
+   -17.5794,
+   -152.1342,
+   334.8161
+  ],
+  "frame": {
+   "_note": "Columns are the sensor's board-X (right), board-Y (up), board-Z (boresight) expressed in assembly coordinates. Right-handed, det = +1.",
+   "board_right": [
+    0.92388,
+    -0.14645,
+    0.35355
+   ],
+   "board_up": [
+    0.0,
+    0.92388,
+    0.38268
+   ],
+   "boresight": [
+    -0.38268,
+    -0.35355,
+    0.85355
+   ]
+  },
+  "verified": {
+   "long_edge_mm": 51.5,
+   "short_edge_mm": 19.5,
+   "corner_angle_deg": 90.0,
+   "boresight": [
+    -0.38268,
+    -0.35355,
+    0.85355
+   ],
+   "angle_vs_design_deg": 0.0001,
+   "centre_off_pcb_plane_mm": 1.7001,
+   "sensor_to_top_end_mm": 11.796,
+   "sensor_to_bottom_end_mm": 46.148
+  }
+ },
+ "tof_right": {
+  "_note": "SOLIDWORKS instance TOFSLOT_1mmMARGINS_withrefs_andflattop<2>. Four corners measured, so the full rectangle test was possible.",
+  "pcb_front_face": {
+   "top_vertex_left_edge": [
+    8.9695,
+    -147.0256,
+    339.2725
+   ],
+   "bottom_vertex_left_edge": [
+    8.9695,
+    -194.6054,
+    319.5643
+   ],
+   "bottom_right_vertex": [
+    26.9852,
+    -191.7497,
+    312.67
+   ],
+   "top_right_vertex": [
+    26.9852,
+    -144.1699,
+    332.3782
+   ]
+  },
+  "sensor_optical_centre": [
+   18.6694,
+   -152.1283,
+   334.8018
+  ],
+  "frame": {
+   "board_right": [
+    0.92388,
+    0.14645,
+    -0.35355
+   ],
+   "board_up": [
+    0.0,
+    0.92388,
+    0.38268
+   ],
+   "boresight": [
+    0.38268,
+    -0.35355,
+    0.85355
+   ]
+  },
+  "verified": {
+   "opposite_sides_mm": [
+    51.5,
+    51.5,
+    19.5,
+    19.5
+   ],
+   "diagonals_mm": [
+    55.0681,
+    55.0682
+   ],
+   "diagonal_diff_um": 0.022,
+   "fourth_corner_off_plane_um": 0.0,
+   "corner_angle_deg": 90.0,
+   "boresight": [
+    0.38268,
+    -0.35355,
+    0.85355
+   ],
+   "angle_vs_design_deg": 0.0033,
+   "centre_off_pcb_plane_mm": 1.7001,
+   "sensor_to_top_end_mm": 11.763,
+   "sensor_to_bottom_end_mm": 46.14
+  }
+ },
+ "derived": {
+  "baseline_centre_to_centre_mm": 36.2488,
+  "boresight_separation_deg": 45.0,
+  "_boresight_separation_note": "exactly the designed 45.00 deg total (2 x 22.5)",
+  "board_up_agreement_deg": 0.0,
+  "_board_up_note": "The two boards' up-axes are identical to 4 dp, and equal (0, cos22.5, sin22.5) -- the board up-axis tipped back by exactly the group tilt. Confirms identical, identically-upright parts: no mirroring.",
+  "symmetry_plane_x_mm": 0.545,
+  "symmetry_plane_x_from_corners_mm": 0.5263,
+  "symmetry_plane_x_from_centres_mm": 0.545,
+  "symmetry_plane_disagreement_um": 18.7,
+  "_symmetry_plane_note": "Corners put the plane at X = +0.5263; the two optical-centre picks put it at +0.5450. The 18.7 um gap is operator click repeatability, negligible against a 0.1 mm readout quantum. Either way the sensors are symmetric about X ~= +0.53, NOT X = 0 -- the assembly origin sits ~0.53 mm off the sensor centreline. Matters once the camera becomes the datum.",
+  "centre_off_pcb_plane_mm": 1.7001,
+  "_centre_off_plane_note": "Identical on both sensors, confirming the same face was clicked on each. Consistent with the ~1.6 mm VL53L8CX package height, i.e. the OUTER optical face rather than mid-package."
+ },
+ "camera": {
+  "_note": "Orientation from three corners of the camera mount's BACK face (parallel to the front, so the normal is the same). Position from Point5, the lens optical-axis centre.",
+  "back_face": {
+   "bottom_right_vertex": [
+    19.2554,
+    -133.6222,
+    323.1481
+   ],
+   "bottom_left_vertex": [
+    -18.7445,
+    -133.6467,
+    323.2072
+   ],
+   "top_left_vertex": [
+    -18.7445,
+    -98.5392,
+    337.7492
+   ]
+  },
+  "optical_centre": [
+   0.2991,
+   -125.9922,
+   354.3771
+  ],
+  "frame": {
+   "_note": "OpenCV convention: +X image-right, +Y image-DOWN, +Z forward along the optical axis. Right-handed, det = +1.",
+   "_CORRECTED_2026-08-16": "x_right previously pointed toward assembly +X. That is the WEARER'S LEFT, not image-right. For a forward-facing camera, image-right is the wearer's RIGHT = assembly -X. The wrong sign flipped x AND y together (a 180 deg roll about the optical axis) and corrupted both ToF->camera transforms, which showed up as the calibration disagreeing with the CAD prior by 179 deg. Derivation: right-handed with +Z forward and +Y up means a person facing +Z has their right along Z x Y = -X.",
+   "x_right": [
+    -0.999999,
+    -0.000645,
+    0.001555
+   ],
+   "y_down": [
+    5e-07,
+    -0.92388,
+    -0.382683
+   ],
+   "z_forward": [
+    0.00168,
+    -0.38268,
+    0.92388
+   ]
+  },
+  "verified": {
+   "face_edges_mm": [
+    38.0,
+    38.0001
+   ],
+   "corner_angle_deg": 90.0,
+   "pitch_down_deg": 22.5,
+   "yaw_deg": 0.1044,
+   "angle_vs_ideal_deg": 0.0965
+  }
+ },
+ "transforms_tof_to_camera": {
+  "_note": "Apply as p_cam = R @ p_tof + t. Rotation is sensor axes -> camera axes; t is the sensor's optical centre expressed in camera coordinates (mm). THESE ARE THE FUSION INPUTS.",
+  "_key_result": "In the camera frame both sensors are PURE YAW -- pitch and roll are ~0.0001 deg. The 22.5 deg group tilt is common to camera and sensors, so it cancels. This is the rigid-group construction verifying itself; a per-part tilt would leave residual pitch here.",
+  "tof_left": {
+   "t_mm": [
+    17.865,
+    31.638,
+    -8.098
+   ],
+   "distance_mm": 37.4667,
+   "yaw_deg": 22.597,
+   "pitch_deg": 0.0,
+   "R": [
+    [
+     0.923235,
+     5e-07,
+     0.384237
+    ],
+    [
+     -4.9e-06,
+     1.0,
+     2e-06
+    ],
+    [
+     -0.384237,
+     -3.3e-06,
+     0.923235
+    ]
+   ],
+   "_identity": "SENSOR B -- wearer's RIGHT, firmware pins 15/16/5"
+  },
+  "tof_right": {
+   "t_mm": [
+    -18.384,
+    31.638,
+    -8.052
+   ],
+   "distance_mm": 37.2247,
+   "yaw_deg": -22.403,
+   "pitch_deg": -0.0,
+   "R": [
+    [
+     0.924523,
+     5e-07,
+     -0.381126
+    ],
+    [
+     4e-06,
+     1.0,
+     1.6e-06
+    ],
+    [
+     0.381126,
+     -3.3e-06,
+     0.924523
+    ]
+   ],
+   "_identity": "SENSOR A -- wearer's LEFT, firmware pins 6/7/4"
+  },
+  "asymmetry": {
+   "yaw_split_deg": [
+    -22.5964,
+    22.4035
+   ],
+   "yaw_asymmetry_deg": 0.1929,
+   "camera_x_offset_from_sensor_centreline_mm": 0.2595,
+   "_note": "Camera is yawed 0.1044 deg and sits 0.26 mm off the sensors' symmetry plane, so the yaw splits 22.403/22.597 rather than 22.5/22.5. Traced to the camera component being UNDER-DEFINED in the assembly."
+  },
+  "_CORRECTED_2026-08-16": "Recomputed after fixing the camera frame's x_right sign (see camera.frame). Previous values had x and y flipped. Verified against the 23-pose planar calibration: rotation now agrees to 2.0 deg (was 179 deg)."
+ },
+ "RESOLVED": {
+  "roll": {
+   "status": "RESOLVED 2026-08-16",
+   "how": "Two independent facts. (1) The sensor package sits 11.8 mm from the board's top end vs 46.1 mm from the bottom, on BOTH boards -- which rules out a 180 deg end-for-end flip. (2) User confirmed visually that the pin headers, connector and L8 silkscreen are on the SAME side of both boards, i.e. identical parts, not mirrored. Computing each frame from the board's own LEFT edge then gives board_up identical on both to 4 dp, and det = +1 on both.",
+   "why_corners_alone_failed": "A 51.5 x 19.5 rectangle is mirror-symmetric, so its four corners are identical whether the board is mounted as-is or mirrored. Every geometric check passes either way. Roll needed an asymmetric fact."
+  },
+  "distance_is_perpendicular": {
+   "status": "RESOLVED 2026-08-16 -- CORRECTS AN EARLIER WRONG ENTRY",
+   "finding": "distance_mm is the PERPENDICULAR (Z) distance for the zone, NOT slant range along the zone's ray. 3D point is  p = z * [tan(az), tan(el), 1].",
+   "evidence": "Same 23 archived poses, two interpretations: slant -> 12.02 mm plane rms and a -36.14 mm false dome; perpendicular -> 3.83 mm rms and -2.93 mm bow. The dome was an artefact of unit-ray scaling pulling outer zones inward.",
+   "cost": "Sent us chasing a warped board, a phantom radial sensor bias, and crosstalk. Also caused false off-board flags in the capture tool.",
+   "FIRMWARE_IMPLICATION": "main.c:142 asserts 'that stays as raw slant' and compute_row_cos_table() multiplies by cos(zone_elevation + mount_pitch). If the value is already perpendicular, the zone-elevation part of that correction is applied to something that does not need it. The mount-pitch part is still required. NEEDS FIXING before Stage 4."
+  },
+  "radial_distance_bias": {
+   "status": "RESOLVED -- WAS NOT REAL",
+   "note": "The +/-14 mm 'radial bias' and -36 mm dome were entirely an artefact of treating distance_mm as slant range. With the correct perpendicular interpretation the residual is 3.08 mm, i.e. noise. No sensor correction is needed. No crosstalk involvement (pod has no cover glass, and UM3109 3.2 scopes crosstalk to a protective window)."
+  },
+  "camera_entrance_pupil": {
+   "status": "SOLVED BY CALIBRATION",
+   "note": "Recovered as 15.3 mm behind the CAD lens-face point, along camera +Z. See MEASURED_CALIBRATION.t_mm -- use that, not the CAD translation."
+  },
+  "zone_grid_rotation": {
+   "status": "NO ROTATION NEEDED",
+   "note": "The earlier '180 deg' conclusion was an artefact of the camera-frame x_right sign bug combined with the slant/perpendicular error. With both fixed, the solve lands 1.80 deg from CAD with NO zone-grid rotation applied."
+  },
+  "field_of_view_is_45": {
+   "status": "RESOLVED 2026-08-16 by physical measurement -- DO NOT REOPEN",
+   "finding": "45 deg per axis as per DS14161. The pod has NO blind wedge; inner edges of the two +/-22.5 deg sensors meet on the camera axis as designed.",
+   "evidence": "tof_pin_test/tof_fov_ruler.py, checkerboard on a tripod with the pod handheld. Column c0 across four rows: -16.00, -17.50, -17.75, -17.50 (mean -17.19, spread 0.72). Datasheet predicts -16.88 (0.4 deg away, inside the spread); the solver's 34.2 deg predicts -12.84 (4.35 deg away, 6 sigma out).",
+   "note": "Both sensors' solvers independently prefer ~34-36 deg. That reproducibility across two parts and two sessions is what a systematic PIPELINE error looks like, not a sensor property."
+  }
+ },
+ "PENDING": {
+  "package_optical_offset": {
+   "status": "NOT APPLIED",
+   "note": "The SPAD array's position INSIDE the VL53L8CX package is a datasheet offset, not visible in CAD. Apply to the optical centres above before final fusion."
+  },
+  "grid_orientation": {
+   "status": "HANDLED IN FIRMWARE -- but the constant is STALE for the new pod",
+   "note": "main.c:127-135 defines MOUNT_ROTATION_DEG = 270 and rotated_zone() remaps every zone so the STREAM is already de-rotated into body frame: output row 0 = top of FoV, row N-1 = bottom, col 0 = body-left, col N-1 = body-right. So the die's rotation inside the package never reaches the host -- no datasheet lookup needed. WARNING: 270 was set for the OLD stacked top/bottom mounting. The new pod is a left/right +/-22.5 deg pair, so the physical rotation is probably different and MOUNT_ROTATION_DEG must be re-derived. Same for MOUNT_PITCH_DEG (30.0) and MOUNT_PITCH_DEG_TOP (-5.0), both stale."
+  }
+ },
+ "tof_ray_model": {
+  "_source": "main/main.c -- read 2026-08-16, NOT assumed",
+  "distance_is": "RAW SLANT (radial, along each zone's line of sight)",
+  "_distance_note": "main.c:142 states explicitly: 'Raw DATA: stream is NOT affected -- that stays as raw slant.' The per-row cosine tables (compute_row_cos_table / compute_top_cos_table) feed only g_latest_forward, which drives haptics and /api/status. So DATA: and DATAT: are UNCORRECTED slant, which is exactly what fusion wants: p_tof = distance * unit_ray. Do NOT apply a cos correction -- that is the double-correction trap.",
+  "zone_angular_model": "EQUAL ANGLE per zone",
+  "deg_per_zone_8x8": 5.625,
+  "zone_centre_elevations_deg_8x8": [
+   -19.6875,
+   -14.0625,
+   -8.4375,
+   -2.8125,
+   2.8125,
+   8.4375,
+   14.0625,
+   19.6875
+  ],
+  "_zone_note": "From compute_row_cos_table(): deg_per_zone = 45.0/side, alpha = (r - (side-1)/2) * deg_per_zone. The firmware therefore models zones as uniform in ANGLE, not uniform on a flat image plane. A pinhole model would put the outermost zone centre at 19.92 deg instead of 19.6875 -- a 0.23 deg difference at the corners. Stay consistent with the firmware unless there is a reason not to.",
+  "stream_is_derotated": true,
+  "_derotation_note": "rotated_zone() applies MOUNT_ROTATION_DEG before streaming, so DATA:/DATAT: arrive already in body frame: row 0 = top of FoV, row N-1 = bottom, col 0 = body-left, col N-1 = body-right. See PENDING.grid_orientation -- the constant itself is stale for the new pod."
+ },
+ "CAVEAT": "These are CAD NOMINALS -- an initialisation and sanity check, not the calibration. FDM print tolerance, board slop in the slots, SPAD die placement inside the package, and lens-axis-vs-housing error are all invisible here. At 4 m, 1 deg = 70 mm. Real extrinsics come from a planar-target calibration.",
+ "MEASURED_CALIBRATION": {
+  "_what": "Planar-target calibration of SENSOR A (= CAD tof_right), 17 poses, 2026-08-16. This SUPERSEDES the CAD nominal for fusion: it measures the built hardware.",
+  "sensor": "A",
+  "cad_frame": "tof_right",
+  "n_poses": 17,
+  "rms_mm": 4.368330315419269,
+  "_rms_note": "against a 3.08 mm per-pose plane-fit noise floor",
+  "R": [
+   [
+    0.9255411294154635,
+    -0.030717815454471043,
+    -0.37739903759025845
+   ],
+   [
+    0.03057768807285038,
+    0.9995121306471607,
+    -0.006364407379524651
+   ],
+   [
+    0.37741041685738846,
+    -0.005649469256323497,
+    0.9260288660428757
+   ]
+  ],
+  "t_mm": [
+   -13.3880920429231,
+   25.784632792660958,
+   7.211475249759164
+  ],
+  "fov_x_deg": 34.244873577023036,
+  "fov_y_deg": 35.386609363908065,
+  "rotation_vs_cad_deg": 1.803935373397373,
+  "translation_vs_cad_mm": 17.09370295399879,
+  "_translation_note": "The 17 mm gap from CAD is 15.3 mm along camera Z, i.e. the ENTRANCE PUPIL sitting ~15 mm behind the lens-face point picked in CAD. Predicted in advance as the one term CAD structurally cannot see. Fixing t at the CAD value RAISES rms 4.37 -> 10.14, so the data genuinely wants it.",
+  "_fov_note": "Fitted zone-centre span is 34.2 x 35.4 deg, not the datasheet 45. UM3109/DS14161 specify 45x45 for the DOE on the LASER EMITTER -- the projected illumination -- and do not state the receive array's zone angular pitch. Fixing FOV at 45 raises rms 4.37 -> 7.96 and pushes rotation 1.80 -> 4.40 deg off CAD. Treat 45 deg as the illumination field, not the zone geometry."
+ },
+ "MEASURED_CALIBRATION_B": {
+  "_what": "Planar-target calibration of SENSOR B (= CAD tof_left), 22 poses, 2026-08-16.",
+  "sensor": "B",
+  "cad_frame": "tof_left",
+  "n_poses": 22,
+  "rms_mm_fov45": 8.6,
+  "rotation_vs_cad_deg_fov45": 3.7,
+  "entrance_pupil_dz_mm": 12.8,
+  "_note": "Sensor A independently gave a pupil shift of +15.8 mm. Two datasets, same physical camera, agreeing to 3 mm on a parameter CAD cannot see -- that one IS real."
+ },
+ "OPEN_PROBLEM_residual_8mm": {
+  "status": "RESOLVED 2026-08-16 evening -- root cause: signal-weighted zone centroids. See RESOLUTION_2026_08_16 below and DEVLOG entry. Historical detail kept for the write-up.",
+  "RESOLUTION_2026_08_16": {
+   "root_cause": "A zone's reported distance is a signal-weighted average over its cone, and the signal is not uniform across the zone: the VCSEL FoI is 43.4 deg at 75% power, 57.9 deg at 10% (DS14161 2.3), so outer zones' EFFECTIVE centroid rays are pulled inward. The 14% default sharpener adds to it. Effective outer columns fit at ~13.4 deg where geometry says 16.9.",
+   "evidence": [
+    "error is per-POSE not per-zone: per-zone mean residual map nearly flat (+-2 mm) at 8 mm rms; ToF points fit their own plane at 3.1 mm but miss the camera plane at 7.4 mm -- the planes disagree in TILT",
+    "tilt disagreement correlates +0.85 (A) with board tilt vs camera axis -- the exact signature of a lateral ray-angle error, which is invisible on frontal boards",
+    "free per-row/col ray table drops rms 7.96/8.60 -> 4.22/4.80 and sensors A and B INDEPENDENTLY agree on the table to ~1 deg (same lens design, separate datasets)",
+    "fisheye periphery hypothesis executed and killed: 39% of calib corners beyond 30 deg off-axis (max 61.8), KB1-KB4 model-order sweep agrees within 0.08 deg at 45 deg off-axis -- intrinsics contribute <0.1 deg of the 1.1 deg",
+    "tan-uniform spacing tested: WORSE (8.58/9.29). Per-zone bias tested: fails cross-validation. Global depth scale tested: rms barely moves",
+    "ST community (staff): distance_mm is PERPENDICULAR not radial -- confirmed on the record. ST publishes per-zone ray tables (VL53L5_Zone_Pitch8x8/Yaw8x8): even the geometric field is not uniform-in-angle"
+   ],
+   "both_measurements_were_right": "tripod test measured geometric detection BOUNDS (45 deg, datasheet-true); plane solver measured signal-weighted CENTROIDS on extended targets (~34 deg effective). Two different real properties.",
+   "shipping_calibration": "camera/tof_calib_poses/solved_joint.json -- joint two-sensor solve, CAD pair geometry rigid (45.000 deg / 36.249 mm), ONE shared effective table: rms 5.51 mm, rotation 1.15 deg from CAD",
+   "usage_rule": "geometric 45 deg bounds for zone occupancy / frustum drawing; effective centroid table for extended-surface geometry (walls, floors)",
+   "optional_confirmation": "recapture with sharpener at 99% (vl53l8cx_set_sharpener_percent) -- the effective field should widen toward 45 if the centroid theory is right"
+  },
+  "summary": "~8 mm rms survives after R, t and the pupil are all free, against a 3.1-3.3 mm noise floor. No rigid transform absorbs it, so it is a MODEL error.",
+  "ladder_A": {
+   "cad_only": 18.15,
+   "plus_pupil": 10.64,
+   "plus_free_t": 10.25,
+   "plus_free_R": 7.96,
+   "noise_floor": 3.08
+  },
+  "ladder_B": {
+   "cad_only": 16.76,
+   "plus_pupil": 13.2,
+   "plus_free_t": 10.15,
+   "plus_free_R": 8.6,
+   "noise_floor": 3.27
+  },
+  "impact": "8 mm at 400 mm = 1.1 deg = ~12 px at 1280px/119.58deg. Visible on an overlay, not fatal for obstacle detection.",
+  "ruled_out": [
+   "warped board (real but minor, fixed)",
+   "radial sensor bias (was the slant/perpendicular bug)",
+   "crosstalk (no cover glass; UM3109 3.2 scopes it to one)",
+   "distance offset (degenerate, needs -79 mm)",
+   "apex offset (degenerate, needs +78 mm)",
+   "checkerboard scale (moves rms 0.07 mm)",
+   "4x4 mode shrinking the field (nothing in UM3109 4.3)",
+   "the UM3109 2.2 lens flip (both axes = 180 deg rotation, absorbed by R)",
+   "single-axis mirrors (rms 36.36 vs 8.60)",
+   "all 4 rotations",
+   "transpose (21.49 vs 4.39)"
+  ],
+  "not_yet_tried": [
+   "camera fisheye model error at the image periphery -- BEST REMAINING HYPOTHESIS; intrinsics rms is 0.30 px overall but a 119 deg lens can be systematically off at the edges, and the board was often off-centre, which would bias solvePnP",
+   "joint two-sensor solve with the CAD ToF-pair geometry enforced rigid (baseline 36.2488 mm and separation 45.0000 deg are known to sub-micron); also A and B currently solve to Y = +25.78 and +12.97 when CAD says they are identical",
+   "a genuinely per-zone additive distance bias, not a global offset"
+  ],
+  "do_not_do": "Do NOT let the field-of-view float to absorb this. It drops rms to ~4.4 but at 34-36 deg, which the physical tripod measurement excludes at 6 sigma. Use FOV = 45."
+ }
+}

@@ -21,3 +21,28 @@ main/wifi_credentials.h
 # transient run logs
 *.log
 viz.pid
+
+# firecrawl scrape cache (transient, may contain tracking URLs)
+.firecrawl/
+
+# Obsidian workspace state
+.obsidian/
+
+# CAD binaries — hundreds of MB, versioned locally + backed up by
+# cad/backup_solidworks.ps1. The MEASURED geometry (extrinsics_measured.json)
+# and all cad/*.md docs ARE committed.
+*.SLDPRT
+*.SLDASM
+*.SLDDRW
+*.sldprt
+*.sldasm
+*.step
+*.STEP
+*.stl
+
+# camera: raw calibration video (regenerable; extracted shots + npz are committed)
+camera/calib_video.avi
+camera/calib_video.mkv
+
+# YOLO weights — ultralytics re-downloads them by name
+*.pt

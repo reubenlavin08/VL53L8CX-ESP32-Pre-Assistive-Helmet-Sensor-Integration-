@@ -46,15 +46,24 @@
 #include "wifi_credentials.h"
 
 /* â”€â”€ Pin configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-/* Bottom/old sensor (forward + ~30 deg DOWN): ground & low-obstacle coverage. I2C_NUM_1. */
-#define GPIO_SDA      GPIO_NUM_1
-#define GPIO_SCL      GPIO_NUM_2
-#define GPIO_PWREN    GPIO_NUM_5
-/* Top/new sensor (forward + ~5 deg UP): head & overhead coverage. Second bus, I2C_NUM_0. */
-#define GPIO_SDA2     GPIO_NUM_41
-#define GPIO_SCL2     GPIO_NUM_42
-#define GPIO_PWREN2   GPIO_NUM_40
-#define BUZZER_GPIO         GPIO_NUM_6   /* active buzzer signal pin */
+/* ── 2026-08-16 REWIRE: left/right ±22.5° yaw pair, whole group 22.5° DOWN ──
+ * Wiring is FINAL (user decision 2026-08-16, verified live by tof_pin_test).
+ * Sensor A = wearer's LEFT  = CAD `tof_right` (the conventions are opposite —
+ * see cad/SESSION-HANDOFF-2026-08-16.md before touching anything). */
+/* Sensor A (wearer LEFT, streams as the primary grid). I2C_NUM_0. */
+#define GPIO_SDA      GPIO_NUM_6
+#define GPIO_SCL      GPIO_NUM_7
+#define GPIO_PWREN    GPIO_NUM_4
+/* Sensor B (wearer RIGHT). Second bus, I2C_NUM_1. */
+#define GPIO_SDA2     GPIO_NUM_15
+#define GPIO_SCL2     GPIO_NUM_16
+#define GPIO_PWREN2   GPIO_NUM_5
+/* ⚠ PROVISIONAL: buzzer/motors/IMU are NOT WIRED yet (removed in the helmet
+ * remount). Their old pins 6/7/15/16 now belong to the ToF buses, so they are
+ * parked on the freed pins below purely so the firmware compiles and drives
+ * nothing real. USER WILL SUPPLY the actual pins when he wires them — update
+ * these five defines then, and re-verify motors with the single-pin ID pulse. */
+#define BUZZER_GPIO         GPIO_NUM_40  /* PROVISIONAL — not wired */
 /* Debug pause switch: 3-pin SPDT, COM->this GPIO, one outer->GND, third pin
  * unconnected. Internal pull-up => HIGH = haptics ON, LOW (GND side) = paused. */
 #define HAPTIC_SWITCH_GPIO  GPIO_NUM_17
@@ -72,14 +81,12 @@
  * to ID the other two. */
 #define HAPTIC_ID_MODE      0
 #define HAPTIC_ID_GPIO      HAPTIC_GPIO_RIGHT   /* pulse this one to find it */
-/* Verified physical mapping 2026-05-28 by single-pin OTA ID pulses:
- *   GPIO 7  = CENTER (forehead)
- *   GPIO 15 = RIGHT  temple
- *   GPIO 16 = LEFT   temple
- * Aliases A/B/C kept for ranging_task column-mapping convenience. */
-#define HAPTIC_GPIO_CENTER  GPIO_NUM_7
-#define HAPTIC_GPIO_RIGHT   GPIO_NUM_15
-#define HAPTIC_GPIO_LEFT    GPIO_NUM_16
+/* Old verified mapping (2026-05-28) was 7=CENTER, 15=RIGHT, 16=LEFT — those
+ * pins are now the ToF buses. PROVISIONAL parking on freed pins; motors are
+ * NOT wired. Re-run the single-pin ID pulse when the user rewires them. */
+#define HAPTIC_GPIO_CENTER  GPIO_NUM_1   /* PROVISIONAL — not wired */
+#define HAPTIC_GPIO_RIGHT   GPIO_NUM_2   /* PROVISIONAL — not wired */
+#define HAPTIC_GPIO_LEFT    GPIO_NUM_41  /* PROVISIONAL — not wired */
 #define HAPTIC_GPIO_A       HAPTIC_GPIO_CENTER   /* alias: motor A = center  */
 #define HAPTIC_GPIO_B       HAPTIC_GPIO_RIGHT    /* alias: motor B = right   */
 #define HAPTIC_GPIO_C       HAPTIC_GPIO_LEFT     /* alias: motor C = left    */
@@ -132,16 +139,27 @@
  *   output col 0 = left of body
  *   output col N-1 = right of body
  * If the rendered view is wrong, flip this to 90, 180, 270, or 0. */
-#define MOUNT_ROTATION_DEG  270
+/* ⚠ 2026-08-16: was 270 for the old stacked top/bottom mounting. The pod is
+ * now the left/right ±22.5° pair; the Stage-3 calibration consumed the raw
+ * grid with NO rotation and solved within ~1° of CAD, so raw order is already
+ * body-sane. Set 0; VERIFY with the phone/desktop viewer on first flash. */
+#define MOUNT_ROTATION_DEG  0
 
 /* Optical-axis pitch below horizontal when helmet is worn level (degrees).
- * Measured by wall-stare calibration on 2026-05-25 with sensor at 73",
- * wall at 32". Used to convert slant distance per zone to body-frame
- * forward distance for the obstacle-alert logic (so a floor obstacle close
- * to the body triggers the alert even though its slant distance is large).
- * Raw DATA: stream is NOT affected -- that stays as raw slant. */
-#define MOUNT_PITCH_DEG     30.0f    /* bottom/old sensor: mounted ~30 deg DOWN (was 20) */
-#define MOUNT_PITCH_DEG_TOP (-5.0f)  /* top/new sensor: mounted ~5 deg UP (negative = up) */
+ * 2026-08-16: BOTH sensors are in the ±22.5° yaw pair with the whole group
+ * tilted 22.5° DOWN (CAD-verified to 0.003°), so both use the same pitch.
+ * Used to convert the sensor's reported distance to body-frame forward
+ * distance for the obstacle-alert logic. Raw DATA: stream is NOT affected.
+ *
+ * ⚠ DISTANCE SEMANTICS (verified 2026-08-16 against 23 planar poses + ST
+ * staff on the record): distance_mm is the PERPENDICULAR (optical-axis Z)
+ * distance, NOT slant range along the zone ray. The radial→perpendicular
+ * conversion happens ON-CHIP. See compute_row_cos_table() for the corrected
+ * projection math. */
+#define MOUNT_PITCH_DEG     22.5f    /* sensor A (wearer left): group tilt */
+#define MOUNT_PITCH_DEG_TOP 22.5f    /* sensor B (wearer right): same group tilt
+                                      * (name kept from the old top/bottom rig
+                                      * to avoid a risky mass rename) */
 #define MAX_GRID_SIDE       8
 
 /* â”€â”€ Display options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -169,7 +187,7 @@ static int s_retry_num = 0;
 static int g_client_socks[MAX_TCP_CLIENTS];
 static SemaphoreHandle_t g_client_mutex = NULL;
 
-/* Nearest valid zone FORWARD distance in mm (i.e. slant distance projected
+/* Nearest valid zone FORWARD distance in mm (i.e. perpendicular z projected
  * onto the body's horizontal forward axis using the per-row cosine table),
  * updated by ranging_task each frame. 32-bit reads/writes are atomic on
  * ESP32-S3, so no mutex needed. INT16_MAX = no valid zone yet. */
@@ -220,9 +238,18 @@ static const int16_t g_row_threshold_4x4[MAX_GRID_SIDE] = {
     0, 0, 0, 0,  /* unused at 4x4 */
 };
 
-/* Per-row cosine table: forward_distance = slant_distance * g_row_cos[row]
- * Built once at startup from MOUNT_PITCH_DEG + each row's elevation offset
- * from the optical axis. Row index is in body-frame (post-rotation). */
+/* Per-row projection table: forward_distance = distance_mm * g_row_cos[row].
+ * Built once at startup from MOUNT_PITCH_DEG + each row's elevation offset.
+ * Row index is in body-frame (post-rotation).
+ *
+ * 2026-08-16 FIX: distance_mm is PERPENDICULAR (z along the optical axis),
+ * not slant. The old factor cos(alpha+pitch) assumed slant and applied the
+ * zone-elevation correction to a value that never contained it — biasing
+ * outer rows short by up to ~8%. Correct factor for a perpendicular z:
+ *     forward = z * cos(alpha+pitch) / cos(alpha)
+ * (equivalently z * (cos(pitch) - tan(alpha)*sin(pitch))). The ±22.5° YAW of
+ * each sensor is deliberately ignored here: it scales forward by ~cos(22.5°),
+ * making alerts fire slightly EARLY, which is the safe direction. */
 static float g_row_cos[MAX_GRID_SIDE];
 
 /* Second (top/upward) sensor's per-row tables. Same structure as the bottom
@@ -238,7 +265,7 @@ static const int16_t g_row_threshold_top_4x4[MAX_GRID_SIDE] = {
 static int16_t g_row_threshold_top[MAX_GRID_SIDE];
 static float   g_row_cos_top[MAX_GRID_SIDE];
 
-/* Latest frame's forward-distance grid (rotation + slant compensation applied),
+/* Latest frame's forward-distance grid (rotation + pitch projection applied),
  * 64 zones max. -1 = invalid. Read by /api/status web handler. */
 static volatile int16_t g_latest_forward[MAX_GRID_SIDE * MAX_GRID_SIDE];
 /* Latest frame's raw per-zone status code (0-255), in body-frame order.
@@ -261,8 +288,9 @@ static void compute_row_cos_table(int side)
          * Row N-1 (bottom) = looking DOWN from optical axis = positive. */
         float alpha_rad = ((float)r - (side - 1) / 2.0f)
                           * deg_per_zone * (float)M_PI / 180.0f;
-        float elev_rad  = alpha_rad + pitch_rad;
-        g_row_cos[r]    = cosf(elev_rad);
+        /* perpendicular-distance semantics: divide out the cos(alpha) the old
+         * slant model wrongly assumed was present (see table comment above) */
+        g_row_cos[r]    = cosf(alpha_rad + pitch_rad) / cosf(alpha_rad);
     }
 
     /* Pick the per-row threshold set for this resolution */
@@ -281,7 +309,8 @@ static void compute_top_cos_table(int side)
     for (int r = 0; r < side; r++) {
         float alpha_rad = ((float)r - (side - 1) / 2.0f)
                           * deg_per_zone * (float)M_PI / 180.0f;
-        g_row_cos_top[r] = cosf(alpha_rad + pitch_rad);
+        /* same perpendicular-distance fix as compute_row_cos_table() */
+        g_row_cos_top[r] = cosf(alpha_rad + pitch_rad) / cosf(alpha_rad);
     }
     const int16_t *src = (side == 8) ? g_row_threshold_top_8x8 : g_row_threshold_top_4x4;
     for (int r = 0; r < MAX_GRID_SIDE; r++) {
@@ -1060,9 +1089,10 @@ static void process_frame(const VL53L8CX_ResultsData *results, int side,
         int16_t forward_for_grid = -1;
         if (out_status) out_status[z_out] = status;
         if (results->nb_target_detected[z_src] > 0 && status_ok) {
-            int16_t slant = results->distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
-            if (slant > 0) {
-                int16_t forward = (int16_t)((float)slant * row_cos[r_out]);
+            /* distance_mm is PERPENDICULAR z (on-chip converted), not slant */
+            int16_t zdist = results->distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
+            if (zdist > 0) {
+                int16_t forward = (int16_t)((float)zdist * row_cos[r_out]);
                 forward_for_grid = forward;
                 if (forward < *nearest_forward) *nearest_forward = forward;
                 int16_t row_thresh = row_thr[r_out];
@@ -1095,9 +1125,10 @@ static void ranging_task(void *arg)
 {
     /* static = off the task stack (.bss). These structs are large; two of each
      * overflowed the 8 KB ranging_task stack as plain locals. */
-    static VL53L8CX_Configuration sensor;       /* bottom/old sensor - I2C_NUM_1 */
+    static VL53L8CX_Configuration sensor;       /* sensor A (wearer LEFT) - I2C_NUM_0 */
     static VL53L8CX_ResultsData   results;
-    static VL53L8CX_Configuration sensor_top;   /* top/new sensor - I2C_NUM_0 */
+    static VL53L8CX_Configuration sensor_top;   /* sensor B (wearer RIGHT) - I2C_NUM_1
+                                                 * (_top name kept from old rig) */
     static VL53L8CX_ResultsData   results_top;
     bool                   top_valid = false, top_online = false;
     uint8_t                is_alive  = 0;
@@ -1105,7 +1136,7 @@ static void ranging_task(void *arg)
 
     i2c_master_bus_config_t bus_cfg = {
         .clk_source           = I2C_CLK_SRC_DEFAULT,
-        .i2c_port             = I2C_NUM_1,
+        .i2c_port             = I2C_NUM_0,      /* sensor A bus (was NUM_1 pre-rewire) */
         .scl_io_num           = GPIO_SCL,
         .sda_io_num           = GPIO_SDA,
         .glitch_ignore_cnt    = 7,
@@ -1114,20 +1145,22 @@ static void ranging_task(void *arg)
     i2c_master_bus_handle_t bus_handle;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus_handle));
 
-    /* IMU presence probe on the BOTTOM bus too (I2C_NUM_1, SDA=GPIO1 SCL=GPIO2). */
+    /* IMU presence probe on sensor A's bus. The IMU is NOT wired as of
+     * 2026-08-16 (user removed it in the remount; pins TBD) — this probe is
+     * harmless and will start ACKing again once it's rewired somewhere shared. */
     {
         bool imu_a = (i2c_master_probe(bus_handle, 0x4A, 50) == ESP_OK);
         bool imu_b = (i2c_master_probe(bus_handle, 0x4B, 50) == ESP_OK);
         if (imu_a || imu_b)
-            ESP_LOGW(TAG, "IMU PROBE (bottom bus 1/2): BNO085 ACK at 0x%02X", imu_a ? 0x4A : 0x4B);
+            ESP_LOGW(TAG, "IMU PROBE (bus A, 6/7): BNO085 ACK at 0x%02X", imu_a ? 0x4A : 0x4B);
         else
-            ESP_LOGW(TAG, "IMU PROBE (bottom bus 1/2): no device at 0x4A/0x4B");
+            ESP_LOGW(TAG, "IMU PROBE (bus A, 6/7): no device at 0x4A/0x4B (expected — not wired)");
     }
 
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address  = VL53L8CX_DEFAULT_I2C_ADDRESS >> 1,
-        .scl_speed_hz    = VL53L8CX_MAX_CLK_SPEED,
+        .scl_speed_hz    = 400000,   /* match the IMU (400kHz) on this shared bus -> avoid per-xfer clock switch */
     };
 
     memset(&sensor, 0, sizeof(sensor));
@@ -1168,13 +1201,13 @@ static void ranging_task(void *arg)
              (TARGET_ORDER == VL53L8CX_TARGET_ORDER_CLOSEST) ? "CLOSEST" : "STRONGEST",
              STATUS_FILTER_STRICT ? "{5} strict" : "{5,6,9}");
 
-    /* Build the per-row slant->forward cosine table for the buzzer logic */
+    /* Build the per-row perpendicular->forward table for the buzzer logic */
     int side_init = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
     compute_row_cos_table(side_init);
-    ESP_LOGI(TAG, "Mount pitch %.1f deg DOWN -- slant->forward cosines:",
+    ESP_LOGI(TAG, "Mount pitch %.1f deg DOWN -- perpendicular->forward factors:",
              (double)MOUNT_PITCH_DEG);
     for (int r = 0; r < side_init; r++) {
-        ESP_LOGI(TAG, "  row %d: cos = %.4f  (forward = slant * %.4f)",
+        ESP_LOGI(TAG, "  row %d: factor = %.4f  (forward = z * %.4f)",
                  r, (double)g_row_cos[r], (double)g_row_cos[r]);
     }
 
@@ -1185,17 +1218,16 @@ static void ranging_task(void *arg)
     }
     ESP_LOGI(TAG, "Ranging started");
 
-    /* Bring up the TOP/new sensor on the second I2C bus (I2C_NUM_0). Separate
-     * bus keeps the default 0x29 address, no LPn juggling. Build its own cos +
-     * threshold tables (mounted ~5 deg UP vs the bottom's ~30 deg down). */
+    /* Bring up sensor B (wearer RIGHT) on the second I2C bus (I2C_NUM_1).
+     * Separate bus keeps the default 0x29 address, no LPn juggling. */
     compute_top_cos_table(side_init);
-    top_online = init_one_sensor(&sensor_top, I2C_NUM_0,
-                                 GPIO_SDA2, GPIO_SCL2, GPIO_PWREN2, "top");
+    top_online = init_one_sensor(&sensor_top, I2C_NUM_1,
+                                 GPIO_SDA2, GPIO_SCL2, GPIO_PWREN2, "B/right");
     if (top_online) {
-        ESP_LOGI(TAG, "Top sensor online (pitch %.1f deg, positive = up).",
+        ESP_LOGI(TAG, "Sensor B (right) online (pitch %.1f deg down).",
                  (double)MOUNT_PITCH_DEG_TOP);
     } else {
-        ESP_LOGW(TAG, "Top sensor NOT available - running bottom sensor only.");
+        ESP_LOGW(TAG, "Sensor B NOT available - running sensor A only.");
     }
 
     /* Haptic-pause switch: input + internal pull-up. HIGH = on, LOW(GND) = paused. */
@@ -1209,12 +1241,19 @@ static void ranging_task(void *arg)
     gpio_config(&sw_cfg);
     ESP_LOGI(TAG, "Haptic-pause switch on GPIO%d (HIGH=on, LOW=paused)", (int)HAPTIC_SWITCH_GPIO);
 
-    /* Bring up the IMU (BNO085) on the SHARED bottom bus at 0x4B. Its own task
-     * runs the SH-2 service loop; we just read the latest quaternion to stream. */
-    if (bno08x_start(bus_handle, 0x4B))
-        ESP_LOGI(TAG, "IMU (BNO085) task started on bottom bus @0x4B");
+    /* Bring up the IMU now -- AFTER the ToF firmware upload, NOT before. The hub
+     * self-starves if left unserviced during the ToF's ~1 s init, so a pre-ToF
+     * handshake leaves a starvation gap it never recovers from. Instead we
+     * handshake here (the SHTP soft-reset in hal_open re-advertises, so a present-
+     * but-idle ToF on the bus is fine) and immediately hand off to the dedicated
+     * ~500 Hz service task -- no gap. The shared mutex serialises IMU vs ToF reads
+     * on the bottom bus. */
+    SemaphoreHandle_t i2c1_mutex = xSemaphoreCreateMutex();
+    if (bno08x_init(bus_handle, 0x4A, -1, 3000))
+        ESP_LOGI(TAG, "IMU (BNO085) ready on bottom bus @0x4A");
     else
-        ESP_LOGW(TAG, "IMU start failed");
+        ESP_LOGW(TAG, "IMU not up -- proceeding ToF-only");
+    bno08x_run_task(i2c1_mutex);
 
     /* Stall fail-safe: consecutive no-fresh-frame iterations before forcing all
      * outputs OFF. ~40 iters x (5 ms wait + I2C poll) >= ~200 ms = several frame
@@ -1229,6 +1268,13 @@ static void ranging_task(void *arg)
         uint8_t rdy = 0;
         /* Poll both sensors; keep each one's latest frame. Recombine + drive
          * haptics whenever EITHER produced a fresh frame. */
+#ifndef IMU_SOLO_TEST
+#define IMU_SOLO_TEST 0   /* 0 = normal (both ToF sensors + IMU); 1 = IMU-only isolation */
+#endif
+#if !IMU_SOLO_TEST
+        /* The IMU service task shares this bottom bus -> take the mutex so neither
+         * side splits the other's transaction. (IMU is serviced by its own task.) */
+        xSemaphoreTake(i2c1_mutex, portMAX_DELAY);
         if (vl53l8cx_check_data_ready(&sensor, &rdy) == VL53L8CX_STATUS_OK && rdy) {
             if (vl53l8cx_get_ranging_data(&sensor, &results) == VL53L8CX_STATUS_OK) {
                 got = true; ++frame_num;
@@ -1240,6 +1286,24 @@ static void ranging_task(void *arg)
                 if (vl53l8cx_get_ranging_data(&sensor_top, &results_top) == VL53L8CX_STATUS_OK) {
                     top_valid = true; got = true;
                 }
+            }
+        }
+        xSemaphoreGive(i2c1_mutex);
+#endif
+        {   /* IMU orientation streamed EVERY iteration, BEFORE the ToF frame gate
+             * below -- the IMU keeps streaming even if the ToF stalls (the two are
+             * independent). Q:w,x,y,z,status,headacc_rad (status 0..3 = mag-fusion
+             * calibration accuracy, datasheet 3.1.5; headacc_rad = heading acc). */
+            float q[4];
+            if (bno08x_get_quat(q)) {
+                float head_acc = 0.0f;
+                uint8_t st = bno08x_get_status(&head_acc);
+                char qb[88];
+                int qn = snprintf(qb, sizeof(qb), "Q:%.4f,%.4f,%.4f,%.4f,%u,%.4f\n",
+                                  (double)q[0], (double)q[1], (double)q[2], (double)q[3],
+                                  (unsigned)st, (double)head_acc);
+                fputs(qb, stdout);
+                tcp_write(qb, qn);
             }
         }
         if (!got) {
@@ -1268,8 +1332,8 @@ static void ranging_task(void *arg)
 
         /* Update nearest-valid-zone FORWARD distance for the buzzer task.
          * Iterate in body-frame (output) order so each zone's row index r_out
-         * matches the per-row cosine table built in compute_row_cos_table().
-         * Forward distance = slant * cos(row_elevation + mount_pitch). */
+         * matches the per-row projection table from compute_row_cos_table().
+         * Forward = perpendicular_z * cos(row_elev+pitch)/cos(row_elev). */
         int side        = (SENSOR_RESOLUTION == VL53L8CX_RESOLUTION_8X8) ? 8 : 4;
         int total_zones = side * side;
         int16_t nearest_forward    = INT16_MAX;
@@ -1296,9 +1360,10 @@ static void ranging_task(void *arg)
             int16_t forward_for_grid = -1;
             g_latest_status[z_out] = status;
             if (results.nb_target_detected[z_src] > 0 && status_ok) {
-                int16_t slant = results.distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
-                if (slant > 0) {
-                    int16_t forward = (int16_t)((float)slant * g_row_cos[r_out]);
+                /* PERPENDICULAR z, not slant (2026-08-16 semantics fix) */
+                int16_t zdist = results.distance_mm[z_src * VL53L8CX_NB_TARGET_PER_ZONE];
+                if (zdist > 0) {
+                    int16_t forward = (int16_t)((float)zdist * g_row_cos[r_out]);
                     forward_for_grid = forward;
                     if (forward < nearest_forward) nearest_forward = forward;
                     int16_t row_thresh = g_row_threshold_mm[r_out];
@@ -1365,16 +1430,7 @@ static void ranging_task(void *arg)
         stream_distance_line(&results, SENSOR_RESOLUTION, "DATA:");
         if (top_valid) stream_distance_line(&results_top, SENSOR_RESOLUTION, "DATAT:");
 #endif
-        {   /* IMU orientation, when available: Q:w,x,y,z */
-            float q[4];
-            if (bno08x_get_quat(q)) {
-                char qb[72];
-                int qn = snprintf(qb, sizeof(qb), "Q:%.4f,%.4f,%.4f,%.4f\n",
-                                  (double)q[0], (double)q[1], (double)q[2], (double)q[3]);
-                fputs(qb, stdout);
-                tcp_write(qb, qn);
-            }
-        }
+        /* (IMU Q: line is emitted above, before the ToF frame gate.) */
 #if STREAM_SIGMA
         stream_sigma_line(&results, SENSOR_RESOLUTION);
 #endif

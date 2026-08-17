@@ -1,0 +1,762 @@
+                                                                                     UM3109
+
+                                                                                                               User manual
+
+      A guide for using the VL53L8CX, low-power, high-performance Time-of-Flight
+                                                                            multizone ranging sensor
+
+Introduction
+
+The purpose of this user manual is to explain how to handle the VL53L8X Time-of-Flight (ToF) sensor, using the ultra lite driver
+(ULD) API. It describes the main functions to program the device, the calibrations, and the output results.
+Based on ST's FlightSense technology, the VL53L8CX incorporates an efficient metasurface lens (DOE) placed on the laser
+emitter enabling the projection of a 45° x 45° square FoV onto the scene.
+Its multizone capability provides a matrix of 8x8 zones (64 zones) and can work at fast speeds (60 Hz) up to 400 cm.
+Thanks to the autonomous mode with programmable distance threshold, the VL53L8CX is perfect for any application requiring
+low-power user detection. ST's patented algorithms and innovative module construction allow the VL53L8CX to detect, in each
+zone, multiple objects within the FoV with depth understanding. ST histogram algorithms ensure cover glass crosstalk immunity
+beyond 60 cm.
+Like all Time-of-Flight (ToF) sensors based on ST's FlightSense technology, the VL53L8CX records, in each zone, an absolute
+distance regardless of the target color and reflectance.
+Housed in a miniature reflowable package that integrates a SPAD array, the VL53L8CX achieves the best ranging performance
+in various ambient lighting conditions, and for a wide range of cover glass materials.
+All of ST's ToF sensors integrate a VCSEL that emits a fully invisible 940 nm IR light, which is totally safe for the eyes (Class 1
+certification).
+
+                                                            Figure 1. VL53L8CX sensor module
+
+References
+VL53L8CX datasheet (DS14161).
+
+UM3109 - Rev 7 - April 2024                                                  www.st.com
+For further information contact your local STMicroelectronics sales office.
+                                                            UM3109
+
+                                            Acronyms and abbreviations
+
+1               Acronyms and abbreviations
+
+                Acronym/abbreviation                                       Definition
+                            DOE                                 diffractive optical element
+                             FoV
+                             I²C                                          field of view
+                                                           inter-integrated circuit (serial bus)
+                        Kcps/SPAD           Kilo-count per second per spad (unit used to quantify the
+                                                       number of photons into the SPAD array)
+                            RAM
+                             SCL                                 random-access memory
+                            SDA                                        serial clock line
+                           SPAD                                           serial data
+                             ToF
+                            ULD                              single photon avalanche diode
+                           VCSEL                                        Time-of-Flight
+                            VHV                                         ultra lite driver
+                            Xtalk
+                                                         vertical cavity surface emitting diode
+                                                                      very high voltage
+                                                                            crosstalk
+
+UM3109 - Rev 7                              page 2/21
+                                                                                           UM3109
+
+                                                                                 Functional description
+
+2               Functional description
+
+2.1             System overview
+
+                The VL53L8CX system is composed of a hardware module and the ultra lite driver software (VL53L8CX ULD)
+                running on a host (see figure below). The hardware module contains the ToF sensor. STMicroelectronics delivers
+                the software driver, which is referred to in this document as "the driver". This document describes the functions of
+                the driver, which are accessible to the host. These functions control the sensor and get the ranging data.
+
+                                       Figure 2. VL53L8CX system overview
+
+2.2             Effective orientation
+
+                The module includes a lens over the Rx aperture, which flips (horizontally and vertically) the captured image of
+                the target. Consequently, the zone identified as zone 0, in the bottom left of the SPAD array, is illuminated by a
+                target located at the top right-hand side of the scene.
+
+                                       Figure 3. VL53L8CX effective orientation
+
+UM3109 - Rev 7                                                                   page 3/21
+                                                                 UM3109
+
+                                                       Functional description
+
+2.3             Schematics and I²C/SPI configuration
+
+                The communication between driver and firmware is handled by the I²C or SPI. The maximum capability of the I²C
+                is 1 MHz, and the maximum capability of the SPI is 20 MHz. The implementation of each communication protocol
+                requires pull ups as described into the VL53L8CX datasheet.
+
+                The VL53L8CX device has a default I²C address of 0x52. However, it is possible to change the default address to
+                avoid conflicts with other devices, or to facilitate adding multiple VL53L8CX modules to the system for a greater
+                system FoV. The I²C address can be changed using the vl53l8cx_set_i2c_address() function. To use the SPI, the
+                multisensor is wired using an independent follower configuration (the NCS pin).
+
+                Figure 4. Multiple sensors on I²C bus
+
+UM3109 - Rev 7                                         page 4/21
+                                                             UM3109
+
+                                                   Functional description
+
+                Figure 5. Multiple sensors on SPI
+
+                To allow a device to have its I²C address changed without affecting others on the I²C bus, it is important to disable
+                the I²C communication of the devices not being changed. The procedure is as follows:
+                1. Power up the system as normal.
+                2. Pull down the LPn pin of the device that will not have its address changed.
+                3. Pull up the LPn pin of the device that has the I²C address changed.
+                4. Program the I²C address to the device using the function set_i2c_address() function.
+                5. Pull up the LPn pin of the device not being reprogrammed.
+                All devices should now be available on the I²C bus. Repeat the above steps for all the devices in the system that
+                require a new I²C address.
+
+UM3109 - Rev 7                                     page 5/21
+                                                                   UM3109
+
+                                                 Package content and data flow
+
+3               Package content and data flow
+
+3.1             Driver architecture and content
+
+                The VL53L8CX ULD package is composed of four folders. The driver is located in the folder /
+                VL53L8CX_ULD_API.
+
+                The driver is composed of mandatory and optional files. Optional files are plugins used to extend ULD features.
+                Each plugin starts with the word "vl53l8cx_plugin" (e.g vl53l8cx_plugin_xtalk.h). If the user does not want the
+                proposed plugins, they can be removed without impacting the other driver features. The following figure
+                represents the mandatory files and the optional plugins.
+
+                Figure 6. Driver architecture
+
+Note:           The user also needs to implement two files located in the /Platform folder. The proposed platform is an empty
+                shell, and must be filled with dedicated functions.
+
+                Platform.h file contains mandatory macros to use the ULD. All the file content is mandatory to correctly use the
+                ULD.
+
+UM3109 - Rev 7                                                                                               page 6/21
+                                                                                                           UM3109
+
+                                                                                         Package content and data flow
+
+3.2             Calibration flow
+
+Note:           Crosstalk (Xtalk) is defined as the amount of signal received on the SPAD array, which is due to VCSEL light
+                reflection inside the protective window (cover glass) added on top of the module. The VL53L8CX module is self-
+                calibrated, and can be used without any additional calibration.
+
+                Crosstalk calibration may be required if the module is protected by a cover glass. The VL53L8CX is immune to
+                crosstalk beyond 60 cm thanks to a histogram algorithm. However, at short distances below 60 cm, Xtalk can be
+                larger than the actual returned signal. This gives a false target reading or makes targets appear closer than they
+                really are. All crosstalk calibration functions are included in a Xtalk plugin (optional). The user needs to use the file
+                `vl53l8cx_plugin_xtalk'.
+
+                The crosstalk can be calibrated once, and data can be saved so it can be reused later. A target at a fixed
+                distance, with a known reflectance is required. The minimum distance required is 600 mm, and the target must
+                cover the whole FoV. Depending on the setup, the user can modify settings to adapt the crosstalk calibration, as
+                proposed in the following table.
+
+                                            Table 1. Available settings for calibration
+
+                           Setting          Min      Proposed by                         Max
+                                                 STMicroelectronics
+                      Distance [mm]                                                      3000
+                   Number of samples        600  600                                      16
+                                                                                          99
+                     Reflectance [%]        1    4
+
+                                            1    3
+
+                Increasing the number of samples increases the accuracy, but it also increases the time for calibration. The time
+                relative to the number of samples is linear, and values follow the approximate timeout:
+
+                ·  1 sample  1 second
+
+                ·  4 samples  2.5 seconds
+
+                ·  16 samples  8.5 seconds
+
+                The calibration is performed using the function vl53l8cx_calibrate_xtalk(). This function can be used at any time.
+                However, the sensor must be initialized first. The following figure represents the crosstalk calibration flow.
+
+                                            Figure 7. Crosstalk calibration flow
+
+UM3109 - Rev 7                                                                                 page 7/21
+                                                                                       UM3109
+
+                                                                     Package content and data flow
+
+3.3             Ranging flow
+
+                The following figure represents the ranging flow used to get measurements. Xtalk calibration and optional function
+                calls must be used before starting the ranging session. The get/set functions cannot be used during a ranging
+                session, and 'on-the-fly' programming is not supported.
+
+                              Figure 8. Ranging flow using VL53L8CX
+
+UM3109 - Rev 7                                                       page 8/21
+                                                                                       UM3109
+
+                                                                                  Available features
+
+4               Available features
+
+4.1             The VL53L8CX ULD API includes several functions, which allow the user to tune the sensor, depending on the
+4.2             use case. All the functions available for the driver are described in the following sections.
+
+Note:           Initialization
+
+4.3             Initialization must be done before using the VL53L8CX sensor. This operation requires the user to:
+                1. Power on the sensor (VDDIO, AVDD, CORE_1V8, and LPn pins set to High
+4.4             2. Call the function vl53l8cx_init(). The function copies the firmware (~84 Kbytes) to the module. This is done by
+
+                    loading the code over the I²C/SPI interface, and performing a boot routine to complete the initialization.
+
+                Sensor reset management
+
+                To reset the device, the following pins need to be toggled:
+                1. Set pins VDDIO, AVDD, and CORE_1V8 to low.
+                2. Wait 10 ms.
+                3. Set pins VDDIO, AVDD, and CORE_1V8 to high.
+
+                Reset the I²C communication by toggling the SPI_I2C_N pin.
+
+                Resolution
+
+                The resolution corresponds to the number of available zones. The VL53L8CX sensor has two possible
+                resolutions: 4x4 (16 zones) and 8x8 (64 zones). By default the sensor is programmed in 4x4.
+                The function vl53l8cx_set_resolution() allows the user to change the resolution. As the ranging frequency
+                depends on the resolution, this function must be used before updating the ranging frequency. Moreover, changing
+                the resolution also increases the traffic size on the I²C/SPI bus when the results are read.
+
+                Ranging frequency
+
+                Ranging frequency can be used to change the measurement frequency. As the maximum frequency is different
+                between 4x4 and 8x8 resolutions, use this functionality after choosing a resolution. The minimum and maximum
+                allowed values are listed in the following table.
+
+                            Table 2. Minimum and maximum ranging frequencies
+
+                Resolution          Min ranging frequency [Hz]  Max ranging frequency [Hz]
+
+                4x4                 1 (1)                                     60
+
+                8x8                 1                                         15
+
+                1. In continuous mode, there are so many signals that accuracy may be degraded at short distances if the frame rate is too
+                     low. To maintain maximum precision, avoid going below 5 Hz when measurements are taken at distances less than 5 cm.
+
+                Ranging frequency can be updated using the function vl53l8cx_set_ranging_frequency_hz(). By default, the
+                ranging frequency is set to 1 Hz.
+
+UM3109 - Rev 7                                                                    page 9/21
+                                                                                                   UM3109
+
+                                                                                              Available features
+
+4.5             Ranging mode
+
+                Ranging mode allows the user to choose between ranging in high performance or low power consumption.
+
+                There are two modes proposed:
+
+                ·  Continuous: The device continuously grabs frames with a ranging frequency defined by user. The VCSEL
+
+                   is enabled during all ranging, so maximum ranging distance and ambient immunity are better. This mode is
+
+                   advised for fast ranging measurements or high performances.
+
+                ·  Autonomous: This is the default mode. The device continuously grabs frames with a ranging frequency
+
+                   defined by the user. The VCSEL is enabled during a period defined by the user, using function
+
+                   vl53l8cx_set_integration_time_ms(). As the VCSEL is not always enabled, the power consumption is
+
+                   reduced. The benefits are more obvious with a reduced ranging frequency. This mode is advised for low
+
+                   power applications.
+
+                The ranging mode can be changed using function vl53l8cx_set_ranging_mode().
+
+4.6             Integration time
+
+                Integration time is a feature only available using the autonomous ranging mode (refer to Section 4.5: Ranging
+                mode). It allows the user to change the time while VCSEL is enabled. Changing integration time if the ranging
+                mode is set to continuous has no effect. The default integration time is set to 5 ms.
+
+                The effect of integration time is different for 4x4 and 8x8 resolutions. Resolution 4x4 is composed of one
+                integration time, and 8x8 resolution is composed of four integration times. The following figures represent the
+                VCSEL emission for both resolutions.
+
+                                               Figure 9. Integration time for 4x4 autonomous
+
+                                        Figure 10. Integration time for 8x8 autonomous
+
+Note:           The sum of all integration times + 1 ms overhead must be lower than the measurement period. Otherwise, the
+                ranging period is automatically increased.
+
+                The high SPAD sensitivity may detect multiple light paths when the device is used indoors, leading to false
+                targets. Therefore, it is highly recommended to use the strongest target to avoid false positives when the timing
+                budget is greater than 100 ms. For more information, refer to Section 4.9: Target order.
+
+UM3109 - Rev 7                                                                                                    page 10/21
+                                                                                                             UM3109
+
+                                                                                                        Available features
+
+4.7             Power modes
+
+Note:           Power modes can be used to reduce the power consumption when the device is not used. The VL53L8CX can
+                operate in one of the following power modes:
+4.8
+                ·  Wake-up: The device is set in HP idle (high power), waiting for instructions.
+
+                ·  Sleep: The device is set in LP idle (low power), the low power state. The device cannot be used until set in
+
+                   wake-up mode. This mode retains the firmware and the configuration.
+
+                ·  Deep sleep: The device is set in ultra-low power. In this mode, the sensor consumes a few microamps of
+
+                   current. However, the firmware, configuration, and calibration data are completely lost. The user needs to
+
+                   set the device in wake-up mode and reconfigure the sensor to start streaming.
+
+                The power mode can be changed using the function vl53l8cx_set_power_mode(). The default mode is wake-up.
+
+                If the user wants to change the power mode, the device must not be in a ranging state.
+
+                Sharpener
+
+                The signal returned from a target is not a clean pulse with sharp edges. The edges slope away and may affect the
+                distances reported in adjacent zones. The sharpener is used to remove some or all of the signal caused by a
+                veiling glare.
+
+                The example shown in the following figure represents a close target at 100 mm centered in the FoV, and another
+                target, further behind at 500 mm. Depending on the sharpener value, the close target may appear in more zones
+                than the real one.
+
+                             Figure 11. Example of scene using several sharpener values
+
+                Sharpener can be changed using the function vl53l8cx_set_sharpener_percent(). The allowed values are
+                between 0% and 99%. The default value is 5%.
+
+UM3109 - Rev 7                                                                                                        page 11/21
+                                                                                     UM3109
+
+                                                                                Available features
+
+4.9             Target order
+
+                The VL53L8CX can measure several targets per zone. Thanks to the histogram processing, the host is able to
+                choose the order of reported targets. There are two options:
+
+                ·  Closest: The closest target is the first reported
+
+                ·  Strongest: The strongest target is the first reported
+
+                The target order can be changed using the function vl53l8cx_set_target_order(). The default order is Strongest.
+
+                The example in the following figure represents the detection of two targets. One at 100 mm with a low reflectance,
+                and one at 700 mm with a high reflectance.
+
+                              Figure 12. Example of histogram with two targets
+
+4.10            Multiple targets per zone
+
+Note:           The VL53L8CX can measure up to four targets per zone. The user can configure the number of targets returned
+                by the sensor.
+Note:
+                The minimum distance between two targets to be detected is 600 mm.
+4.11            The selection is not possible from the driver; it has to be done in the `platform.h' file. The macro VL53L8CX_NB_
+                TARGET_PER_ZONE needs to be set to a value between 1 and 4. The target order described in
+                Section 4.9: Target order directly impacts the order of detected target. By default, the sensor only outputs a
+                maximum of one target per zone.
+
+                An increased number of targets per zone increases the required RAM size.
+
+                Xtalk margin
+
+                The Xtalk margin is an additional feature only available using the plugin Xtalk. The .c and .f files
+                'vl53l8cx_plugin_xtalk' need to be used.
+                The margin is used to change the detection threshold when a cover glass is present on the top of the sensor. The
+                threshold can be increased to ensure that the cover glass is never detected, after setting crosstalk calibration
+                data. For example, the user can run a crosstalk calibration on one single device, and reuse the same calibration
+                data for all other devices. The Xtalk margin can be used to tune the crosstalk correction. The figure below
+                represents the Xtalk margin.
+
+                                                                           Figure 13. Xtalk margin
+
+UM3109 - Rev 7                                                                  page 12/21
+                                                                                                              UM3109
+
+                                                                                                         Available features
+
+4.12            Detection thresholds
+
+4.13            In addition to the regular ranging capabilities, the sensor can be programmed to detect an object under certain
+4.14            predefined criteria. This feature is available using the plugin "detection thresholds", which is an option not
+                included by default in the API. The files called `vl53l8cx_plugin_detection_thresholds' need to be used.
+
+                The feature can be used to trigger an interrupt to pin A1 (INT) when conditions defined by the user are met. There
+                are three possible configurations:
+
+                ·  Resolution 4x4: using one threshold per zone (a total of 16 thresholds)
+
+                ·  Resolution 4x4: using two thresholds per zone (a total of 32 thresholds)
+
+                ·  Resolution 8x8: using one threshold per zone (a total of 64 thresholds)
+
+                Whatever the configuration used, the procedure for creating thresholds and the RAM size are the same. For each
+                threshold combination, several fields need to be filled:
+
+                ·  Zone id: id of the selected zone (refer to Section 2.2: Effective orientation)
+
+                ·  Measurement: measurement to catch (distance, signal, number of SPADs, ...)
+
+                ·  Type: windows of measurements (in windows, out of windows, below low threshold, ...)
+
+                ·  Low threshold: low threshold user for trigger. User does not need to set the format, it is automatically
+
+                   handled by the API.
+
+                ·  High threshold: high threshold user for trigger. The user does not need to set the format; it is automatically
+
+                   handled by the API.
+
+                ·  Mathematic operation: only used for 4x4 ­ 2 threshold combinations per zone. The user can set a
+
+                   combination using several thresholds in one zone.
+
+                Interrupt autostop
+
+                The interrupt autostop feature is used to abort the ranging session during a measurement. By default, the sensor
+                cannot be stopped during a measurement, because the frame measurements need to be completed. However, by
+                using autostop, the frame measurements are aborted when an interrupt is triggered.
+
+                The autostop feature is useful when it is combined with a detection threshold. When a target is detected, the
+                current measurement is automatically aborted. Autostop can be used in a customer state machine to switch
+                quickly to another sensor configuration.
+
+                An interrupt autostop feature can be enabled by using the function vl53l8cx_set_detection_threshold_auto_stop().
+                After a measurement is aborted, it is recommended to stop the sensor by using the function
+                vl53l8cx_stop_ranging().
+
+                Motion indicator
+
+                The VL53L8CX sensor has an embedded firmware feature allowing motion detection in a scene. The motion
+                indicator is computed between sequential frames. This option is available using the plugin
+                `vl53l8cx_plugin_motion_indicator'.
+
+                The motion indicator is initialized using the vl53l8cx_motion_indicator_init() function. To change the sensor
+                resolution, update the motion indicator resolution using the dedicated function:
+                vl53l8cx_motion_indicator_set_resolution().
+
+                The user may also change the minimum and maximum distances for detecting motion. The difference between
+                the minimum and maximum distances cannot be greater than 1500 mm. By default, distances are initialized with
+                values between 400 mm and 1500 mm.
+
+                Results are stored in the field `motion_indicator'. In this field, the array `motion' gives a value containing the
+                motion intensity per zone. A high value indicates high motion variation between frames. A typical movement gives
+                a value between 100 and 500. This sensitivity depends on the integration time, target distance, and target
+                reflectance.
+
+                An ideal combination for low power applications is the use of the motion indicator with autonomous ranging mode,
+                and detection thresholds programmed on the motion. This allows detection of movement variations in the FoV
+                with minimum power consumption.
+
+UM3109 - Rev 7                                                                                                      page 13/21
+4.15                                                                                                                   UM3109
+
+                                                                                                                                                                 Available features
+
+                External synchronization pin
+
+                An external trigger source can be used to synchronize the ToF ranging acquisitions for applications where there
+                may be interference concerns. Such interferences include multiple VL53L8CX devices or IR image sensors within
+                close proximity, or any other electronics emitting 940 nm IR light. When the external synchronization is enabled,
+                the SYNC pin is configured as an input and the VL53L8CX waits for a rising edge on the SYNC pin to start the
+                next single ranging acquisition. To use this feature, the SYNC pin (B1) must be connected to an external trigger
+                source as described in the product datasheet.
+                There are no specific timing requirements for using the external synchronization. However, the VL53L8CX ranging
+                frequency should be set higher than the external trigger signal frequency to ensure that each ranging acquisition
+                has completed prior to the next external trigger event. The timing of the synchronized single ranging acquisition
+                period follows the ranging frequency in continuous mode, or the integration time in autonomous mode, as defined
+                by the user.
+                The external synchronization can be enabled or disabled by using the function
+                vl53l8cx_set_external_sync_pin_enable(). Ranging can be started using the function vl53l8cx_start_ranging().
+                The sensor waits for the external SYNC signal to trigger the next measurement process. To stop the sensor, the
+                user must assert a stop condition in the system, and then on the next external SYNC pin assertion, the
+                vl53l8cx_stop_ranging() function should be executed.
+                A typical flow for using the external synchronization pin is shown below in Figure 14. External synchronization
+                flow.
+
+                                                               Figure 14. External synchronization flow
+
+UM3109 - Rev 7  page 14/21
+                                                                                                        UM3109
+
+                                                                                                   Available features
+
+4.16            Periodic temperature compensation
+
+                The ranging performance is affected by temperature variations. The VL53L8CX sensor embeds a temperature
+                compensation that is calibrated once when streaming starts. However, if the temperature evolves, the
+                compensation may not be aligned with the new temperature. To avoid this issue, the customer can run a periodic
+                temperature compensation by using an auto VHV. The periodic temperature calibration takes a few milliseconds
+                to run. The user can define the period.
+
+                To use this feature, the customer needs to:
+
+                ·  Call the function vl53l8cx_set_VHV_repeat_count().
+
+                ·  Then, give the number of frames between every new calibration as the argument.
+
+                If the argument is 0, the compensation is disabled.
+
+UM3109 - Rev 7                                                                                     page 15/21
+                                                                                       UM3109
+
+                                                                                    Ranging results
+
+5               Ranging results
+
+5.1             Available data
+
+Note:           An extensive list of target and environment data may be output during ranging activities. The following table
+                describes the parameters available to the user.
+5.2
+                                   Table 3. Available output using VL53L8CX sensor
+
+                      Element        Nb bytes (RAM)         Unit                             Description
+                Ambient per SPAD                        Kcps/SPAD
+                                             256                       Ambient rate measurement performed on the
+                Number of targets                           None      SPAD array, with no active photon emission, to
+                      detected                64                       measure the ambient signal rate due to noise.
+                                                            None
+                Number of SPADs              256        Kcps/SPAD     Number of detected targets in the current zone.
+                       enabled                           Millimeter    This value should be the first one to check to
+                                     256 x nb targets    Millimeter               know a measurement validity.
+                 Signal per SPAD       programmed
+                   Range sigma                              None         Number of SPADs enabled for the current
+                      Distance       128 x nb targets     Percent        measurement. A far or low reflective target
+                   Target status       programmed
+                    Reflectance                             None                      activates more SPADs.
+                                     128 x nb targets
+                 Motion indicator      programmed                    Quantity of photons measured during the VCSEL
+                                      64 x nb targets                                            pulse.
+                                       programmed
+                                                                       Sigma estimator for the noise in the reported
+                                   64 x number targets                                     target distance.
+                                       programmed
+                                                                                           Target distance
+                                             140
+                                                                     Measurements validity. See Section 5.5: Results
+                                                                              interpretation for more information.
+
+                                                                           Estimated target reflectance in percent
+
+                                                                     Structure containing the motion indicator results.
+                                                                      The field 'motion' contains the motion intensity.
+
+                For several elements (signal per spad, sigma, ...) access to data is different if the user has programmed more
+                than one target per zone (see Section 4.10: Multiple targets per zone). See example codes for more information.
+
+                Customize output selection
+
+                By default, all VL53L8CX outputs are enabled. If needed, the user can disable some sensor outputs.
+
+                Disabling measurements is not available on the driver; it must be performed in the `platform.h' file. The user can
+                declare the following macros to disable outputs:
+
+                 #define VL53L8CX_DISABLE_AMBIENT_PER_SPAD
+                 #define VL53L8CX_DISABLE_NB_SPADS_ENABLED
+                 #define VL53L8CX_DISABLE_NB_TARGET_DETECTED
+                 #define VL53L8CX_DISABLE_SIGNAL_PER_SPAD
+                 #define VL53L8CX_DISABLE_RANGE_SIGMA_MM
+                 #define VL53L8CX_DISABLE_DISTANCE_MM
+                 #define VL53L8CX_DISABLE_TARGET_STATUS
+                 #define VL53L8CX_DISABLE_REFLECTANCE_PERCENT
+                 #define VL53L8CX_DISABLE_MOTION_INDICATOR
+
+                Consequently, the fields are not declared in the results structure, and the data is not transferred to the host. The
+                RAM size and I²C/SPI size are reduced.
+
+                To ensure data consistency, ST always recommends keeping the `number of targets detected' and `target status'
+                enabled. This filters the measurements depending on the target status (refer to Section 5.5: Results
+                interpretation).
+
+UM3109 - Rev 7                                                                      page 16/21
+                                                                                                             UM3109
+
+                                                                                                          Ranging results
+
+5.3             Getting ranging results
+
+                During the ranging session, there are two ways to know if new ranging data is available:
+
+                ·  Polling mode: Continuously uses function vl53l8cx_check_data_ready(). It detects a new stream count
+
+                   returned by the sensor.
+
+                ·  Interrupt mode: Waits for an interrupt raised on pin A1 (INT). The interrupt is automatically cleared after
+
+                   ~100 s.
+
+                When new data is ready, the results can be read using function vl53l8cx_get_ranging_data(). It returns an
+                updated structure containing all selected output. As the device is asynchronous, there is no interrupt to clear to
+                continue the ranging session.
+
+                This feature is available for both continuous and autonomous ranging modes.
+
+5.4             Using raw firmware format
+
+                After transferring the ranging data through the I²C/SPI, there is a conversion between the firmware format and the
+                host format. This operation is typically performed to have a ranging distance in millimeters as a default output of
+                the sensor. If the user wants to use the firmware format, the following macro must be defined in the platform file:
+                VL53L8CX
+
+                #define VL53L8CX_USE_RAW_FORMAT
+
+5.5             Results interpretation
+
+                The data returned by the VL53L8CX can be filtered to take into account the target status. The status indicates the
+                measurement validity. The full status list is described in the following table.
+
+                   Target status            Table 4. List of available target status
+                           0
+                           1                                                                  Description
+                           2                                                      Ranging data are not updated
+                           3                                                   Signal rate too low on SPAD array
+                           4
+                           5                                                                  Target phase
+                           6                                                          Sigma estimator too high
+                           7                                                          Target consistency failed
+                           8
+                           9                                                                  Range valid
+                          10                                       Wrap around not performed (typically the first range)
+                          11
+                          12                                                           Rate consistency failed
+                          13                                                Signal rate too low for the current target
+                                                             Range valid with large pulse (may be due to a merged target)
+                         255                                       Range valid, but no target detected at previous range
+
+                                                                                 Measurement consistency failed
+                                                                      Target blurred by another one, due to sharpener
+                                                Target detected but inconsistent data. Frequently happens for secondary targets.
+                                                           No target detected (only if number of targets detected is enabled)
+
+                To have consistent data, the user needs to filter invalid target status. To give a confidence rating, a target with
+                status 5 is considered as 100% valid. A status of 6 or 9 can be considered with a confidence value of 50%. All
+                other statuses are below the 50% confidence level.
+
+UM3109 - Rev 7                                                                                            page 17/21
+                                                                                         UM3109
+
+                                                                                      Ranging results
+
+5.6             Driver errors
+
+Note:           When an error occurs using the VL53L8CX sensor, the driver returns a specific error. The following table lists the
+                possible errors.
+
+                Target status  Table 5. List of errors available using the driver
+                        0
+                                                                                         Description
+                      127                                                                   No error
+
+                      255                                            The user programmed an incorrect setting
+                     other                                    (unknown resolution, ranging frequency too high, ...)
+                                                          Major error. Usually a timeout error, due to an I²C/SPI error.
+
+                                                                  Combination of multiple errors described above
+
+                The host can implement more error codes by using the platform files.
+
+UM3109 - Rev 7                                                                                                            page 18/21
+                                                                                      UM3109
+
+                                                                                   Ranging results
+
+Revision history                               Table 6. Document revision history
+
+                                       Date    Version                                                Changes
+                                  13-Jan-2023      1    Initial release
+                                  27-Jan-2023      2    Updated document title.
+                                  10-Mar-2023      3    Updated metadata in the footer.
+                                  12-Oct-2023      4    Updated Section 4.15: External synchronization pin.
+                                  05-Jan-2024      5    Section 4.6: Integration time: added a note regarding false targets.
+                                                        Section 4.7: Power modes: added deep-sleep mode.
+                                  21-Feb-2024      6    Added VHV (very high voltage) to Section 1: Acronyms and abbreviations.
+                                                        Section 2.3: Schematics and I²C/SPI configuration: changed "slave" to
+                                  04-Apr-2024      7    "follower".
+                                                        Added Section 4.16: Periodic temperature compensation
+                                                        Table 2. Minimum and maximum ranging frequencies: Added note.
+
+UM3109 - Rev 7                                                                     page 19/21
+                                                                                                                     UM3109
+
+                                                                                                                                                                                    Contents
+
+Contents
+
+1 Acronyms and abbreviations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+2 Functional description . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+
+       2.1 System overview . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+       2.2 Effective orientation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+       2.3 Schematics and I²C/SPI configuration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+3 Package content and data flow. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+       3.1 Driver architecture and content . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 6
+       3.2 Calibration flow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+       3.3 Ranging flow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+4 Available features . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+       4.1 Initialization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+       4.2 Sensor reset management. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+       4.3 Resolution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+       4.4 Ranging frequency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+       4.5 Ranging mode . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+       4.6 Integration time . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+       4.7 Power modes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+       4.8 Sharpener . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+       4.9 Target order . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+       4.10 Multiple targets per zone . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+       4.11 Xtalk margin . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+       4.12 Detection thresholds . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+       4.13 Interrupt autostop . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+       4.14 Motion indicator . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 13
+       4.15 External synchronization pin . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+       4.16 Periodic temperature compensation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+5 Ranging results. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .16
+       5.1 Available data . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+       5.2 Customize output selection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+       5.3 Getting ranging results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+       5.4 Using raw firmware format . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+       5.5 Results interpretation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17
+       5.6 Driver errors . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+Revision history . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .19
+
+UM3109 - Rev 7  page 20/21
+                                                                                                                    UM3109
+
+                                                                           IMPORTANT NOTICE ­ READ CAREFULLY
+STMicroelectronics NV and its subsidiaries ("ST") reserve the right to make changes, corrections, enhancements, modifications, and improvements to ST
+products and/or to this document at any time without notice. Purchasers should obtain the latest relevant information on ST products before placing orders. ST
+products are sold pursuant to ST's terms and conditions of sale in place at the time of order acknowledgment.
+Purchasers are solely responsible for the choice, selection, and use of ST products and ST assumes no liability for application assistance or the design of
+purchasers' products.
+No license, express or implied, to any intellectual property right is granted by ST herein.
+Resale of ST products with provisions different from the information set forth herein shall void any warranty granted by ST for such product.
+ST and the ST logo are trademarks of ST. For additional information about ST trademarks, refer to www.st.com/trademarks. All other product or service names
+are the property of their respective owners.
+Information in this document supersedes and replaces information previously supplied in any prior versions of this document.
+
+                                                                          © 2024 STMicroelectronics ­ All rights reserved
+
+UM3109 - Rev 7  page 21/21
+

@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "C:\esp-projects\vl53l8cx_esp32\camera\capture_calib.py", line 188, in <module>
+    # how much of the frame the board spans - a proxy for distance variety
+            ^^^^^^^^^^^
+AttributeError: 'numpy.ndarray' object has no attribute 'ptp'
