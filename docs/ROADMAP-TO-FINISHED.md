@@ -12,8 +12,11 @@ value from the **haptics loop**, not the overlay — the overlay is our instrume
 
 ### A1. Firmware consolidation (the unglamorous critical path)
 > **User decision 2026-08-16: ToF wiring is FINAL** (A=6/7/4, B=15/16/5 — do not
-> propose moving it). Buzzer/motors/IMU are NOT wired yet; user will supply their
-> pins when he wires them. Blocked until then — do CV fusion first.
+> propose moving it).
+> **2026-08-17: IMU wired and verified** (0x4A on bus A, shared 6/7).
+> **2026-08-17: hardware buzzer CANCELLED** — the compute device's digital
+> beeper (ticker + cue WAVs in cv_fusion) replaces it. Only the 3 motors remain
+> to wire; user will supply pins.
 - [ ] Port new pin map into helmet firmware (`main.c:50-56`): ToF on 6/7/4 + 15/16/5
 - [ ] Buzzer + 3 motors on pins TBD (user to supply); re-verify with the wave test
 - [ ] **Fix the cos-table double-correction** — distance is already perpendicular;
