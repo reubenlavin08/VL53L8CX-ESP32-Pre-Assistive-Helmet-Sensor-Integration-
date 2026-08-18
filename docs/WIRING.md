@@ -306,3 +306,32 @@ ranging task, so wiring everything at once means a single fault silences all of 
 6. **Three uncommitted files** — `main/main.c`, `components/bno08x/bno08x.c`,
    `components/bno08x/include/bno08x.h` sit modified on top of `cafc9f5`. **They
    are the only copy of the working I²C IMU driver.**
+
+---
+
+# 6. Motors + switch (added 2026-08-17, ALL VERIFIED)
+
+## 3× ERM coin motors — 2N3904 low-side, 1 kΩ base, NO flyback diode (user's call)
+Per motor: GPIO →1kΩ→ base (middle) | emitter (left) → GND | collector (right)
+→ motor → 3.3 V. 2N3904 flat face toward you, legs down = E-B-C.
+
+| GPIO | physical position (ID-verified by pulse test, mounted) |
+|---|---|
+| **17** | LEFT temple |
+| **18** | CENTER forehead |
+| **8**  | RIGHT temple |
+
+Firmware: HAPTIC_GPIO_CENTER=18, RIGHT=8, LEFT=17 (main.c, flashed via OTA).
+
+## Pause switch (SPDT)
+COM (middle) → **GPIO 3** · one outer → GND · other outer unconnected.
+Internal pullup; toward-GND = motors paused. Overrides `/api/haptics` web
+toggle every frame. GPIO 3 is a strapping pin but safe (JTAG role needs an
+unburned eFuse).
+
+## Remote control endpoints (no reflash needed)
+- `GET /api/motor?i=0..2&duty=0..255&ms=20..2000` — manual pulse (i:
+  0=CENTER/18, 1=RIGHT/8, 2=LEFT/17 after the 2026-08-17 mapping fix)
+- `GET /api/haptics?en=0|1` — software mute
+- OTA: `curl --data-binary @build/vl53l8cx_esp32.bin http://<ip>/update`
+  (saved the session twice when USB dropped)

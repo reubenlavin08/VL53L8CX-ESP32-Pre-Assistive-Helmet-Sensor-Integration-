@@ -4,6 +4,59 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-17 (evening) — Full hardware complete: motors + switch wired, ID'd, mounted
+
+**Every subsystem is now wired and verified.** The helmet hardware is done.
+
+### Motors (3× ERM coin, 2N3904 low-side, 1 kΩ base, no flyback — user's call)
+- Wired to "the next 3 header pins after the ToFs" = **GPIO 17, 18, 8**.
+- **Bug: GPIO 17 buzzed non-stop** — the old pause-switch code still configured
+  17 as input+pullup, fighting the motor output. Switch code compiled out →
+  fixed. Lesson: a reassigned pin's OLD role lives on until you grep for it.
+- Then "two motors buzzing like crazy" = NOT a bug — the directional haptics
+  were live and the desk was inside alert range. The system worked before we
+  believed it.
+- **Overheating scare handled remotely**: exploited the new `/api/motor`
+  manual-hold to spam zero-duty pulses as an improvised kill switch while the
+  real mute endpoint was built and flashed.
+- **New firmware endpoints** (no more reflash-per-test):
+  `GET /api/motor?i=0..2&duty=0..255&ms=20..2000` (manual pulse, overrides the
+  ranging drive during the pulse) and `GET /api/haptics?en=0|1` (software mute).
+- **Mounted-position ID (pulse test, user feedback): GPIO 17 = LEFT temple,
+  18 = CENTER forehead, 8 = RIGHT temple.** Firmware's guess was wrong on all
+  three; defines corrected and **OTA-flashed over WiFi** (USB kept dropping —
+  OTA saved the session twice).
+
+### Pause switch
+- SPDT toggle: COM → **GPIO 3** (strapping pin, safe — JTAG role needs an
+  unburned eFuse), outer → GND, internal pullup. Verified live: 4 clean
+  transitions in `/api/status.haptics` while flipping.
+- With the switch enabled it overrides the web toggle every frame.
+
+### Pre-glue diagnostic (all PASS)
+- Boot: A + B + IMU + WiFi + switch all up. Streams: both ToF at 28 Hz, IMU
+  quats at 28 Hz (emitted per ranging frame), quaternion norm 1.0000, cal
+  status 3/3, sample noise 0.5°. Zone-health snapshot was meaningless (sensors
+  were lying against the desk reading 5–23 mm) — rerun facing open space
+  before trusting field quality. Drift number (4.5°/min) also needs an
+  untouched retest.
+
+### Haptic contact issue (open)
+Motor contact area on the forehead too small. Plan: rigid puck per motor to
+spread vibration + foam preload behind it; couple to skin, DECOUPLE from
+shell (shell radiates audible buzz next to the ears — masking risk).
+
+### Open next session
+1. Confirm the corrected motor order end-to-end (should pulse centre→right→left
+   as channels 0→1→2 post-OTA; user hadn't confirmed before shutdown).
+2. Re-run zone-health + IMU drift diagnostics with the pod facing open space.
+3. `imu_mount_cal.py` — STILL not run; gates all IMU features.
+4. Motor puck/foam mounting; v11 column→motor mapping redesign for the
+   left/right sensor pair.
+5. Dewarp A/B verdict (wardrobe-TV test) still unreported.
+
+---
+
 ## 2026-08-17 — Helmet firmware flashed, IMU live, unified viewer, voice-guided leveling
 
 ### Firmware flashed + full stack verified
