@@ -66,7 +66,17 @@
 #define BUZZER_GPIO         GPIO_NUM_40  /* PROVISIONAL — not wired */
 /* Debug pause switch: 3-pin SPDT, COM->this GPIO, one outer->GND, third pin
  * unconnected. Internal pull-up => HIGH = haptics ON, LOW (GND side) = paused. */
-#define HAPTIC_SWITCH_GPIO  GPIO_NUM_17
+/* 2026-08-17: SWITCH DISABLED — GPIO 17 now drives the CENTER motor, and the
+ * switch's input+pullup config was fighting the motor output (motor buzzed
+ * continuously). The physical switch is not wired. Re-enable on a FREE pin
+ * if it ever comes back. */
+/* 2026-08-17 evening: switch RE-WIRED to GPIO 3 (next header pin after the
+ * motors). COM(middle)->GPIO3, one outer->GND, internal pullup. GPIO3 is a
+ * strapping pin but its JTAG-select role needs an eFuse burn we don't have —
+ * safe as plain input. NOTE: when enabled, the physical switch OVERRIDES the
+ * /api/haptics software toggle every frame. */
+#define HAPTIC_SWITCH_ENABLED 1
+#define HAPTIC_SWITCH_GPIO  GPIO_NUM_3
 #define BUZZER_TEST         1            /* set 0 to silence */
 /* Haptic motor bench test (Option B): when 1, app_main skips sensor ranging
  * and runs a motor ramp on HAPTIC_GPIO, but KEEPS WiFi + OTA alive so you can
@@ -81,12 +91,16 @@
  * to ID the other two. */
 #define HAPTIC_ID_MODE      0
 #define HAPTIC_ID_GPIO      HAPTIC_GPIO_RIGHT   /* pulse this one to find it */
-/* Old verified mapping (2026-05-28) was 7=CENTER, 15=RIGHT, 16=LEFT — those
- * pins are now the ToF buses. PROVISIONAL parking on freed pins; motors are
- * NOT wired. Re-run the single-pin ID pulse when the user rewires them. */
-#define HAPTIC_GPIO_CENTER  GPIO_NUM_1   /* PROVISIONAL — not wired */
-#define HAPTIC_GPIO_RIGHT   GPIO_NUM_2   /* PROVISIONAL — not wired */
-#define HAPTIC_GPIO_LEFT    GPIO_NUM_41  /* PROVISIONAL — not wired */
+/* 2026-08-17: motors wired to "the next 3 consecutive header pins after the
+ * ToFs" = GPIO 17, 18, 8 (DevKit left column: ...15,16,17,18,8...). WHICH
+ * motor sits at which temple is unknown until the /api/motor ID test runs —
+ * the CENTER/RIGHT/LEFT assignment below is a guess to be corrected then.
+ * (GPIO 17 was reserved for the pause switch; switch is unwired, reassigned.) */
+/* ✅ ID-VERIFIED 2026-08-17 19:15 by pulse test with motors mounted:
+ *    GPIO 17 = LEFT temple, GPIO 18 = CENTER forehead, GPIO 8 = RIGHT temple */
+#define HAPTIC_GPIO_CENTER  GPIO_NUM_18
+#define HAPTIC_GPIO_RIGHT   GPIO_NUM_8
+#define HAPTIC_GPIO_LEFT    GPIO_NUM_17
 #define HAPTIC_GPIO_A       HAPTIC_GPIO_CENTER   /* alias: motor A = center  */
 #define HAPTIC_GPIO_B       HAPTIC_GPIO_RIGHT    /* alias: motor B = right   */
 #define HAPTIC_GPIO_C       HAPTIC_GPIO_LEFT     /* alias: motor C = left    */
@@ -890,6 +904,64 @@ static esp_err_t health_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── Manual motor pulse endpoint ─────────────────────────────────────────────
+ * GET /api/motor?i=0&duty=200&ms=400 pulses ONE motor from the host — used by
+ * the ID test and any future bench control, no reflash needed. While a manual
+ * pulse runs (plus a grace period), haptic_apply() is held off so the ranging
+ * loop can't overwrite the duty mid-pulse. i: 0=A/center 1=B/right 2=C/left
+ * (the GPIO aliases; PHYSICAL location is what the ID test determines). */
+static volatile int64_t g_manual_hold_until_us = 0;
+
+static void haptic_set(int i, uint8_t duty);   /* fwd decl (defined below) */
+
+static esp_err_t motor_get_handler(httpd_req_t *req)
+{
+    char q[96] = {0}, val[16];
+    int i = -1, duty = 180, ms = 400;
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "i", val, sizeof(val)) == ESP_OK)    i = atoi(val);
+        if (httpd_query_key_value(q, "duty", val, sizeof(val)) == ESP_OK) duty = atoi(val);
+        if (httpd_query_key_value(q, "ms", val, sizeof(val)) == ESP_OK)   ms = atoi(val);
+    }
+    if (i < 0 || i >= HAPTIC_N) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "{\"err\":\"i must be 0..2\"}\n");
+        return ESP_OK;
+    }
+    if (duty < 0) duty = 0;
+    if (duty > 255) duty = 255;
+    if (ms < 20) ms = 20;
+    if (ms > 2000) ms = 2000;
+    g_manual_hold_until_us = esp_timer_get_time() + ((int64_t)ms + 250) * 1000;
+    haptic_set(i, (uint8_t)duty);
+    vTaskDelay(pdMS_TO_TICKS(ms));
+    haptic_set(i, 0);
+    char out[64];
+    snprintf(out, sizeof(out), "{\"pulsed\":%d,\"duty\":%d,\"ms\":%d}\n", i, duty, ms);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, out);
+    return ESP_OK;
+}
+
+/* GET /api/haptics?en=0|1 — software motor mute. No query = report state. */
+static esp_err_t haptics_get_handler(httpd_req_t *req)
+{
+    char q[32] = {0}, val[8];
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+        httpd_query_key_value(q, "en", val, sizeof(val)) == ESP_OK) {
+        g_haptics_enabled = (atoi(val) != 0);
+        if (!g_haptics_enabled) {
+            for (int m = 0; m < HAPTIC_N; m++) haptic_set(m, 0);
+        }
+    }
+    char out[48];
+    snprintf(out, sizeof(out), "{\"haptics\":%s}\n",
+             g_haptics_enabled ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, out);
+    return ESP_OK;
+}
+
 static void start_ota_server(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -908,11 +980,15 @@ static void start_ota_server(void)
     httpd_uri_t root_uri   = { .uri = "/",            .method = HTTP_GET,  .handler = root_get_handler,    .user_ctx = NULL };
     httpd_uri_t status_uri = { .uri = "/api/status",  .method = HTTP_GET,  .handler = status_get_handler,  .user_ctx = NULL };
     httpd_uri_t health_uri = { .uri = "/api/health",  .method = HTTP_GET,  .handler = health_get_handler,  .user_ctx = NULL };
+    httpd_uri_t motor_uri  = { .uri = "/api/motor",   .method = HTTP_GET,  .handler = motor_get_handler,   .user_ctx = NULL };
+    httpd_uri_t hapt_uri   = { .uri = "/api/haptics", .method = HTTP_GET,  .handler = haptics_get_handler, .user_ctx = NULL };
     httpd_register_uri_handler(server, &ota_uri);
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &health_uri);
-    ESP_LOGI(TAG, "HTTP server on port %d: GET / (viewer), GET /api/status, GET /api/health, POST /update",
+    httpd_register_uri_handler(server, &motor_uri);
+    httpd_register_uri_handler(server, &hapt_uri);
+    ESP_LOGI(TAG, "HTTP server on port %d: GET / (viewer), GET /api/status, GET /api/health, GET /api/motor, POST /update",
              OTA_HTTP_PORT);
 }
 
@@ -1230,6 +1306,7 @@ static void ranging_task(void *arg)
         ESP_LOGW(TAG, "Sensor B NOT available - running sensor A only.");
     }
 
+#if HAPTIC_SWITCH_ENABLED
     /* Haptic-pause switch: input + internal pull-up. HIGH = on, LOW(GND) = paused. */
     gpio_config_t sw_cfg = {
         .pin_bit_mask = 1ULL << HAPTIC_SWITCH_GPIO,
@@ -1240,6 +1317,7 @@ static void ranging_task(void *arg)
     };
     gpio_config(&sw_cfg);
     ESP_LOGI(TAG, "Haptic-pause switch on GPIO%d (HIGH=on, LOW=paused)", (int)HAPTIC_SWITCH_GPIO);
+#endif
 
     /* Bring up the IMU now -- AFTER the ToF firmware upload, NOT before. The hub
      * self-starves if left unserviced during the ToF's ~1 s init, so a pre-ToF
@@ -1413,9 +1491,14 @@ static void ranging_task(void *arg)
         g_urgency_threshold = urgency_threshold;
         g_latest_grid_side  = side;
 
-        /* Debug pause switch (GPIO17): when off, zero the motors so you can
+#if HAPTIC_SWITCH_ENABLED
+        /* Debug pause switch: when off, zero the motors so you can
          * work with the sensor without the haptics going crazy. */
         g_haptics_enabled = (gpio_get_level(HAPTIC_SWITCH_GPIO) != 0);
+#endif
+        /* Software mute (GET /api/haptics?en=0|1) — replaces the physical
+         * switch. Bench essential: silences ranging-driven motors while
+         * manual /api/motor pulses still work (they bypass haptic_apply). */
         if (!g_haptics_enabled) {
             for (int m = 0; m < HAPTIC_N; m++) motor_active[m] = false;
         }
@@ -1526,6 +1609,9 @@ static int haptic_motor_for_col(int col, int side)
  * ranging loop. */
 static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *active)
 {
+    /* Manual /api/motor pulse in progress: hands off, or the 30 Hz ranging
+     * loop overwrites the test pulse within one frame. */
+    if (esp_timer_get_time() < g_manual_hold_until_us) return;
     uint8_t duty[HAPTIC_N] = { 0 };
     for (int m = 0; m < HAPTIC_N; m++) {
         if (!active[m] || thr[m] < 1) continue;
