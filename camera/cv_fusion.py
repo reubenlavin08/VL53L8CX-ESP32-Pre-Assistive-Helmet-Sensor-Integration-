@@ -60,8 +60,32 @@ imu_quat = None          # latest [w,x,y,z], helmet firmware only
 imu_stamp = 0.0
 
 
-def helmet_reader(host, tcp_port):
+def _helmet_line(s):
+    """Parse one helmet-firmware line (DATA:/DATAT:/Q:) into shared state."""
     global imu_quat, imu_stamp
+    if s.startswith("DATA:") or s.startswith("DATAT:"):
+        S = "B" if s.startswith("DATAT:") else "A"
+        p = s.split(":", 1)[1].split(",")
+        if len(p) != 16:
+            return
+        try:
+            v = np.array([int(x) for x in p], float).reshape(4, 4)
+        except ValueError:
+            return
+        v[v >= 4000] = 0.0              # firmware sends invalid as 4000
+        with fo.lock:
+            fo.latest[S] = v
+            fo.stamp[S] = time.monotonic()
+    elif s.startswith("Q:"):
+        try:
+            q = [float(x) for x in s[2:].split(",")[:4]]
+        except ValueError:
+            return
+        imu_quat = q
+        imu_stamp = time.monotonic()
+
+
+def helmet_reader(host, tcp_port):
     import socket
     buf = b""
     while fo.running:
@@ -83,31 +107,86 @@ def helmet_reader(host, tcp_port):
             buf += chunk
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
-                s = line.decode("utf-8", "replace").strip()
-                if s.startswith("DATA:") or s.startswith("DATAT:"):
-                    S = "B" if s.startswith("DATAT:") else "A"
-                    p = s.split(":", 1)[1].split(",")
-                    if len(p) != 16:
-                        continue
-                    try:
-                        v = np.array([int(x) for x in p], float).reshape(4, 4)
-                    except ValueError:
-                        continue
-                    v[v >= 4000] = 0.0          # firmware sends invalid as 4000
-                    with fo.lock:
-                        fo.latest[S] = v
-                        fo.stamp[S] = time.monotonic()
-                elif s.startswith("Q:"):
-                    try:
-                        q = [float(x) for x in s[2:].split(",")[:4]]
-                    except ValueError:
-                        continue
-                    imu_quat = q
-                    imu_stamp = time.monotonic()
+                _helmet_line(line.decode("utf-8", "replace").strip())
         try:
             sk.close()
         except OSError:
             pass
+
+
+def helmet_serial_reader(port, baud):
+    """FIELD MODE: same helmet-firmware lines over the USB cable -- no WiFi
+    infrastructure needed while walking. The firmware prints every stream line
+    to USB-CDC regardless of WiFi state (it boots fine with no AP in range)."""
+    import serial
+    while fo.running:
+        try:
+            sp = serial.Serial(port, baud, timeout=1)
+        except Exception:
+            time.sleep(1.5)
+            continue
+        buf = b""
+        while fo.running:
+            try:
+                buf += sp.read(sp.in_waiting or 1)
+            except Exception:
+                break
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                _helmet_line(line.decode("utf-8", "replace").strip())
+        try:
+            sp.close()
+        except Exception:
+            pass
+
+
+# ── phone viewer: MJPEG server so the rig is watchable from a pocket ─────────
+# The laptop rides in a backpack; the phone joins the laptop's mobile hotspot
+# and opens http://<laptop-ip>:<port>/ for the FULL annotated view (zones,
+# detections, horizon, attitude inset) at ~10 fps.
+phone_jpeg = None
+phone_lock = threading.Lock()
+
+
+def phone_server(port):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path == "/stream":
+                self.send_response(200)
+                self.send_header("Content-Type",
+                                 "multipart/x-mixed-replace; boundary=fr")
+                self.end_headers()
+                try:
+                    while fo.running:
+                        with phone_lock:
+                            j = phone_jpeg
+                        if j is not None:
+                            self.wfile.write(b"--fr\r\nContent-Type: image/jpeg\r\n"
+                                             + f"Content-Length: {len(j)}\r\n\r\n".encode()
+                                             + j + b"\r\n")
+                        time.sleep(0.09)
+                except (ConnectionError, OSError):
+                    pass
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html><head><meta name='viewport' content="
+                                 b"'width=device-width,initial-scale=1'>"
+                                 b"<title>helmet</title></head>"
+                                 b"<body style='margin:0;background:#111'>"
+                                 b"<img src='/stream' style='width:100%'>"
+                                 b"</body></html>")
+
+    try:
+        ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    except OSError as e:
+        print(f"phone server: {e}")
 
 
 def quat_to_R(w, x, y, z):
@@ -472,7 +551,7 @@ def detector_worker(get_frame):
 
 
 def main():
-    global running, use_dewarp
+    global running, use_dewarp, phone_jpeg
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM9")
     ap.add_argument("--baud", type=int, default=115200)
@@ -488,6 +567,11 @@ def main():
                          "pintest = tof_pin_test GRID: over serial")
     ap.add_argument("--host", default="192.168.1.228", help="helmet firmware IP")
     ap.add_argument("--tcp-port", type=int, default=3333)
+    ap.add_argument("--serial", action="store_true",
+                    help="FIELD MODE: read the helmet stream over USB serial "
+                         "(--port) instead of WiFi TCP")
+    ap.add_argument("--serve", type=int, default=8090,
+                    help="phone-viewer port (0 = off). Open http://<laptop-ip>:PORT")
     args = ap.parse_args()
 
     # F8 toggles audio GLOBALLY (no window focus needed) via GetAsyncKeyState —
@@ -514,12 +598,18 @@ def main():
     ring = fo.zone_boundary_tans()
     P = ring.shape[2]
 
-    if args.source == "helmet":
+    if args.source == "helmet" and args.serial:
+        threading.Thread(target=helmet_serial_reader, args=(args.port, args.baud),
+                         daemon=True).start()
+    elif args.source == "helmet":
         threading.Thread(target=helmet_reader, args=(args.host, args.tcp_port),
                          daemon=True).start()
     else:
         threading.Thread(target=fo.reader, args=(args.port, args.baud),
                          daemon=True).start()
+    if args.serve:
+        threading.Thread(target=phone_server, args=(args.serve,), daemon=True).start()
+        print(f"phone viewer: http://<this-machine's-ip>:{args.serve}/")
 
     # IMU mount calibration (visualizer/imu_mount_cal.py) -- optional
     mount_cal = None
@@ -941,6 +1031,13 @@ def main():
                     f"audio {'on' if audio_on else 'OFF'} ({voice})  zones {len(zones)}",
                     (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (240, 240, 240), 2,
                     cv2.LINE_AA)
+
+        if args.serve:
+            ok_j, jb = cv2.imencode(".jpg", view,
+                                    [cv2.IMWRITE_JPEG_QUALITY, 70])
+            if ok_j:
+                with phone_lock:
+                    phone_jpeg = jb.tobytes()
 
         cv2.imshow("CV fusion", view)
         k = cv2.waitKey(1) & 0xFF
