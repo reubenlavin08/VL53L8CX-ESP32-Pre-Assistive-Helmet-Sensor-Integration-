@@ -18,11 +18,22 @@ cap-clip/headband, and we say that openly.
 
 ## Build order
 
-### Phase U1 — the flagship: entrance/doorway last-meter guidance
-Detect doors/entrances (YOLO fine-tune on open-images door classes +
-depth-verified opening), guide by spatialized cue + steps count
+### Phase U1 — the flagship: TERMINAL GUIDANCE to entrances/doorways
+(2026-08-19 competitive update: claim "terminal guidance," never "indoor
+navigation" — servo to a target already in the camera's view over the final
+3–10 m. The niche is vacant IN WEARABLE FORM; Glidance's pre-shipping robot
+claims the capability on wheels — track it. Every shipping wearable, .lumen
+included, does avoidance only; .lumen's indoor wayfinding is explicitly
+future work. Full lane analysis:
+`research-sources/indoor-nav-competitive-2026-08-19.md`.)
+Detect doors/entrances (YOLO fine-tune — no BLV door dataset exists, so ours
+is a publishable contribution), **depth-verify the opening** (a door
+detection with no depth discontinuity behind it is a picture of a door — the
+check no monocular competitor can make), guide by spatialized cue + steps
 ("door, ahead, about ten steps"). Precedent: All_Aboard (91% vs 52% Google
-Maps). No venue infrastructure — that's the whole moat.
+Maps). Known hard case to design for, not around: glass doors kill the ToF
+return exactly here — camera-sees-door + no-ToF-return = "glass door,
+proceed by cane."
 
 ### Phase U2 — transit pair
 (a) bus-STOP pole finding (same detector family); (b) **route number of the
