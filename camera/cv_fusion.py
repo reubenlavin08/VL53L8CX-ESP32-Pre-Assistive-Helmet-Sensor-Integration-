@@ -347,7 +347,14 @@ RANGE_DELTA_MM = 500.0    # approach by this much re-announces inside cooldown
 STALE_S = 1.5             # queued speech older than this is dropped unspoken
 DIRECTIVE_REPEAT_S = 1.2  # directive tier repeats this often while active
 DIRECTIVE_MM = 800.0      # anything nearer in the path cone -> command
-PATH_CONE_DEG = 15.0      # "in the path" = within this azimuth of straight ahead
+# Path cone is RANGE-ADAPTIVE (2026-08-20 biosonar review found the bug):
+# a fixed 15 deg cone is +-8 cm at 0.3 m -- narrower than a torso, so a pole
+# about to clip a shoulder was OUTSIDE it. Derive from body clearance:
+# half-angle = atan(BODY_HALF_W / range), capped. 11 deg far -> 41 deg near,
+# the same narrow-far/wide-near strategy bats use entering the terminal buzz
+# (Jakobsen & Surlykke 2010, 40->90 deg).
+BODY_HALF_W_MM = 350.0
+PATH_CONE_MAX_DEG = 45.0
 CAUTION_MM = 1800.0       # caution tier ceiling
 CLOSING_MPS = -0.5        # range rate for the "closing"/"hot" aspect word
 CONF_HEDGE = 0.50         # below this confidence the callout says "maybe"
@@ -427,9 +434,20 @@ def speech_worker():
             speaking = False
 
 
-# shared with the ticker thread: current hazard range (mm) or None when clear
-tick_range = None
+# shared with the ticker thread: (ttc_seconds_or_None, range_mm_or_None).
+# TTC-BASED (2026-08-20 biosonar review): the old range-based law saturated at
+# 6.67 Hz from 800 mm inward (the most urgent 0.4 s carried no information)
+# and delivered FEWER ticks the faster you walked. Rate = K/TTC gives ~6 ticks
+# per approach regardless of speed, a terminal cue at a fixed TIME margin
+# (the bat strategy, Melcon 2007), and a stationary user goes SILENT -- which
+# kills the alarm-fatigue failure that sank the BuzzClip.
+tick_state = [(None, None)]
 speaking = False          # ticker mutes while an utterance plays (masking)
+TTC_ON_S = 2.0            # start ticking below this time-to-contact
+TTC_TERM_S = 0.6          # terminal cue below this (~human stop reaction)
+TICK_RATE_MIN, TICK_RATE_MAX = 0.8, 12.0
+TICK_K = 5.0              # rate = K / TTC
+STANDOFF_MM = 500.0       # stationary heartbeat only inside this range
 
 
 def _make_tone(path, freq, ms, amp):
@@ -450,30 +468,62 @@ import tempfile
 _SND = pathlib.Path(tempfile.gettempdir())
 TICK_WAV = _SND / "helmet_tick.wav"
 CUE_WAV = _SND / "helmet_cue.wav"
+TERM_WAV = _SND / "helmet_term.wav"
+# 600/1250 Hz are LOCKED: measured -75/-70 dB inside the 2-5 kHz human-
+# echolocation band (docs/research-sources/biosonar-2026-08-20.md). Never
+# "brighten" these tones -- 3 kHz would sit at 0 dB in the protected band.
 _make_tone(TICK_WAV, 600, 40, 0.10)      # quiet blip
 _make_tone(CUE_WAV, 1250, 90, 0.22)      # directive pre-cue, present not painful
 
 
+def _make_trill(path, freq, ms, amp, mod_hz):
+    """Terminal cue: amplitude-modulated 'trill' -- a CATEGORY change, not a
+    faster tick (humans fuse click trains ~20-30 Hz, so there is no audible
+    'faster'; the bat's 170 Hz buzz has no discrete human analogue)."""
+    import wave, struct
+    sr = 22050
+    n = int(sr * ms / 1000)
+    env = np.minimum(1, np.minimum(np.arange(n), n - np.arange(n)) / (sr * 0.005))
+    mod = 0.5 * (1 + np.sin(2 * np.pi * mod_hz * np.arange(n) / sr))
+    s = (amp * env * mod * np.sin(2 * np.pi * freq * np.arange(n) / sr)
+         * 32767).astype(np.int16)
+    with wave.open(str(path), "w") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes(struct.pack(f"<{n}h", *s))
+
+
+_make_trill(TERM_WAV, 600, 280, 0.16, 22)
+
+
 def ticker_worker():
-    """Proximity as repetition rate -- the parking-sensor pattern every shipped
-    product uses instead of speaking numbers. Quiet 40 ms blips, period
-    interpolated TICK_FAR_S..TICK_NEAR_S over CAUTION_MM..DIRECTIVE_MM.
-    MUTES while speech is playing -- ticks were masking the words."""
+    """TTC-based proximity ticker (see tick_state comment). Discrete ticks
+    accelerate with 1/time-to-contact; below TTC_TERM_S a distinct trill
+    fires; a stationary user hears only a slow standoff heartbeat when
+    something sits inside STANDOFF_MM. MUTES during speech (masking)."""
     import winsound
-    while running:
-        r = tick_range
-        if r is None or speaking:
-            time.sleep(0.1)
-            continue
-        f = np.clip((r - DIRECTIVE_MM) / (CAUTION_MM - DIRECTIVE_MM), 0, 1)
-        period = TICK_NEAR_S + f * (TICK_FAR_S - TICK_NEAR_S)
+
+    def play(p):
         try:
-            winsound.PlaySound(str(TICK_WAV),
-                               winsound.SND_FILENAME | winsound.SND_ASYNC
+            winsound.PlaySound(str(p), winsound.SND_FILENAME | winsound.SND_ASYNC
                                | winsound.SND_NODEFAULT)
         except Exception:
             pass
-        time.sleep(max(0.05, period))
+
+    while running:
+        ttc, rng = tick_state[0]
+        if speaking or (ttc is None and (rng is None or rng > STANDOFF_MM)):
+            time.sleep(0.1)
+            continue
+        if ttc is not None and ttc <= TTC_TERM_S:
+            play(TERM_WAV)                 # terminal: category change
+            time.sleep(0.30)
+        elif ttc is not None and ttc <= TTC_ON_S:
+            rate = float(np.clip(TICK_K / ttc, TICK_RATE_MIN, TICK_RATE_MAX))
+            play(TICK_WAV)
+            time.sleep(max(0.06, 1.0 / rate))
+        else:                              # stationary near something: heartbeat
+            play(TICK_WAV)
+            time.sleep(1.0 / TICK_RATE_MIN)
 
 
 def direction_word(az_deg):
@@ -675,6 +725,7 @@ def main():
     level_done = False
     level_last_say = 0.0
     rng_hist = {}          # key -> [(t, range_mm)] for 1 s median smoothing
+    path_hist = []         # (t, near_path_mm) for the TTC estimate
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -827,7 +878,7 @@ def main():
         # ── TIER ENGINE v2 (docs/MASTER-SYNTHESIS-2026-08-16.md) ─────────────
         # Silence is the default. Autonomous speech = hazards + commands only;
         # F9 answers "what's around me" on demand. Proximity rides the ticker.
-        global speech_next, tick_range
+        global speech_next
         # azimuth per zone, cached
         for zn in zones:
             if "az" not in zn:
@@ -836,10 +887,25 @@ def main():
         # down, mostly the floor itself) -- rendered, never spoken/ticked.
         # Head/torso/waist band = rows 0-2.
         upper = [zn for zn in zones if zn["row"] < 3 and zn["az"] is not None]
-        path = [zn for zn in upper if abs(zn["az"]) < PATH_CONE_DEG]
+        # range-adaptive cone: each zone judged against the half-angle its OWN
+        # range implies (near zone -> wide cone, far zone -> narrow)
+        path = [zn for zn in upper
+                if abs(zn["az"]) < min(np.degrees(np.arctan2(BODY_HALF_W_MM,
+                                                             max(zn["z"], 1.0))),
+                                       PATH_CONE_MAX_DEG)]
         near_path = min((zn["z"] for zn in path), default=None)
-        tick_range = (near_path if audio_on and near_path is not None
-                      and near_path < CAUTION_MM else None)
+        # TTC for the ticker: closing rate from ~1 s of near_path history
+        now_t = now
+        if near_path is not None:
+            path_hist.append((now_t, near_path))
+        path_hist[:] = [(t, v) for t, v in path_hist if now_t - t < 1.2]
+        ttc = None
+        if near_path is not None and len(path_hist) >= 4:
+            (t0h, v0h), (t1h, v1h) = path_hist[0], path_hist[-1]
+            closing = (v0h - v1h) / 1000.0 / max(0.2, t1h - t0h)   # m/s toward
+            if closing > 0.05:
+                ttc = (near_path / 1000.0) / closing
+        tick_state[0] = (ttc, near_path) if audio_on else (None, None)
 
         if audio_on and not level_mode:
             if near_path is not None and near_path < DIRECTIVE_MM:
@@ -961,7 +1027,7 @@ def main():
             rgt_ = Rw_ @ np.array([1, 0, 0])
             p_ = np.degrees(np.arcsin(np.clip(-fwd_[2], -1, 1)))   # + = nose down
             r_ = np.degrees(np.arcsin(np.clip(-rgt_[2], -1, 1)))   # + = right down
-            tick_range = None
+            tick_state[0] = (None, None)   # ticker silent during leveling
             if now - level_last_say > 1.5:
                 level_last_say = now
                 if abs(p_) < 1.0 and abs(r_) < 1.0:
