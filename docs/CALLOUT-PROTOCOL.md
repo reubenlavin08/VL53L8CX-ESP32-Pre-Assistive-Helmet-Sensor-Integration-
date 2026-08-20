@@ -111,3 +111,16 @@ BREVITY to show expert throughput (utterance time drops ~60%: measured
 - Clock-face vs left/right: which do blind users prefer? (O&M uses both.)
 - Earcon design: is a tick tone acceptable or does it mask environmental sound?
 - Should ROUTINE tier exist at all outdoors, or only on-demand ("what's ahead")?
+
+---
+
+## §9 — LOCKED audio-band constraint (2026-08-20, answers §8's earcon question)
+
+Tick = 600 Hz, earcon = 1250 Hz, terminal trill = 600 Hz AM@22 Hz. Measured
+in-band leakage into the 2–5 kHz human-echolocation band: **−75 dB (tick),
+−70 dB (earcon)**. A "crisper" 3 kHz tone would sit at 0 dB — dead centre of
+the band users' own clicks and echoes occupy (echoes arrive −27 dB below the
+click; users defend +12 dB SNR at 4–5 kHz). **Never brighten these tones.**
+Also: no sustained/noise-like textures (they deny binaural masking release);
+sparse transients only. Cites: Thaler 2017, Castillo-Serrano 2021 — see
+research-sources/biosonar-2026-08-20.md.
