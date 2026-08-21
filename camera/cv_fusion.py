@@ -469,9 +469,9 @@ _SND = pathlib.Path(tempfile.gettempdir())
 TICK_WAV = _SND / "helmet_tick.wav"
 CUE_WAV = _SND / "helmet_cue.wav"
 TERM_WAV = _SND / "helmet_term.wav"
-# 600/1250 Hz are LOCKED: measured -75/-70 dB inside the 2-5 kHz human-
-# echolocation band (docs/research-sources/biosonar-2026-08-20.md). Never
-# "brighten" these tones -- 3 kHz would sit at 0 dB in the protected band.
+# 600/1250 Hz sit -75/-70 dB below the 2-5 kHz band. The echolocation-band
+# ban was VOIDED by user ruling 2026-08-20 (CALLOUT-PROTOCOL 9) -- these
+# frequencies stay because they work, not because the band is protected.
 _make_tone(TICK_WAV, 600, 40, 0.10)      # quiet blip
 _make_tone(CUE_WAV, 1250, 90, 0.22)      # directive pre-cue, present not painful
 
@@ -493,6 +493,16 @@ def _make_trill(path, freq, ms, amp, mod_hz):
 
 
 _make_trill(TERM_WAV, 600, 280, 0.16, 22)
+
+# ── Soundscape beacon guidance (key 'g') ─────────────────────────────────
+# Port of Microsoft Soundscape's 4-region audio beacon (camera/beacon.py,
+# assets are the original MIT-licensed WAVs). Lock a detected object and a
+# continuous musical tone leads you to it: timbre says how far off-axis
+# your head is, stereo pan says which side, arrival plays the outro melody.
+# Full design notes: docs/research-sources/soundscape-beacon-2026-08-20.md
+from beacon import Beacon
+GUIDE_ARRIVE_MM = 1000.0     # arrival geofence -- outro + "arrived", guide ends
+GUIDE_LOST_S = 8.0           # target unseen this long -> "guide lost", stop
 
 
 def ticker_worker():
@@ -726,6 +736,8 @@ def main():
     level_last_say = 0.0
     rng_hist = {}          # key -> [(t, range_mm)] for 1 s median smoothing
     path_hist = []         # (t, near_path_mm) for the TTC estimate
+    guide = None           # beacon target: {tid, name, az, yaw, seen, rng, muted}
+    bcn = None             # Beacon instance, created on first 'g'
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -1015,6 +1027,74 @@ def main():
                 speech_next = (text, f"QUERY{now}", 0, "query", now)
         f9_was_down = f9_now
 
+        # ── BEACON GUIDANCE (key 'g'): Soundscape 4-region beacon ────────────
+        # While the target is in frame its azimuth comes straight from the
+        # detector (already wearer-relative). When it leaves frame, the IMU
+        # yaw delta keeps an estimate alive (head-as-gimbal) and the beacon
+        # DIMS -- Soundscape's no-heading behavior: dim, never stop.
+        cur_yaw = None
+        if imu_quat is not None and now - imu_stamp < 1.0:
+            w_, x_, y_, z_ = imu_quat
+            Rg = quat_to_R(w_, x_, y_, z_)
+            if mount_cal is not None:
+                Rg = Rg @ mount_cal.T
+            fwd_g = Rg @ np.array([0, 1, 0])
+            cur_yaw = float(np.degrees(np.arctan2(-fwd_g[0], fwd_g[1])))
+
+        def _angdiff(a):
+            return ((a + 180.0) % 360.0) - 180.0
+
+        if guide is not None and bcn is not None:
+            tgt = next((d for d in dets if d["tid"] is not None
+                        and d["tid"] == guide["tid"]), None)
+            if tgt is None and guide["tid"] is None:
+                same = [d for d in dets if d["name"] == guide["name"]]
+                tgt = same[0] if same else None
+            if tgt is not None:
+                x0g, y0g, x1g, y1g = tgt["xyxy"]
+                az_t = pixel_azimuth((x0g + x1g) / 2, (y0g + y1g) / 2)
+                if az_t is not None:
+                    guide.update(az=az_t, yaw=cur_yaw, seen=now)
+                    if tgt["range_mm"]:
+                        guide["rng"] = tgt["range_mm"]
+                cv2.rectangle(view, (int(x0g), int(y0g)), (int(x1g), int(y1g)),
+                              (255, 0, 255), 3)
+            lost = now - guide["seen"]
+            if lost > GUIDE_LOST_S:
+                bcn.stop()
+                with speech_lock:
+                    speech_next = ("guide lost", f"GL{now}", 0, "query", now)
+                guide = None
+            elif not audio_on or level_mode:
+                if not guide.get("muted"):
+                    bcn.stop()
+                    guide["muted"] = True
+            else:
+                if guide.get("muted"):
+                    bcn.start()
+                    guide["muted"] = False
+                rel = guide["az"]
+                if lost > 0.5 and cur_yaw is not None and guide["yaw"] is not None:
+                    # world-fixed target: rel = az0 + (yaw0 - yaw_now).
+                    # SIGN NOTE: assumes IMU yaw is + in the same sense as
+                    # pixel azimuth (+ = wearer's right). Verify live; if the
+                    # beacon runs AWAY from a lost target, flip this sign.
+                    rel = guide["az"] + _angdiff(guide["yaw"] - cur_yaw)
+                if (guide.get("rng") and guide["rng"] < GUIDE_ARRIVE_MM
+                        and lost < 0.5):
+                    bcn.stop(arrived=True)      # Route_End outro
+                    with speech_lock:
+                        speech_next = (f"arrived, {guide['name']}", f"GA{now}",
+                                       0, "query", now)
+                    guide = None
+                else:
+                    bcn.update(rel, dim=lost > 0.5, duck=speaking)
+        if guide is not None:
+            cv2.putText(view, f"GUIDING {guide['name']}"
+                        + ("  (est)" if now - guide["seen"] > 0.5 else ""),
+                        (12, 136), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                        (255, 0, 255), 2, cv2.LINE_AA)
+
         # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
         # The pod hangs on a ball camera mount; every re-clamp needs squaring.
         # A blind user can't watch a bubble, so the device coaches: "tilt up 5"
@@ -1124,6 +1204,35 @@ def main():
             show_text = not show_text
         elif k == ord("m") and joint is not None:
             use_joint = not use_joint
+        elif k == ord("g"):
+            if guide is not None:
+                if bcn:
+                    bcn.stop()
+                guide = None
+                with speech_lock:
+                    speech_next = ("guide off", f"GO{now}", 0, "query", now)
+            else:
+                # lock the nearest ranged detection; fall back to any det
+                cands = ([d for d in dets if d["range_mm"]]
+                         or [d for d in dets if d["tid"] is not None] or dets)
+                locked = None
+                if cands:
+                    d = min(cands, key=lambda d: d["range_mm"] or 1e9)
+                    x0g, y0g, x1g, y1g = d["xyxy"]
+                    azg = pixel_azimuth((x0g + x1g) / 2, (y0g + y1g) / 2)
+                    if azg is not None:
+                        guide = {"tid": d["tid"], "name": d["name"], "az": azg,
+                                 "yaw": cur_yaw, "seen": now,
+                                 "rng": d["range_mm"], "muted": False}
+                        if bcn is None:
+                            bcn = Beacon()
+                        bcn.update(azg)
+                        bcn.start()
+                        locked = d["name"]
+                with speech_lock:
+                    speech_next = ((f"guiding to {locked}" if locked
+                                    else "nothing to guide to"),
+                                   f"GS{now}", 0, "query", now)
         elif k == ord("s"):
             p = snapdir / f"cvfusion_{nsnap:03d}.png"
             cv2.imwrite(str(p), view)

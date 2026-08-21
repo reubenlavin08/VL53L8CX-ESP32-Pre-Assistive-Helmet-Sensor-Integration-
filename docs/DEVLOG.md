@@ -4,6 +4,39 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-20 — Soundscape audio beacon ported into cv_fusion (key `g`)
+
+**Feature**: lock any detected object and Microsoft Soundscape's actual
+4-region audio beacon leads you to it — the original MIT-licensed WAVs
+(`camera/assets/soundscape_beacon/`), played by a faithful port of their
+engine (`camera/beacon.py`, ~170 lines, sounddevice).
+
+- **How it behaves**: timbre encodes how far off-axis your head is (A+
+  ±10° "on it" / A ±55° / B ±125° / Behind), stereo pan encodes the side,
+  region changes land on the next *beat boundary* (6 beats/phrase — the
+  Soundscape trick that makes head-scanning sound musical, read from
+  their `DynamicAudioPlayer.swift`). Distance stays out of the beacon
+  (their choice too); arrival (<1 m) plays the Route_End outro + speaks
+  "arrived". Target loss → beacon **dims, never stops** (their
+  no-heading rule), with IMU yaw-delta keeping a bearing estimate; 8 s
+  lost → "guide lost".
+- **UX**: `g` locks the nearest ranged detection ("guiding to chair"),
+  `g` again cancels; magenta box + GUIDING HUD; mutes with F8/leveling
+  and re-arms after.
+- **Verified**: py_compile clean; offline unit tests (region thresholds
+  vs Soundscape's verbatim selector, constant-power pan direction,
+  beat-boundary switching, outro path) all pass; live audio smoke test
+  played the full sweep + arrival melody through the default output.
+- **To verify on hardware**: the lost-target IMU sign convention (marked
+  in code — if the beacon runs *away* from an off-screen target, flip
+  one sign) and beacon-vs-ticker loudness balance on the real speakers.
+- **Lesson**: reading the original implementation beat re-inventing it —
+  the beat-quantized region swap would never have occurred to us, and
+  it's the single detail that makes the beacon pleasant instead of
+  glitchy.
+
+---
+
 ## 2026-08-17 (evening) — Full hardware complete: motors + switch wired, ID'd, mounted
 
 **Every subsystem is now wired and verified.** The helmet hardware is done.
