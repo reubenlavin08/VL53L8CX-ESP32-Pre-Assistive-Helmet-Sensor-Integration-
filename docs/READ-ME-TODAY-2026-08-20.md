@@ -11,7 +11,11 @@ art (a 2018 paper even did head-swept depth mapping for blind users). As
 *engineering slices*, yes: the signal-weighted zone-centroid calibration,
 seam-abutted sensor tiling, head-pose-gated alerts, and the whole
 "sparse ToF + smart decay on a $6 sensor" implementation are unpublished.
-Nobody ships head-mounted ACTIVE depth — that's the moat.
+~~Nobody ships head-mounted ACTIVE depth~~ — CORRECTED 2026-08-20: Xu
+2023 (Sensors 23:9598) is head-mounted ultrasonic+IMU prior art. The
+narrowed moat: head-mounted **optical multizone depth with metric
+mapping, calibrated camera fusion, and terminal guidance**
+([[patents-stripmine-2026-08-20]]).
 
 **Is it patentable / already patented?** Not worth patenting: ~$25k to grant,
 ~$600k to enforce, and our public repo already destroyed Europe/China rights
