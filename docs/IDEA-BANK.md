@@ -4,6 +4,16 @@ For triage: mark each ✅ build / ❌ skip / 🕐 later. Effort: S (<1 session),
 M (1-3 sessions), L (project). Evidence: how strong the case is.
 Sources in `research-sources/`.
 
+> **USER RULINGS 2026-08-20 evening** (see [[QA-2026-08-20]]):
+> ✅ CV glass/mirror MATERIAL DETECTOR (lean on camera where ToF is blind)
+> ✅ label-reading-in-hand · ✅ crosswalk alignment (build-intent + research
+> running) · ✅ head-clearance rule: ≥10-15 cm above the TOP ToF ray ·
+> 🔄 terrain + currency REOPENED (moved out of §G) · ⚖ facial recognition:
+> considering, no longer privacy-blocked · **Privacy/regulatory = NOT a
+> constraint this phase** · **Compute = NOT a constraint (GPU now, Jetson
+> Orin future)** · cane always alongside · bone-conduction headset purchase
+> pending (buying guide researching).
+
 ## A. Already built (for completeness — no decision needed)
 - Silence-default engine, 60 s cooldowns, stale-drop (Soundscape constants)
 - TTC terminal-buzz ticker + adaptive path cone (biosonar, 2 bug fixes)
@@ -105,6 +115,9 @@ Sources in `research-sources/`.
 - **Stochastic resonance haptics** — wrong regime (our motors are supra-threshold)
 - **Event cameras** — quote-only pricing, no pretrained detectors, ToF already gives TTC
 - **Cheap radar now** — zero azimuth, sees through walls (false positives)
-- **Terrain narration / standalone pedestrian callouts / currency** — users explicitly reject
+- **Standalone pedestrian callouts** — users explicitly reject (people as
+  INPUTS to queue/follow/collision features stay)
+- ~~Terrain narration / currency~~ — **REOPENED by user 2026-08-20**
+  (terrain: rocky/trail niche; currency: research running)
 - **.lumen's continuous 100 Hz haptic "reins"** — defensible alternative, conflicts with our
   evidence base; A/B someday, don't drift silently
