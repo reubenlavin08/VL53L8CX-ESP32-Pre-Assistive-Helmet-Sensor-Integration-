@@ -175,6 +175,9 @@ Sources in `research-sources/`.
 | **Stairs → guide to the RAILING** | Glide protocol detail; railing is the graspable target, not the stair | S (within guidance) |
 | **Narrow-path callout** ("path narrows") | Glide behavior | S |
 | **Intervention logging → data flywheel** (log 10 s around every F8/stumble/override; "flag that" bookmark; telemetry schema) | Glidance's fleet learning at fleet-size 1; see [[glidance-deep-dive-2026-08-20]] | S-M |
+| **Drop alarm** (helmet falls off → it beeps so a blind owner can find it) | GuideTouch's clip+buzzer; a dropped helmet is invisible to its owner | S |
+| **Haptic patterns ≤2 motors, prefer 1** (hard rule for the 3 temple motors) | GuideTouch n=22: 92.9% recognition at 1–2 motors → 78.4% with 3–4 motor combos (p<1e-6) | S (rule) |
+| **Vertical ToF splay experiment** (re-aim/add a sensor for 90° vertical coverage, knee→head at 50 cm) | GuideTouch's 30°-splayed pair; serves head-clearance + drop-off missions | M |
 
 ## G. Rejected — with the reason (don't re-litigate without new evidence)
 
