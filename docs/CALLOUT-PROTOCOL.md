@@ -114,7 +114,17 @@ BREVITY to show expert throughput (utterance time drops ~60%: measured
 
 ---
 
-## §9 — LOCKED audio-band constraint (2026-08-20, answers §8's earcon question)
+## §9 — audio-band constraint (2026-08-20) — **UNLOCKED by user ruling, same evening**
+
+> **USER RULING 2026-08-20 evening: ignore echolocation protection.**
+> Rationale: active echolocation is a rare skill, distinct from the
+> cane (which stays); the helmet provides the same function. The 2–5 kHz
+> ban below is VOID. Consequence: ILD carriers for bone-conduction
+> spatial audio may sit at 3–5 kHz where transcranial isolation is best
+> (~10 dB — see bone-conduction-spatial-2026-08-20). Residual guidance
+> only: keep sounds SPARSE — 2–5 kHz also carries speech consonants and
+> traffic cues, so continuous textures there would mask ambient sound
+> generally, not just echoes. Historical rationale preserved below.
 
 Tick = 600 Hz, earcon = 1250 Hz, terminal trill = 600 Hz AM@22 Hz. Measured
 in-band leakage into the 2–5 kHz human-echolocation band: **−75 dB (tick),
