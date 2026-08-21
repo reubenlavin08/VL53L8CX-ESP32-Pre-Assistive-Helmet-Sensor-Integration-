@@ -98,6 +98,11 @@ audio-beacon UX worth copying even though the product died.
   start scanning, not just what for.
 - Commercial destination-sign PWM frequencies (Hanover/Mobitec)
   unverifiable — measure empirically.
+- Bus door is always forward of the front axle on North American buses
+  (~1×2 m high-contrast opening at 2–8 m — easy YOLO class); the
+  door-open **pneumatic hiss** is a fusible audio cue.
+- The three announcements no infrastructure provides: WHICH bus arrived
+  (platooning), WHERE the door is, WHEN to exit.
 
 ## Caveats
 

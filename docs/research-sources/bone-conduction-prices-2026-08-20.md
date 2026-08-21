@@ -23,8 +23,17 @@ the feasibility pack still being synthesized.
 - Any third-party price aggregator that "worked around" Amazon's block is
   untrustworthy; treat as unverified.
 
-## Interim recommendation
+## Final recommendation — SUPERSEDED the interim OpenMove pick
 
-Shokz OpenMove at $99.99 CAD (Canada Computers) meets the <$120 bar with
-a known brand; hold purchase until the full buying guide lands (Bluetooth
-latency may matter for the spatial-audio ticks — a wired option could win).
+The full buying guide ([[feasibility-pack-2026-08-20]] §6) reversed this:
+**do NOT buy the OpenMove** (SBC-only ≈ 260 ms jittery latency — a
+head-tracked tick lands ~23° off during a turn; rear band decouples from
+the helmet IMU). Instead:
+
+- **Spatial ticks: DIY wired** — Dayton BCE-1 exciter $76.00
+  (Amazon.ca B00HFG6AZG) or 2× generic BC drivers $16.62 ea
+  (B0CZ7HJBVW) + PAM8403 amp; bonded to the shell = zero latency, known
+  pose vs the BNO085.
+- **Speech/menus: Soundcore V30i $44.99** (B0CNCHLR56, open-ear
+  ear-hook, no rear band).
+- Suggested combo: **V30i + 2 drivers ≈ $78 total.**
