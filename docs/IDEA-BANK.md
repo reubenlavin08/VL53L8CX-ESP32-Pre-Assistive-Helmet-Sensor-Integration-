@@ -178,6 +178,14 @@ Sources in `research-sources/`.
 | **Drop alarm** (helmet falls off → it beeps so a blind owner can find it) | GuideTouch's clip+buzzer; a dropped helmet is invisible to its owner | S |
 | **Haptic patterns ≤2 motors, prefer 1** (hard rule for the 3 temple motors) | GuideTouch n=22: 92.9% recognition at 1–2 motors → 78.4% with 3–4 motor combos (p<1e-6) | S (rule) |
 | **Vertical ToF splay experiment** (re-aim/add a sensor for 90° vertical coverage, knee→head at 50 cm) | GuideTouch's 30°-splayed pair; serves head-clearance + drop-off missions | M |
+| **Walkable-tunnel haptics** (silence when centered; motors only near the corridor walls) | .lumen patent's best mechanism — described, NOT claimed; kills haptic fatigue | **M — build-this-month** |
+| **Pulse-count + burst-texture haptic vocabulary** (N pulses = semantics; ALB-style bursts = urgency; ≤2 motors) | Glidance patent patterns + GuideTouch's accuracy rule | S |
+| **On-track reassurance ping** (faint periodic pulse: silence never means dead device) | Glidance patent; pairs with our "blind" callout | S |
+| **Complexity-scaled cue intensity** (corridor width + turn angle drive intensity, not just distance) | .lumen path-complexity score | M |
+| **0.3 m predicted-trajectory gate** (suppress "clear" if a moving track will cross the corridor) | .lumen safety check; ByteTrack velocity already available | M |
+| **Walk-once route record/replay** (IMU+camera odometry → beacon/tunnel replay) | Glidance learned-routes + .lumen milestones; = teach-and-repeat 🕐 ruling | L |
+| **Panic/fallback button** (one input → guidance stops, safe orientation mode) | Glidance patent; we have GPIO + keys | S |
+| **WA/CWA/NA ground classes** (walkable / conditional / non-walkable, not binary obstacle) | .lumen Live Map L3; fits our up/down sensor split | M |
 
 ## G. Rejected — with the reason (don't re-litigate without new evidence)
 
