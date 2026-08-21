@@ -103,6 +103,24 @@ Sources in `research-sources/`.
 | **FP/hour as a first-class published metric** | WeWALK died by false positives | S |
 | **Expert conversations** (UBC O&M prof, GTT, PTCB) + decisions log | credibility artifact; free | M |
 
+## H. From the implementation deep-dive (2026-08-20 late — see [[implementation-guide-2026-08-20]])
+
+| Idea | Evidence | Effort |
+|---|---|---|
+| **Second boresighted ~38–50° GLOBAL-SHUTTER camera, manual exposure** | 3 independent analyses: fisheye can't do text (2.8 px @30 m) or last-metre precision; global shutter kills LED banding at source | **S-M (hardware buy)** |
+| **VL53L8CX sunlight bench test** | Load-bearing unknown for platform-edge AND head-clearance margins; do BEFORE fusion code | **S — do first** |
+| **Target order → CLOSEST** | Under STRONGEST a 3 cm branch at 2 m is silently invisible (background wins). Single highest-leverage setting change | **S** |
+| **GTFS-Realtime fusion** (TransLink free API) | Turns open-set LED OCR into closed-set over ~5 candidates → >99% practical; `trip_headsign` = destination without reading it; NO product does this | **S-M** |
+| **Head-clearance in GRAVITY frame** (IMU-compensated, not fixed top row) | Head pitch ±8° in gait = ±140 mm at 2 m; uncompensated error 190 mm > tall-user margin 130 mm under ADA doors. Muñoz 2025 dodged this — our novelty claim | M (refines the ✅ ruling) |
+| **BEV-first crosswalk pipeline** (IMU gravity → bird's-eye → stripe fit → validators → latch + closed-loop haptic) | Veer is a random walk (open-loop useless); nobody does mid-crossing correction in traffic; CDSet-3434 + CDNet SSVM ready | M-L |
+| **Moving-vehicle interlock** (never "step forward" unless ToF confirms zero closing velocity, N frames) | Separate auditable module; small code, disproportionate consequence | **S** |
+| **Rideshare 1:1 verification scorer** (plate ≥5/7 chars decisive; fail-closed; night = manual exposure) | Plate voting 1.7%→44.7% over 5 frames; BC plates rear-only ⇒ post-stop confirm only; Uber has NO blind-rider location aid | M-L |
+| **Platform-edge independent safety loop** (≤100 ms, ToF-only, edge orientation from which zones drop) | 76% of blind users have fallen off a platform; no published wearable baseline = publishable | M |
+| **Bus door localization** (YOLO fine-tune, Vancouver's uniform fleet) | ZERO literature ("bus door" = 0 arXiv hits) — genuine novelty; low technical risk | M |
+| **Door state from geometry** (wall-coplanarity via our two 8×8 slices, not RGB classifier) | Antonazzi: unseen-env door detectors are 13–48 mAP; domain adaptation is the game; "traversable now" is the right target | M (within U1) |
+| **Storefront-vs-display-window ruleset** (ground-plane continuity across threshold + width + handle + OCR) | No published work — ours to invent | M |
+| **Own-data capture loop** (Grounding DINO auto-label → hand-correct → nightly fine-tune) | 15% target-env annotations: 20→76 mAP. The loop beats any model choice | M |
+
 ## G. Rejected — with the reason (don't re-litigate without new evidence)
 
 - **Faces/emotions/identity** — users' own verdict + third-party harm

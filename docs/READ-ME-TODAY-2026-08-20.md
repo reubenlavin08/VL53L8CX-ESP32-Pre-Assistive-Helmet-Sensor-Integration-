@@ -44,6 +44,19 @@ anyone patenting our approach. Full verdicts:
 | "HRTF, pitch, pulse, volume" (Dad) | [[hrtf-spatial-audio-2026-08-20]] | Complete buildable design: spatial clicks, rate=distance, pitch=height, volume=confidence only. Blind users beat sighted controls with this pattern after 30 min training |
 | (spun off) ultrasonic/radar for glass | [[ultrasonic-mmwave-glass-2026-08-20]] | Ultrasound reflects 99.99% off glass vs our 4%; free B1-sync interference fix found in our own driver; radar deferred |
 
+## 2b. NEW (evening batch — the research you ordered while reading)
+
+| You asked | The answer doc | One-line takeaway |
+|---|---|---|
+| "doorway/entrance done as well as possible + head-height + crosswalk + transport incl. cars" | [[implementation-guide-2026-08-20]] — **the big one, read first** | Buy a 2nd narrow global-shutter camera; head-clearance needs IMU gravity frame; GTFS fusion is the cheapest huge win; 5 genuine novelty claims listed |
+| (second independent synthesis, same territory) | [[transit-assistance-synthesis-2026-08-20]] | Where both agree, confidence is high; design for the STOPPED bus |
+| supporting detail | [[transit-headsign-ocr-2026-08-20]] · [[transit-bus-boarding-litreview-2026-08-20]] · [[platform-edge-safety-2026-08-20]] · [[transit-gtfs-navilens-2026-08-20]] · [[transit-apps-competitive-2026-08-20]] | OCR pipeline numbers · who did what · 76% have fallen off a platform · TransLink API endpoints · no product closes the loop |
+| terrain (reopened) — hiking evidence | [[blind-hiking-terrain-2026-08-20]] | Community uses poles/dog/buddy, not devices; the one real gap = above-ground obstacles our helmet already covers |
+| bone-conduction purchase | [[bone-conduction-prices-2026-08-20]] | Shokz OpenMove $99.99 CAD verified; hold for the latency verdict |
+
+New IDEA-BANK section **H** has the 13 buildable items these produced
+(sunlight bench test + CLOSEST target order + 2nd camera are the do-firsts).
+
 ## 3. Older context (if you want the full arc)
 
 - [[MASTER-SYNTHESIS-2026-08-16]] — the callout-engine evidence (Soundscape
