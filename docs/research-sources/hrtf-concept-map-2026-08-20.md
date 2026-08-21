@@ -19,7 +19,7 @@ AGREES or CORRECTS it.
 | Head tracking, low latency | ✅ COVERED — BNO085 at ~100 Hz, IMU extrapolation bridges the ToF's 67 ms; wired audio keeps the loop <30 ms | hrtf doc |
 | Dead zones / don't sonify far objects | ✅ SHIPPED — silence-default engine, ticker silent beyond 2 s TTC, cooldowns | cv_fusion.py, live |
 | Minimalist sounds (clicks, not music) | ✅ ADOPTED — sparse transients only; sustained/noise textures banned (they deny binaural masking release) | biosonar doc |
-| **Personalized HRTF** (ear-photo scanning) vs generic | 🔬 THE ONE OPEN ITEM — we chose generic azimuth-only (front-back confusion mitigated by head-tracking + pitch-elevation instead of spectral elevation). Agent now researching whether phone-based personalization (Apple/Sony-style) is worth it on bone conduction | agent running |
+| **Personalized HRTF** (ear-photo scanning) vs generic | ❌ **RESOLVED — not worth any effort on our hardware.** BC bypasses the pinna; head-tracking already kills front-back confusion; the correct personalization is a SKULL calibration (our 5-min ILD sweep, now load-bearing). Full verdict + one open design tension (carrier frequency vs echolocation band): [[bone-conduction-spatial-2026-08-20]] | done |
 | 3D screen-reader UI (notifications in a hemisphere) | 🕐 Interesting for menus later; not navigation-critical | — |
 
 **Bottom line: your dad's instinct was right and it's already our locked
