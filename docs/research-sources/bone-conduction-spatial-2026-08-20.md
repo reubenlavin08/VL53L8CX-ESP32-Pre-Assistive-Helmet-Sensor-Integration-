@@ -66,17 +66,15 @@ best case.
 5. Realistic azimuth resolution: 8 directions/45° cleanly demonstrated;
    maybe 20–30° with good rendering (estimate).
 
-## ⚠️ OPEN DESIGN TENSION (flagging for you)
+## ~~⚠️ OPEN DESIGN TENSION~~ — RESOLVED by user ruling 2026-08-20
 
-Best L/R isolation is at **3–5 kHz (~10 dB TA)** — but that is exactly
-the **2–5 kHz human-echolocation band we locked as forbidden** (BC still
-delivers to the cochlea, so it masks echo perception just like air
-sound). Options to resolve empirically during the calibration sweep:
-(a) keep carriers ~600 Hz and lean entirely on exaggerated ILD +
-calibration (isolation ~3–5 dB); (b) move ILD carriers to **6–8 kHz** —
-above the echolocation core, TA ~4 dB, still better than the 1 kHz
-null; (c) per-user crosstalk-cancellation filters. Decide with data,
-not taste.
+Best L/R isolation is at **3–5 kHz (~10 dB TA)**, which conflicted with
+the former 2–5 kHz echolocation-band lock. **User ruled: ignore
+echolocation protection** (rare skill; the helmet serves the same
+function; the cane — a different function — stays). CALLOUT-PROTOCOL §9
+updated. **Design consequence: put ILD carriers at 3–5 kHz.** Residual
+rule: sparse transients only — that band also carries speech consonants
+and traffic, so continuous textures would mask ambient sound generally.
 
 Unverified-this-session: Wenzel 1993 percentages, Wightman/Begault exact
 figures, Apple/Sony mechanisms, SWAN cites.

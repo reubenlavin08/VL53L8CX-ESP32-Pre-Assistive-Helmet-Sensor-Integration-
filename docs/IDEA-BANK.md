@@ -51,7 +51,10 @@ Sources in `research-sources/`.
 > ✅ empty seat · ✅ find-by-text ("Heinz") · ✅ Apple-style signage OCR ·
 > 🕐 person-following (low pri) · 🕐 route retrace (future, not #1) ·
 > **priority×impact rework ordered → PRIORITY VIEW above** · adopt
-> Glidance's best features ([[glidance-deep-dive-2026-08-20]]).
+> Glidance's best features ([[glidance-deep-dive-2026-08-20]]) ·
+> **echolocation-band ban VOIDED** (rare skill, helmet serves the same
+> function) — ILD carriers may use 3–5 kHz; sparse sounds still required
+> (band carries speech/traffic cues).
 
 ## A. Already built (for completeness — no decision needed)
 - Silence-default engine, 60 s cooldowns, stale-drop (Soundscape constants)
