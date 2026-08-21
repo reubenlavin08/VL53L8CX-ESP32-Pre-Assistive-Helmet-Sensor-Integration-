@@ -4,6 +4,38 @@ For triage: mark each ✅ build / ❌ skip / 🕐 later. Effort: S (<1 session),
 M (1-3 sessions), L (project). Evidence: how strong the case is.
 Sources in `research-sources/`.
 
+## ⭐ PRIORITY VIEW (first pass, ordered by impact ÷ effort — you ordered this rework 2026-08-20)
+
+**P0 — do first (unblock everything else):**
+1. VL53L8CX sunlight bench test (S) — gates platform-edge + head-clearance
+2. Target order → CLOSEST (S) — thin obstacles are invisible without it
+3. IMU mount calibration (S, 2 min of your hands) — gates ALL IMU features
+4. Hardware buys: 2nd narrow global-shutter camera + DIY bone-conduction
+   drivers + V30i (~$78) — three research streams each demand one of these
+
+**P1 — highest impact per session:**
+5. ✅ Audio beacon (Soundscape-style spatial beacon; HRTF design locked) — M
+6. Head-clearance in gravity frame (your ✅ rule, IMU-compensated) — M
+7. GTFS-Realtime fusion (TransLink free) — S-M, no product does it
+8. Glass detection: free experiment + firmware signature — S then M
+9. ✅ Apple-style signage/label OCR engine (one engine → labels, signage,
+   find-by-text) — M
+10. Moving-vehicle interlock + blocked-path stop-and-alert (Glide's
+    honest dead-end behavior) — S
+
+**P2 — strong, after P1:**
+11. ✅ Queue detection + progress (LineChaser pattern) — M
+12. ✅ Empty seat (or "describe the seating" reframe — your call) — M
+13. Crosswalk alignment BEV pipeline + Glide's spoken bookends — M-L
+14. Terminal guidance to doors (U1 flagship) — L
+15. Drop-off detection (the terrain carve-out) — M
+
+**P3 — future / on-demand:**
+16. 🕐 Route retrace (teach-and-repeat) — your ruling: interesting, not #1
+17. 🕐 Companion beacon (person-following, narrowed) — your ruling: thin
+18. Bus route OCR + bus-door guidance — L (after camera #2)
+19. Fleet-style data flywheel telemetry schema — S to design, pays later
+
 > **USER RULINGS 2026-08-20 evening** (see [[QA-2026-08-20]]):
 > ✅ CV glass/mirror MATERIAL DETECTOR (lean on camera where ToF is blind)
 > ✅ label-reading-in-hand · ✅ crosswalk alignment (build-intent + research
@@ -13,6 +45,13 @@ Sources in `research-sources/`.
 > constraint this phase** · **Compute = NOT a constraint (GPU now, Jetson
 > Orin future)** · cane always alongside · bone-conduction headset purchase
 > pending (buying guide researching).
+>
+> **Round 2 (evening, indoor-nav feedback — see [[QA-2026-08-20-part2]]):**
+> ✅ audio beacon (Soundscape deep-dive running) · ✅ queue detection ·
+> ✅ empty seat · ✅ find-by-text ("Heinz") · ✅ Apple-style signage OCR ·
+> 🕐 person-following (low pri) · 🕐 route retrace (future, not #1) ·
+> **priority×impact rework ordered → PRIORITY VIEW above** · adopt
+> Glidance's best features ([[glidance-deep-dive-2026-08-20]]).
 
 ## A. Already built (for completeness — no decision needed)
 - Silence-default engine, 60 s cooldowns, stale-drop (Soundscape constants)
@@ -126,6 +165,13 @@ Sources in `research-sources/`.
 | **Companion beacon** (re-find a companion who stepped away; voice-locked, ≤4 m, fails loudly) | CHI 2026 demand is "where are my people," not locomotion-following; honest note: a UWB tag beats vision here | M |
 | **Drop-off detection** (ground-plane-absent, down ToF) | Canes miss 1-in-5 to 1-in-3 drop-offs; the one terrain carve-out; "degraded in full sun" | M |
 | **Dropped-object mode, narrowed** (phone/wallet/bottle only; steps-near speech; separate az/el channels, not warmer/colder) | ObjectFinder 4.13/5; only phone clears the 30–40 px detection floor at 720p | M |
+| **✅ Find-by-text** ("find Heinz" → spot the word in video, beacon to it) | YOUR idea 2026-08-20 — sidesteps the SKU database war; same OCR engine as labels/signage | M |
+| **Glide crosswalk bookends** ("approaching road" → user decides → "crossing complete"; never interpret signals) | Glidance FAQ, validated by 8,000-user community | S (within crosswalk build) |
+| **Glide target scan-and-select UX** (scan for doors/stairs/elevators/counters → pick → guide) | Their terminal-guidance UX, shipping | S (UX pattern for U1) |
+| **Blocked-path stop-and-alert** (never push through; offer alternatives) | Glide behavior; honest dead-end state for our directive tier | S |
+| **Stairs → guide to the RAILING** | Glide protocol detail; railing is the graspable target, not the stair | S (within guidance) |
+| **Narrow-path callout** ("path narrows") | Glide behavior | S |
+| **Intervention logging → data flywheel** (log 10 s around every F8/stumble/override; "flag that" bookmark; telemetry schema) | Glidance's fleet learning at fleet-size 1; see [[glidance-deep-dive-2026-08-20]] | S-M |
 
 ## G. Rejected — with the reason (don't re-litigate without new evidence)
 
