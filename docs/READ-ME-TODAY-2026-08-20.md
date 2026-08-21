@@ -52,7 +52,8 @@ anyone patenting our approach. Full verdicts:
 | (second independent synthesis, same territory) | [[transit-assistance-synthesis-2026-08-20]] | Where both agree, confidence is high; design for the STOPPED bus |
 | supporting detail | [[transit-headsign-ocr-2026-08-20]] · [[transit-bus-boarding-litreview-2026-08-20]] · [[platform-edge-safety-2026-08-20]] · [[transit-gtfs-navilens-2026-08-20]] · [[transit-apps-competitive-2026-08-20]] | OCR pipeline numbers · who did what · 76% have fallen off a platform · TransLink API endpoints · no product closes the loop |
 | terrain (reopened) — hiking evidence | [[blind-hiking-terrain-2026-08-20]] | Community uses poles/dog/buddy, not devices; the one real gap = above-ground obstacles our helmet already covers |
-| bone-conduction purchase | [[bone-conduction-prices-2026-08-20]] | Shokz OpenMove $99.99 CAD verified; hold for the latency verdict |
+| feasibility verdicts: dropped objects, terrain, currency, seats, following, headset | [[feasibility-pack-2026-08-20]] | Terrain+currency = no again; seats+following = reframed; headset = **DIY wired + Soundcore V30i ≈ $78, NOT the Shokz** |
+| bone-conduction purchase | [[bone-conduction-prices-2026-08-20]] | OpenMove interim pick REVERSED — SBC latency (260 ms) breaks head-tracked ticks |
 
 New IDEA-BANK section **H** has the 13 buildable items these produced
 (sunlight bench test + CLOSEST target order + 2nd camera are the do-firsts).

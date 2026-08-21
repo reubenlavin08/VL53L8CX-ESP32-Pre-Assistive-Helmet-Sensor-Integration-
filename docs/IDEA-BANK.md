@@ -120,6 +120,12 @@ Sources in `research-sources/`.
 | **Door state from geometry** (wall-coplanarity via our two 8×8 slices, not RGB classifier) | Antonazzi: unseen-env door detectors are 13–48 mAP; domain adaptation is the game; "traversable now" is the right target | M (within U1) |
 | **Storefront-vs-display-window ruleset** (ground-plane continuity across threshold + width + handle + OCR) | No published work — ours to invent | M |
 | **Own-data capture loop** (Grounding DINO auto-label → hand-correct → nightly fine-tune) | 15% target-env annotations: 20→76 mAP. The loop beats any model choice | M |
+| **DIY wired bone-conduction** (Dayton BCE-1 $76 or 2× $16.62 drivers + PAM8403, bonded to shell) + Soundcore V30i $44.99 for speech | SBC Bluetooth = 260 ms jitter → tick ~23° off during head turns; wired = 0 ms, known pose vs IMU. **NOT the Shokz OpenMove** | **S ($78 total)** |
+| **4K camera upgrade** (32 px/deg) | 9× pixel area; makes keys/cards findable; both syntheses: sensor > algorithms | S-M (hardware) |
+| **"Describe the seating"** (bearing + distance + honest occupancy confidence, beacon to user's pick) | Replaces "find empty seat"; StereoPilot: spatial audio 3× info rate, ½ grasp time; uncertainty as a feature | M |
+| **Companion beacon** (re-find a companion who stepped away; voice-locked, ≤4 m, fails loudly) | CHI 2026 demand is "where are my people," not locomotion-following; honest note: a UWB tag beats vision here | M |
+| **Drop-off detection** (ground-plane-absent, down ToF) | Canes miss 1-in-5 to 1-in-3 drop-offs; the one terrain carve-out; "degraded in full sun" | M |
+| **Dropped-object mode, narrowed** (phone/wallet/bottle only; steps-near speech; separate az/el channels, not warmer/colder) | ObjectFinder 4.13/5; only phone clears the 30–40 px detection floor at 720p | M |
 
 ## G. Rejected — with the reason (don't re-litigate without new evidence)
 
@@ -135,7 +141,17 @@ Sources in `research-sources/`.
 - **Cheap radar now** — zero azimuth, sees through walls (false positives)
 - **Standalone pedestrian callouts** — users explicitly reject (people as
   INPUTS to queue/follow/collision features stay)
-- ~~Terrain narration / currency~~ — **REOPENED by user 2026-08-20**
-  (terrain: rocky/trail niche; currency: research running)
+- ~~Terrain narration / currency~~ — REOPENED by user 2026-08-20, then
+  **research verdicts came back NO** ([[feasibility-pack-2026-08-20]]):
+  terrain = wrong sensor (ToF range collapses to ~1 m in sunlight; black
+  ice needs reflectance we don't have; hikers use poles not devices) —
+  EXCEPT the drop-off carve-out below; currency = solved by free apps +
+  117k free iBill readers, CAD/EUR/GBP tactile. Your call stands to make.
+- **"Find me an empty seat"** — bag-on-chair kills it (backpack/handbag
+  are COCO's two worst classes; FP = public humiliation = abandonment).
+  REFRAME kept in §H.
+- **Open-space person-following** — IDF1 75–80 ⇒ wrong identity ~20% of
+  the time; the elbow beats it walking; a BLE/UWB tag beats vision
+  anyway. REFRAME kept in §H.
 - **.lumen's continuous 100 Hz haptic "reins"** — defensible alternative, conflicts with our
   evidence base; A/B someday, don't drift silently
