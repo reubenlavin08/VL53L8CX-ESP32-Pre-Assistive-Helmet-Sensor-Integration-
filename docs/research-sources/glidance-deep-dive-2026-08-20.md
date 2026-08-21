@@ -101,6 +101,68 @@ insurance-reimbursable; carry-on compliant (95 Wh); 4-yr minimum OTA
 support commitment. Prototype lineage: Hugo, Ada, Marie, DeLorien,
 Galileo, Rover. Awards: Edison, SXSW Pitch, RBR50, CES CTA Foundation.
 
+## PART 2 — Independent research (agent findings, same evening)
+
+### Reality check on the product
+
+- **2024 demos were Wizard-of-Oz** — a remote engineer drove the
+  prototype (AppleVis first-person account + The Robot Report both
+  confirm). Early "it works" impressions ≠ autonomy evidence.
+- **No independent account of a production unit in the wild** as of
+  these searches. Timeline: preorders 2024 → ship autumn 2025 → spring
+  2026 → still demoing prototypes at ACB/NFB July 2026. Sub crept
+  $20→$30/mo.
+- Blind users' criticisms worth noting for OUR design: **control
+  inversion** ("with a cane I'm in control... with Glide I am being
+  led"), dependency/single-point-of-failure, stairs (you carry it),
+  Amos himself: "I wouldn't go as far as promising any kind of
+  intersection."
+
+### Technical stack (beyond marketing, multiply confirmed)
+
+- **Wheels are UNPOWERED** — user pushes; steering = servo-turned wheels
+  + friction braking ("removed motors to preserve user agency").
+- Sensors: stereo depth + IR in the handle, **mmWave radar in the base**
+  (redundant near-range safety — confirms the sensor-class in our QA
+  answer), wheel odometry, IMU, drop-off sensors. Stereo vision "up to
+  6 m." Compute unspecified; no teardown exists.
+- **"Agentic Wayfinding" decoded by Amos himself**: "This is how mobile
+  robots work" — it IS VIO/SLAM + local/global planners + semantic
+  targets + **teach-and-repeat** routes; waypoints delegated to
+  Google/Apple Maps. "No maps" = no prior HD map, not map-free.
+
+### The patent (real find)
+
+**WO2025137615A1 "Navigation assistance system"** (Miller, Buzzard,
+Sinclair, Gindel; priority 2023-12-21, published June 2025): claims the
+sensor suite, steering+braking, L/R handle haptics, learned routes, and
+an **explicit fleet-learning claim** ("fleet learning across multiple
+devices to optimize wayfinding"), plus walker attachment. → Add to our
+prior-art file; it's handle-device-shaped, not head-worn, but read
+before ever selling anything.
+
+### Fleet learning, verified pattern (openpilot source)
+
+comma.ai's answer to "what do you upload": **cheap telemetry for every
+drive** (decimated qlog ≤25 MB + low-res video ≤5 MB), full-res only
+pulled on demand; crash/boot folders get priority. Tesla's version =
+shadow mode (log when model and human disagree) + trigger campaigns +
+auto-label + retrain + OTA.
+
+**Minimal ONE-HELMET design (the build spec for our flywheel):**
+1. Always-on ring buffer: last 60 s of 360p video + ToF frames + IMU +
+   haptic commands.
+2. Clip triggers (save ±30 s): (a) **ToF/CV disagreement** — our fusion
+   already computes both, shadow-mode for free; (b) user override
+   (stop/turn against guidance, IMU-detected); (c) near-miss (close
+   range, no prior warning); (d) detector confidence dead-band;
+   (e) manual "flag that."
+3. Per-session telemetry: warning counts, min distances, trigger rates —
+   drift detection without video.
+4. Weekly curation: label failures → eval set FIRST, then train;
+   **replay all past clips as regression tests** before shipping a new
+   model.
+
 ## What Glide does NOT do (our openings)
 
 - Nothing above the user's own decision at crossings (no signal state).
