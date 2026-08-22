@@ -4,6 +4,37 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-21 — IMU mount calibration DONE (voice-guided) — the long-standing blocker cleared
+
+**Problem**: `imu_mount_cal.py` had sat un-run for days because it needs
+the user's hands AND the stock script needs keyboard Enters at a terminal
+the user isn't watching while holding a helmet.
+
+**False alarm en route**: first attempts returned 0° between poses with
+near-zero noise, and a motion test showed a frozen gravity vector —
+diagnosed as "BNO085 stuck, power-cycle it." **Root cause was actually
+that the user had never moved the helmet** — the beep choreography wasn't
+reaching him (terminal prints + beeps with no explanation he could follow
+while away from the screen). Lesson: a hands-busy calibration must carry
+its own instructions IN AUDIO; and "sensor stuck" needs the user
+confirmed in-the-loop before you believe it.
+
+**Fix that worked**: rewrote the flow as a VOICE-GUIDED script (pyttsx3
+speaks each step) + stillness-gated sampling (4 s windows retried until
+angular spread ≤3°) — no timing pressure, no terminal-watching. Same
+math as the stock script (two-pose gravity + cardinal snap).
+
+**Result**: pose angle 71.6° (usable band 60–120), hold error 5.1°
+(absorbed by snap). Mount = chip X/Y swapped, Z inverted — clean
+cardinal. Verified live: nod → pitch only, right-ear-down → roll +,
+left turn → yaw +. Saved `visualizer/imu_mount_cal.json`.
+
+**Unlocks**: correct HUD attitude labels, voice leveling coach accuracy,
+gravity-frame head-clearance, pose-aware floor rejection, beacon
+lost-target tracking sign verification.
+
+---
+
 ## 2026-08-20 — Soundscape audio beacon ported into cv_fusion (key `g`)
 
 **Feature**: lock any detected object and Microsoft Soundscape's actual
