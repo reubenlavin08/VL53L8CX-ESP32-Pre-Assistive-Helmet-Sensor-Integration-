@@ -71,3 +71,17 @@ crop-vs-full benefit (A/B ourselves); Moondream 3 VRAM/serving.
 
 Sources: WorldScribe arXiv:2408.06627 · arXiv:2408.06303 · VizWiz ·
 Be My AI · Qwen3-VL HF/Ollama pages.
+
+## Benchmark results (2026-08-22, the desktop, GTX 1650 4 GB)
+
+| Option | Warm latency | Quality | Verdict |
+|---|---|---|---|
+| Local qwen3-vl:2b (Ollama) | **20-25 s** for a complete answer (early "3.8 s" was truncated thinking, empty answer) | Good - correctly described the room | **FAIL** on this GPU |
+| NIM cloud llama-3.2-11b-vision (free endpoint, user's key in openclaw/.env) | **2.3-6.4 s** (variable, free-tier queue) | Good; **abstained correctly** on unanswerable ("too blurry - can't identify"); ignores word cap -> truncate to first sentence client-side | **USABLE - the pick for this machine** |
+
+Decisions: NIM = the VLM path on the desktop (needs connectivity);
+re-benchmark locally on the field laptop (stronger GPU) before assuming
+cloud-only in the field. 8B local model impossible here (6.1 GB model,
+4 GB VRAM). NIM catalog also has nemotron-ocr-v2 (free endpoint) - a
+candidate for the signage/find-by-text OCR engine instead of local
+PARSeq; and nemotron-nano-12b-v2-vl untested.
