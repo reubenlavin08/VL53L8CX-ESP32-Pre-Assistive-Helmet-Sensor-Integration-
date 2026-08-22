@@ -147,6 +147,16 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > **Never**: go/no-go calls. Alignment only.
 > **Source**: [[implementation-guide-2026-08-20]] §4
 
+> [!note]- 13a. ✅ Door UX ruling 2026-08-22: scan-and-select, never guess
+> **Your concern**: "how does it know which door I want — don't guide
+> me to random doors." **Answer**: Glide's shipped pattern — announce
+> candidates ("two doors: twelve o'clock 8 m, two o'clock 15"), YOU
+> pick, beacon locks. Signage OCR breaks ties. Full navigation stays on
+> the phone (even Soundscape's creator delegates to Google Maps);
+> helmet owns the last ~10 m only. Open research nub: phone-destination
+> → helmet handoff + OSM entrance-tag pre-seeding (queued on request).
+> **Source**: [[glidance-deep-dive-2026-08-20]], [[QA-2026-08-22]]
+
 > [!note]- 13. Terminal guidance to doors [L] — the U1 flagship
 > **What**: detect door → ToF confirms real opening (depth behind) +
 > range → beacon/haptics steer you to it. Door STATE from geometry
@@ -399,16 +409,17 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > region. Reading itself is always on-demand ("read what's in my hand").
 > **Source**: [[QA-2026-08-22]] §2
 
-> [!note]- 53. ✅ "What's in my hand" — VLM description on demand [M]
-> **What**: a vision-language model (the class you were reaching for —
-> VLM: image in, sentence out) answers general questions YOLO can't:
-> "what's in my hand," "describe what's ahead." Pull-only, seconds of
-> latency acceptable. Compute unconstrained ⇒ run a small local one
-> (Moondream/Qwen-VL-class) or an API call; pairs with the OCR command
-> (text fails → description still works).
-> **Precedent**: Be My AI does exactly this and is loved — but as a
-> phone photo round-trip; ours is a keypress on the live frame.
-> **Source**: [[QA-2026-08-22]] addendum
+> [!note]- 53. ✅ "What's in my hand" — VLM description on demand [M] — **research done, build-ready**
+> **What**: keypress → one concise spoken sentence about the live frame
+> ("what's in my hand" / "what's ahead"). Query tier only; safety audio
+> always preempts.
+> **The design (researched 2026-08-22)**: Qwen3-VL-8B local via Ollama
+> (6 GB, ~2 s) + Claude API fallback; sharpest-of-10-frames selection;
+> bottom-center crop for hand mode; sensor-fusion prompting (YOLO+ToF
+> state injected as text) to kill hallucination; **forced abstention**
+> — BLV users can't detect wrong answers, so "I can't see that" beats a
+> guess. WorldScribe (UIST 2024) validated the exact cascade we'd have.
+> **Source**: [[vlm-integration-2026-08-22]]
 
 > [!note]- 52. Event-driven detector scheduling [S-M] — your FPS insight
 > **What**: YOLO at 2–3 fps idle; boost to full rate when ToF sees
