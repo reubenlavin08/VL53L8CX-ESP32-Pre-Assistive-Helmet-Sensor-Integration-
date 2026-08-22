@@ -6,12 +6,14 @@ Sources in `research-sources/`.
 
 ## ⭐ PRIORITY VIEW (first pass, ordered by impact ÷ effort — you ordered this rework 2026-08-20)
 
-**P0 — do first (unblock everything else):**
+**P0 — do first (unblock everything else): [USER: GO 2026-08-21]**
 1. VL53L8CX sunlight bench test (S) — gates platform-edge + head-clearance
-2. Target order → CLOSEST (S) — thin obstacles are invisible without it
+2. ⚖ Target order: CLOSEST + multi-target A/B vs STRONGEST (user wants
+   stability proof first — CV distances must not flap; see QA-2026-08-21 §1)
 3. IMU mount calibration (S, 2 min of your hands) — gates ALL IMU features
-4. Hardware buys: 2nd narrow global-shutter camera + DIY bone-conduction
-   drivers + V30i (~$78) — three research streams each demand one of these
+4. ~~2nd camera~~ **❌ RULED OUT 2026-08-21** (range-OCR features drop) ·
+   ~~wired/DIY bone conduction~~ **❌ RULED OUT — buy Bluetooth BC instead**
+   (BT is fine for speech + mono ticker + coarse beacon; QA-2026-08-21 §5)
 
 **P1 — highest impact per session:**
 5. ✅ Audio beacon (Soundscape-style spatial beacon; HRTF design locked) — M
