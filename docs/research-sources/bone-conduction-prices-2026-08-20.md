@@ -1,5 +1,15 @@
 # Bone-conduction headset — verified Canadian prices (partial) — 2026-08-20
 
+> **PURCHASED 2026-08-21**: AMCaoYiLi wired 3.5mm bone-conduction
+> headset (B0D8KCKZKG), **$33.90**, arriving Aug 31–Sep 2. Zero-latency
+> pair for the helmet / teardown candidate. Two fakes dodged en route
+> (GZLMMY + GZCRDZ "bone conduction" = vented speakers per verified
+> reviews — spec-table "speaker diameter" is the tell). Wired BC
+> headsets are a near-extinct category; this was the last credible
+> listing on Amazon.ca. Optional add-on still open: CPTEA BT $19.99
+> (overnight) for untethered speech. Expect low volume from a bare
+> laptop jack — PAM8403 amp fixes it.
+
 Status: PARTIAL. Amazon.ca blocked automated price checks (bot detection);
 the research agent correctly declined to bypass it via proxy, so Amazon
 prices/shipping and the budget brands (Mojawa, Vidonn, H2O) remain
