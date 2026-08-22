@@ -153,9 +153,12 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > candidates ("two doors: twelve o'clock 8 m, two o'clock 15"), YOU
 > pick, beacon locks. Signage OCR breaks ties. Full navigation stays on
 > the phone (even Soundscape's creator delegates to Google Maps);
-> helmet owns the last ~10 m only. Open research nub: phone-destination
-> → helmet handoff + OSM entrance-tag pre-seeding (queued on request).
-> **Source**: [[glidance-deep-dive-2026-08-20]], [[QA-2026-08-22]]
+> helmet owns the last ~10 m only. **Research DONE 2026-08-22**: full
+> build spec in [[last-meter-doors-2026-08-22]] — OSM entrances = bonus
+> only (live query: downtown Vancouver <18% coverage, Dunbar ZERO);
+> order candidates by destination bearing not distance; ≤3 + "more";
+> spatialized terse speech; our multi-candidate list may out-do Glide's.
+> **Source**: [[glidance-deep-dive-2026-08-20]], [[last-meter-doors-2026-08-22]]
 
 > [!note]- 13. Terminal guidance to doors [L] — the U1 flagship
 > **What**: detect door → ToF confirms real opening (depth behind) +
