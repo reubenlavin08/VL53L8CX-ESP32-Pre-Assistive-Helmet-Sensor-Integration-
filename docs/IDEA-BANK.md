@@ -391,6 +391,20 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > mints automatically.
 > **Source**: [[DEFENSIVE-PUBLICATION]]
 
+> [!note]- 51. Text-noticed earcon [S-M] — solves "when do we read signs"
+> **What**: cheap text DETECTION runs continuously; when salient text
+> appears (big, centered, stable ~1 s) a tiny chirp says "readable text
+> here" — you pull the actual READ with a command. 60 s cooldown per
+> region. Reading itself is always on-demand ("read what's in my hand").
+> **Source**: [[QA-2026-08-22]] §2
+
+> [!note]- 52. Event-driven detector scheduling [S-M] — your FPS insight
+> **What**: YOLO at 2–3 fps idle; boost to full rate when ToF sees
+> something new/closing, the beacon is guiding, or a query fires.
+> Speech is event-driven anyway — constant full-rate CV is waste. Pairs
+> with foveated ROI (#38); key for the untethered build.
+> **Source**: [[QA-2026-08-22]] §4
+
 ---
 
 ## ⚖ Open questions (your call, no default)
