@@ -75,15 +75,16 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > backbone of any transit feature.
 > **Source**: [[transit-gtfs-navilens-2026-08-20]]
 
-> [!note]- 5. Glass detection: free experiment, then firmware signature [S → M]
-> **What**: (a) free test at a glass door — CLOSEST order + 2
-> targets/zone, see what the sensor reports; (b) then a TOPGN-style
-> detector: flag zones with suspect status / multi-target / sigma
-> spikes, require spatial coherence (glass = rectangular patch).
-> **Why**: glass returns only ~4% of our light; a confidently-wrong
-> range walks a user into a pane. OPEN RISK: unproven at 8×8 resolution
-> — test early.
-> **Source**: [[ultrasonic-mmwave-glass-2026-08-20]], [[implementation-guide-2026-08-20]]
+> [!note]- 5. 🕐 Glass detection — DEPRIORITIZED by your ruling 2026-08-22
+> **Your reasoning (sound)**: head-level glass that isn't also at cane
+> level basically doesn't exist — glass walls/doors reach the floor,
+> and the cane is always alongside. Collision risk ≈ handled.
+> **What survives (small)**: glass still corrupts DATA — a pane can
+> return the room BEHIND it (phantom far reading where a wall is) or a
+> mirror can create phantom obstacles. Keep the cheap `target_status`
+> filtering we already do; the full detector (CV segmentation, TOPGN
+> signature, ultrasonic #36) waits for evidence it's needed.
+> **Source**: [[ultrasonic-mmwave-glass-2026-08-20]], [[QA-2026-08-22]]
 
 > [!note]- 6. ✅ Signage / label OCR engine [M] — one engine, three features
 > **What**: PARSeq text recognition (15 ms/crop) beside YOLO. Powers:
@@ -397,6 +398,17 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 > here" — you pull the actual READ with a command. 60 s cooldown per
 > region. Reading itself is always on-demand ("read what's in my hand").
 > **Source**: [[QA-2026-08-22]] §2
+
+> [!note]- 53. ✅ "What's in my hand" — VLM description on demand [M]
+> **What**: a vision-language model (the class you were reaching for —
+> VLM: image in, sentence out) answers general questions YOLO can't:
+> "what's in my hand," "describe what's ahead." Pull-only, seconds of
+> latency acceptable. Compute unconstrained ⇒ run a small local one
+> (Moondream/Qwen-VL-class) or an API call; pairs with the OCR command
+> (text fails → description still works).
+> **Precedent**: Be My AI does exactly this and is loved — but as a
+> phone photo round-trip; ours is a keypress on the live frame.
+> **Source**: [[QA-2026-08-22]] addendum
 
 > [!note]- 52. Event-driven detector scheduling [S-M] — your FPS insight
 > **What**: YOLO at 2–3 fps idle; boost to full rate when ToF sees
