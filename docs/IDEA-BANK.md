@@ -6,11 +6,13 @@ Sources in `research-sources/`.
 
 ## ⭐ PRIORITY VIEW (first pass, ordered by impact ÷ effort — you ordered this rework 2026-08-20)
 
-**P0 — do first (unblock everything else): [USER: GO 2026-08-21]**
-1. VL53L8CX sunlight bench test (S) — gates platform-edge + head-clearance
-2. ⚖ Target order: CLOSEST + multi-target A/B vs STRONGEST (user wants
-   stability proof first — CV distances must not flap; see QA-2026-08-21 §1)
-3. IMU mount calibration (S, 2 min of your hands) — gates ALL IMU features
+**P0 — status 2026-08-21 evening:**
+1. 🕐 Sunlight bench test — DEFERRED (user); trigger = before trusting any
+   outdoor feature
+2. 🕐 CLOSEST vs STRONGEST A/B — DEFERRED (user); firmware already runs
+   CLOSEST; trigger = CV distances flapping in practice
+3. ✅ **IMU mount calibration DONE 2026-08-21** (voice-guided, verified,
+   committed) — all IMU features unlocked
 4. ~~2nd camera~~ **❌ RULED OUT 2026-08-21** (range-OCR features drop) ·
    ~~wired/DIY bone conduction~~ **❌ RULED OUT — buy Bluetooth BC instead**
    (BT is fine for speech + mono ticker + coarse beacon; QA-2026-08-21 §5)
