@@ -85,3 +85,17 @@ cloud-only in the field. 8B local model impossible here (6.1 GB model,
 4 GB VRAM). NIM catalog also has nemotron-ocr-v2 (free endpoint) - a
 candidate for the signage/find-by-text OCR engine instead of local
 PARSeq; and nemotron-nano-12b-v2-vl untested.
+
+## nemotron-ocr-v2 benchmark (2026-08-23, NIM cloud, free endpoint)
+
+- Endpoint: `https://ai.api.nvidia.com/v1/cv/nvidia/nemotron-ocr-v2`
+  (dedicated CV-infer format, NOT chat completions).
+- Text-dense phone screenshot (2778x1284): **2.4 s, 51 words**, every
+  probe word found (radar/bats/RTF/Pitch/volume/attenuation).
+- Synthetic 720p product label: **1.3 s**, read "HEINZ" / "TOMATO
+  KETCHUP" / "NET WT 397g" all at 0.92 confidence.
+- Returns **per-word text + confidence + normalized bounding boxes** -
+  boxes map to pixel azimuth -> the find-by-text beacon comes free.
+- Verdict: **the OCR engine for labels/signage/find-by-text on this
+  stack.** Same connectivity requirement as the VLM (fine - field rig
+  is hotspot-connected).
