@@ -46,3 +46,6 @@ camera/calib_video.mkv
 
 # YOLO weights — ultralytics re-downloads them by name
 *.pt
+camera/vlm_log.jsonl
+camera/nim_key.txt
+yolov8s-worldv2.pt

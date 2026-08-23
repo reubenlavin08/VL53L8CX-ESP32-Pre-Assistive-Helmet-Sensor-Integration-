@@ -754,6 +754,14 @@ def main():
     guide = None           # beacon target: {tid, name, az, yaw, seen, rng, muted}
     bcn = None             # Beacon instance, created on first 'g'
 
+    # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
+    # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
+    # machine: GTX 1650 = 20-25 s, field laptop = Iris Xe). Pull-only,
+    # query tier, honest spoken failures, single-flight.
+    import vlm as vlm_mod
+    from collections import deque
+    vlm_frames = deque(maxlen=10)      # recent frames for sharpest-of-N
+
     # -- door mode state ---------------------------------------------------
     door = {"model": None, "state": "idle",   # idle|scanning|choose|guiding
             "cands": [], "sel": None, "redetect_t": 0.0, "lock": threading.Lock()}
@@ -855,6 +863,7 @@ def main():
         with fb_lock:
             frame_box["id"] += 1
             frame_box["frame"] = frame
+        vlm_frames.append(frame)       # ring for sharpest-of-N (keys v/h)
 
         ex = joint if (use_joint and joint) else cadex
         now = time.monotonic()
@@ -1364,6 +1373,20 @@ def main():
             level_done = False
         elif k == ord("w"):
             use_dewarp = not use_dewarp
+        elif k in (ord("v"), ord("h")):
+            if vlm_mod.busy.is_set():
+                _say_q("still working")
+            else:
+                hand = k == ord("h")
+                q = "What am I holding?" if hand else "Describe what is ahead."
+                ctx = "; ".join(f"{d['name']} {d['range_mm']/1000:.1f}m"
+                                for d in dets if d.get("range_mm"))[:200]
+                _say_q("looking")          # ack the press; answer in ~2-6 s
+                threading.Thread(
+                    target=vlm_mod.describe,
+                    args=(list(vlm_frames), q),
+                    kwargs={"sensor_ctx": ctx, "hand_mode": hand,
+                            "speak": _say_q}, daemon=True).start()
         elif k == ord("t"):
             show_text = not show_text
         elif k == ord("m") and joint is not None:
