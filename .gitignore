@@ -49,3 +49,5 @@ camera/calib_video.mkv
 camera/vlm_log.jsonl
 camera/nim_key.txt
 yolov8s-worldv2.pt
+camera/voice_log.jsonl
+camera/models/

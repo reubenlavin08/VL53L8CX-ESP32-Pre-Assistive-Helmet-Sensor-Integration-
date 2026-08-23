@@ -753,6 +753,7 @@ def main():
     path_hist = []         # (t, near_path_mm) for the TTC estimate
     guide = None           # beacon target: {tid, name, az, yaw, seen, rng, muted}
     bcn = None             # Beacon instance, created on first 'g'
+    voice_around = False   # voice "what's around" -> F9 on the next frame
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -761,6 +762,12 @@ def main():
     import vlm as vlm_mod
     from collections import deque
     vlm_frames = deque(maxlen=10)      # recent frames for sharpest-of-N
+
+    # -- voice commands (wake word "helmet"; "stop"/"quiet" ungated) ---------
+    # docs/research-sources/voice-commands-2026-08-23.md. Half-duplex: the
+    # recognizer drops mic frames while our own TTS speaks.
+    import voice as voice_mod
+    voice_mod.start(is_speaking=lambda: speaking)
 
     # -- door mode state ---------------------------------------------------
     door = {"model": None, "state": "idle",   # idle|scanning|choose|guiding
@@ -1116,7 +1123,8 @@ def main():
         # Numbers ARE allowed here (stationary aiming context), hedged by
         # association coarseness: "about".
         f9_now = f9_pressed()
-        if f9_now and not f9_was_down:
+        if (f9_now and not f9_was_down) or voice_around:
+            voice_around = False
             parts = []
             ranged = sorted([d for d in dets if d["range_mm"]],
                             key=lambda d: d["range_mm"])[:2]
@@ -1360,6 +1368,35 @@ def main():
 
         cv2.imshow("CV fusion", view)
         k = cv2.waitKey(1) & 0xFF
+
+        # -- voice command -> same dispatch as the keys ----------------------
+        try:
+            vc = voice_mod.commands.get_nowait()
+        except Exception:
+            vc = None
+        if vc:
+            if vc == "describe":
+                k = ord("v")
+            elif vc == "hand":
+                k = ord("h")
+            elif vc == "doors":
+                k = ord("d") if door["state"] == "idle" else k
+            elif vc in ("sel1", "sel2", "sel3"):
+                k = ord("1") + int(vc[-1]) - 1
+            elif vc == "guide":
+                k = ord("g")
+            elif vc == "stop":
+                if door["state"] != "idle":
+                    k = ord("d")               # cancels door mode
+                elif guide is not None:
+                    k = ord("g")               # cancels object guide
+            elif vc == "quiet":
+                audio_on = False
+            elif vc == "audio_on":
+                audio_on = True
+                _say_q("audio on")
+            elif vc == "around":
+                voice_around = True
         if k == ord("q"):
             break
         elif k == ord("y"):
