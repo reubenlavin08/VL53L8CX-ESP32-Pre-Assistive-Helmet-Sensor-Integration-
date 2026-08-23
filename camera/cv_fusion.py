@@ -504,6 +504,21 @@ from beacon import Beacon
 GUIDE_ARRIVE_MM = 1000.0     # arrival geofence -- outro + "arrived", guide ends
 GUIDE_LOST_S = 8.0           # target unseen this long -> "guide lost", stop
 
+# ── Scan-and-select DOOR guidance (key 'd', then 1/2/3) ──────────────────
+# Design: docs/research-sources/last-meter-doors-2026-08-22.md. COCO has no
+# door class, so the scan runs YOLO-World (open-vocabulary) ON DEMAND only.
+# Flow: 'd' -> "scanning, pan slowly" (3.5 s) -> up to 3 candidates spoken
+# with clock bearing + rough range -> user presses 1/2/3 -> Soundscape
+# beacon locks on the door's WORLD bearing (IMU-anchored, so it survives
+# leaving the frame); a slow re-detect loop re-fixes bearing/range while
+# guiding. Never guides anywhere the user didn't pick.
+DOOR_CLASSES = ["door", "glass door", "doorway", "double door"]
+DOOR_SCAN_S = 3.5            # scan window while the user pans
+DOOR_CONF = 0.12             # open-vocab confidences run low; cluster+vote
+DOOR_CLUSTER_DEG = 14.0      # world-bearing bin -> one candidate per cluster
+DOOR_REDETECT_S = 1.2        # bearing re-fix cadence while guiding
+DOOR_HEIGHT_MM = 2030.0      # standard door leaf for bbox-height ranging
+
 
 def ticker_worker():
     """TTC-based proximity ticker (see tick_state comment). Discrete ticks
@@ -738,6 +753,96 @@ def main():
     path_hist = []         # (t, near_path_mm) for the TTC estimate
     guide = None           # beacon target: {tid, name, az, yaw, seen, rng, muted}
     bcn = None             # Beacon instance, created on first 'g'
+
+    # -- door mode state ---------------------------------------------------
+    door = {"model": None, "state": "idle",   # idle|scanning|choose|guiding
+            "cands": [], "sel": None, "redetect_t": 0.0, "lock": threading.Lock()}
+
+    def _door_preload():
+        try:
+            from ultralytics import YOLO as _Y
+            m = _Y(str(ROOT / "yolov8s-worldv2.pt"))
+            m.set_classes(DOOR_CLASSES)
+            m.predict(np.zeros((64, 64, 3), np.uint8), imgsz=416, verbose=False)
+            door["model"] = m
+            print("door scanner ready")
+        except Exception as e:
+            print(f"door scanner unavailable: {e}")
+    threading.Thread(target=_door_preload, daemon=True).start()
+
+    def _yaw_now():
+        if imu_quat is None or time.monotonic() - imu_stamp > 1.0:
+            return None
+        w_, x_, y_, z_ = imu_quat
+        Rq = quat_to_R(w_, x_, y_, z_)
+        if mount_cal is not None:
+            Rq = Rq @ mount_cal.T
+        f_ = Rq @ np.array([0, 1, 0])
+        return float(np.degrees(np.arctan2(-f_[0], f_[1])))
+
+    def _wrap(a):
+        return ((a + 180.0) % 360.0) - 180.0
+
+    def _door_scan():
+        """3.5 s scan: detect doors on the newest frames while the user pans,
+        anchor each in WORLD bearing (az + yaw at grab), cluster, keep <=3."""
+        hits = []            # (world_bearing_or_az, used_imu, range_mm, conf)
+        t0 = time.monotonic()
+        last_fid = -1
+        while time.monotonic() - t0 < DOOR_SCAN_S:
+            with fb_lock:
+                fid, frame = frame_box["id"], frame_box["frame"]
+            if frame is None or fid == last_fid:
+                time.sleep(0.03)
+                continue
+            last_fid = fid
+            yaw0 = _yaw_now()
+            r = door["model"].predict(frame, imgsz=640, conf=DOOR_CONF,
+                                      verbose=False)[0]
+            for b in r.boxes:
+                x0, y0, x1, y1 = b.xyxy[0].tolist()
+                az = pixel_azimuth((x0 + x1) / 2, (y0 + y1) / 2)
+                if az is None:
+                    continue
+                rng = float(np.clip(K[1, 1] * DOOR_HEIGHT_MM /
+                                    max(20.0, y1 - y0), 800, 20000))
+                wb = az + yaw0 if yaw0 is not None else az
+                hits.append((wb, yaw0 is not None, rng, float(b.conf)))
+        # cluster by bearing
+        cands = []
+        for wb, has_imu, rng, conf in sorted(hits, key=lambda h: -h[3]):
+            for c in cands:
+                if abs(_wrap(wb - c["wb"])) < DOOR_CLUSTER_DEG:
+                    c["n"] += 1
+                    break
+            else:
+                cands.append({"wb": wb, "imu": has_imu, "rng": rng,
+                              "conf": conf, "n": 1})
+        # order: most central to current heading first (destination bearing
+        # unknown without the phone handoff), keep 3
+        yawn = _yaw_now() or 0.0
+        cands.sort(key=lambda c: abs(_wrap(c["wb"] - yawn)))
+        cands = cands[:3]
+        with door["lock"]:
+            door["cands"] = cands
+            door["state"] = "choose" if cands else "idle"
+        if not cands:
+            _say_q("no doors found, try panning and press d again")
+            return
+        parts = []
+        for i, c in enumerate(cands):
+            rel = _wrap(c["wb"] - yawn)
+            hr = int(round(rel / 30.0)) % 12
+            hr = 12 if hr == 0 else hr
+            m = c["rng"] / 1000.0
+            parts.append(f"door {i+1}, {hr} o'clock, about {m:.0f} meters")
+        _say_q("; ".join(parts) + ". press a number to select")
+
+    def _say_q(text):
+        global speech_next
+        with speech_lock:
+            speech_next = (text, f"DOOR{time.monotonic()}", 0, "query",
+                           time.monotonic())
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -1095,6 +1200,65 @@ def main():
                         (12, 136), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
                         (255, 0, 255), 2, cv2.LINE_AA)
 
+        # ── DOOR MODE state machine (key 'd', then 1..3) ─────────────────────
+        def _door_redetect():
+            with fb_lock:
+                frm = frame_box["frame"]
+            if frm is None or door["sel"] is None:
+                return
+            y0w = _yaw_now()
+            r = door["model"].predict(frm, imgsz=640, conf=DOOR_CONF,
+                                      verbose=False)[0]
+            best, bd = None, 25.0
+            for b in r.boxes:
+                x0d, y0d, x1d, y1d = b.xyxy[0].tolist()
+                azd = pixel_azimuth((x0d + x1d) / 2, (y0d + y1d) / 2)
+                if azd is None:
+                    continue
+                wbd = azd + y0w if y0w is not None else azd
+                dv = abs(_wrap(wbd - door["sel"]["wb"]))
+                if dv < bd:
+                    bd = dv
+                    best = (wbd, float(np.clip(
+                        K[1, 1] * DOOR_HEIGHT_MM / max(20.0, y1d - y0d),
+                        500, 20000)))
+            if best is not None:
+                with door["lock"]:
+                    door["sel"]["wb"], door["sel"]["rng"] = best
+                    door["sel"]["seen"] = time.monotonic()
+
+        if door["state"] == "guiding" and door["sel"] is not None \
+                and bcn is not None:
+            c = door["sel"]
+            if door["model"] is not None and now - door["redetect_t"] > DOOR_REDETECT_S:
+                door["redetect_t"] = now
+                threading.Thread(target=_door_redetect, daemon=True).start()
+            if not audio_on or level_mode:
+                if not c.get("muted"):
+                    bcn.stop()
+                    c["muted"] = True
+            else:
+                if c.get("muted"):
+                    bcn.start()
+                    c["muted"] = False
+                rel = (_wrap(c["wb"] - cur_yaw) if (cur_yaw is not None and c["imu"])
+                       else 0.0)
+                stale = now - c.get("seen", 0) > 4.0
+                if c["rng"] < 1200 and abs(rel) < 25 and not stale:
+                    bcn.stop(arrived=True)
+                    _say_q("door reached")
+                    with door["lock"]:
+                        door["state"] = "idle"
+                        door["sel"] = None
+                else:
+                    bcn.update(rel, dim=stale, duck=speaking)
+        if door["state"] != "idle":
+            lbl = {"scanning": "DOOR SCAN...", "choose":
+                   f"DOORS: {len(door['cands'])} found - press 1..{len(door['cands'])}",
+                   "guiding": "GUIDING door"}[door["state"]]
+            cv2.putText(view, lbl, (12, 162), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                        (0, 200, 255), 2, cv2.LINE_AA)
+
         # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
         # The pod hangs on a ball camera mount; every re-clamp needs squaring.
         # A blind user can't watch a bubble, so the device coaches: "tilt up 5"
@@ -1204,7 +1368,46 @@ def main():
             show_text = not show_text
         elif k == ord("m") and joint is not None:
             use_joint = not use_joint
+        elif k == ord("d"):
+            if door["state"] in ("choose", "guiding"):
+                if bcn:
+                    bcn.stop()
+                with door["lock"]:
+                    door["state"] = "idle"
+                    door["sel"] = None
+                _say_q("door mode off")
+            elif door["model"] is None:
+                _say_q("door scanner still loading, try again in a moment")
+            elif door["state"] == "idle":
+                if guide is not None:          # object guide yields to door mode
+                    if bcn:
+                        bcn.stop()
+                    guide = None
+                with door["lock"]:
+                    door["state"] = "scanning"
+                _say_q("scanning for doors, pan slowly")
+                threading.Thread(target=_door_scan, daemon=True).start()
+        elif door["state"] == "choose" and k in (ord("1"), ord("2"), ord("3")):
+            i = k - ord("1")
+            if i < len(door["cands"]):
+                with door["lock"]:
+                    door["sel"] = dict(door["cands"][i], seen=now, muted=False)
+                    door["state"] = "guiding"
+                    door["redetect_t"] = 0.0
+                if bcn is None:
+                    bcn = Beacon()
+                rel0 = (_wrap(door["sel"]["wb"] - cur_yaw)
+                        if (cur_yaw is not None and door["sel"]["imu"]) else 0.0)
+                bcn.update(rel0)
+                bcn.start()
+                _say_q(f"guiding to door {i+1}")
         elif k == ord("g"):
+            if door["state"] != "idle":        # door mode yields to object guide
+                if bcn:
+                    bcn.stop()
+                with door["lock"]:
+                    door["state"] = "idle"
+                    door["sel"] = None
             if guide is not None:
                 if bcn:
                     bcn.stop()

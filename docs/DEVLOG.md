@@ -4,6 +4,39 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-22 — Scan-and-select door guidance (key `d` → 1/2/3) + VLM path decided
+
+**Door guidance built** per the last-meter research spec
+(research-sources/last-meter-doors-2026-08-22.md):
+
+- **Problem**: COCO has no door class — our main detector can't see
+  doors at all. **Fix**: YOLO-World (open-vocabulary) loaded lazily in a
+  background thread, prompted with ["door", "glass door", "doorway",
+  "double door"], run ON DEMAND only (0.2 s/frame at 640 — verified on
+  real helmet snapshots; found the door in cvfusion_headless_test.png
+  at 0.21 conf).
+- **Flow**: `d` → "scanning for doors, pan slowly" (3.5 s, ~15 frames)
+  → detections anchored in WORLD bearing (pixel azimuth + IMU yaw at
+  grab), clustered at 14°, ≤3 candidates spoken with clock bearing +
+  bbox-height range estimate (2.03 m standard leaf) → user presses
+  1/2/3 → Soundscape beacon locks the world bearing (survives leaving
+  frame; 1.2 s re-detect loop re-fixes bearing/range) → arrival <1.2 m
+  facing → outro + "door reached." **Never guides anywhere the user
+  didn't pick** — the scan-and-select ruling.
+- Door mode and object-guide (`g`) yield to each other; F8/leveling
+  mute respected; no-IMU degrades to redetect-only tracking.
+- Verified: py_compile clean, bearing-wrap/clock/ranging unit math,
+  real-frame detection smoke test. **Awaiting live walk test.**
+
+**VLM decision same day**: local Qwen3-VL-2B on the desktop GTX 1650 =
+20–25 s/answer (FAIL — and the first benchmark's "3.8 s" was an empty
+truncated-thinking answer; lesson: always check the ANSWER, not just
+the clock). NVIDIA NIM cloud llama-3.2-11b-vision (user's free key) =
+2.3–6.4 s with correct abstention on unanswerables → NIM is the VLM
+path on this machine; re-benchmark locally on the field laptop.
+
+---
+
 ## 2026-08-21 — IMU mount calibration DONE (voice-guided) — the long-standing blocker cleared
 
 **Problem**: `imu_mount_cal.py` had sat un-run for days because it needs
