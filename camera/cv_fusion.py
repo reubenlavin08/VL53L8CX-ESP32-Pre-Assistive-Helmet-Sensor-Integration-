@@ -591,7 +591,18 @@ BODY_HALF_W_MM = 350.0
 PATH_CONE_MAX_DEG = 45.0
 CAUTION_MM = 1800.0       # caution tier ceiling
 CLOSING_MPS = -0.5        # range rate for the "closing"/"hot" aspect word
-CONF_HEDGE = 0.50         # below this confidence the callout says "maybe"
+CONF_HEDGE = 0.55         # below this the callout says "maybe <name>"
+CONF_SURE = 0.70          # below CONF_HEDGE: name withheld -> "obstacle"
+                          # (nano-seg mislabels are common on fisheye+blur;
+                          # a wrong name is worse than no name)
+
+
+def _det_name(d):
+    if d["conf"] >= CONF_SURE:
+        return d["name"]
+    if d["conf"] >= CONF_HEDGE:
+        return f"maybe {d['name']}"
+    return "obstacle"
 GATE_ON_DPS = 100.0       # sterile cockpit: gate CAUTION above this yaw rate
 GATE_OFF_DPS = 60.0       # release below this...
 GATE_OFF_DWELL_S = 0.25   # ...sustained this long
@@ -1337,8 +1348,7 @@ def main():
                 az = pixel_azimuth((x0a + x1a) / 2, (y0a + y1a) / 2)
                 if az is None:
                     continue
-                nm = (d["name"] if d["conf"] >= CONF_HEDGE
-                      else f"maybe {d['name']}")
+                nm = _det_name(d)
                 sec = _sector(az)
                 if sec not in best or d["range_mm"] < best[sec]["rng"]:
                     best[sec] = {"name": nm, "sector": sec, "az": az,
@@ -1823,8 +1833,7 @@ def main():
                         x0, y0, x1, y1 = d["xyxy"]
                         az = pixel_azimuth((x0 + x1) / 2, (y0 + y1) / 2)
                         if az is not None:
-                            nm = (d["name"] if d["conf"] >= CONF_HEDGE
-                                  else f"maybe {d['name']}")
+                            nm = _det_name(d)
                             key = f"id{d['tid']}" if d["tid"] else d["name"]
                             cand = (nm, key, d["range_mm"], az)
                 if cand is not None:

@@ -141,28 +141,31 @@ def _worker(is_speaking):
             continue
         entry = {"t": time.strftime("%H:%M:%S"), "heard": txt,
                  "armed": armed}
-        if "[unk]" in txt:
-            entry["verdict"] = "rejected-unk"
-            _log(entry)
-            continue
+        # [unk] tokens are surrounding noise/unmodeled speech; strip them
+        # and match what's left. The wake word may arm even with noise
+        # around it (arming is cheap); the ungated words stay strict --
+        # "stop" inside a sentence must NOT trigger.
+        toks = [t for t in txt.split() if t != "[unk]"]
+        clean = " ".join(toks)
         if not armed:
-            if txt == WAKE:
+            if WAKE in toks:
                 state["armed_until"] = now + ARM_S
                 set_grammar(full_gram)
                 _beep(1400, 120)
                 entry["verdict"] = "wake"
-            elif txt in IDLE_OK:
+            elif txt in IDLE_OK:              # strict: solo word only
                 commands.put(IDLE_OK[txt])
                 entry["verdict"] = f"cmd:{IDLE_OK[txt]} (ungated)"
             else:
-                entry["verdict"] = "rejected-idle"
+                entry["verdict"] = ("rejected-unk" if "[unk]" in txt
+                                    else "rejected-idle")
         else:
-            if txt in PHRASES:
-                commands.put(PHRASES[txt])
-                entry["verdict"] = f"cmd:{PHRASES[txt]}"
+            if clean in PHRASES:
+                commands.put(PHRASES[clean])
+                entry["verdict"] = f"cmd:{PHRASES[clean]}"
                 state["armed_until"] = 0.0    # one command per wake
                 set_grammar(idle_gram)
-            elif txt == WAKE:
+            elif WAKE in toks:
                 state["armed_until"] = now + ARM_S   # re-arm
                 entry["verdict"] = "re-wake"
             else:
