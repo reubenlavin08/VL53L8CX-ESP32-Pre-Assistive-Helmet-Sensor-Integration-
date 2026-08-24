@@ -262,6 +262,37 @@ def phone_server(port):
     fill="none" stroke="currentColor" stroke-width="1.7"/>
     <path d="M20 8a8 8 0 0 0-4-4m4 4h-3m3 0V5" fill="none" stroke="currentColor"
     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button title="Help" style="font-size:22px;font-weight:700"
+   onclick="document.getElementById('help').style.display='block'">?</button>
+</div>
+<div id="help" onclick="this.style.display='none'" style="display:none;
+ position:fixed;inset:0;z-index:4;background:rgba(10,12,16,.94);
+ overflow-y:auto;padding:calc(18px + env(safe-area-inset-top)) 22px 40px;
+ font-size:15px;line-height:1.55">
+ <h2 style="margin-bottom:4px">Iris</h2>
+ <p style="color:#8a94a6;margin-bottom:14px">Avoiding obstacles is automatic
+ (speech + haptics + clicks). Everything else you ask for. Tap anywhere to close.</p>
+ <h3>Voice — say "Iris", wait for the beep, then:</h3>
+ <ul style="margin:6px 0 14px 20px">
+  <li><b>describe</b> — AI says what's ahead</li>
+  <li><b>what's in my hand</b> — identify a held object</li>
+  <li><b>what's around</b> — one item per direction; repeat for distances, again for full AI view</li>
+  <li><b>scan doors</b> → <b>door one/two/three</b> — beacon guides you to it</li>
+  <li><b>find exit / washroom / open / push / pull / sale / ketchup</b> — beacon locks on that text</li>
+  <li><b>read that</b> — read nearby text</li>
+  <li><b>guide</b> — beacon on what's centered ahead</li>
+  <li><b>audio on</b> — unmute</li>
+ </ul>
+ <p style="margin-bottom:14px"><b>Anytime, no wake word:</b> "stop" ·
+ "quiet" (mute) · "wrong" (bad callout — logged)</p>
+ <h3>Helmet</h3>
+ <p style="margin:6px 0 14px"><b>Double-tap the shell</b> = describe.
+ A dropped helmet announces where it is.</p>
+ <h3>Buttons</h3>
+ <p style="margin:6px 0 14px"><b>Around</b> · <b>Describe</b> ·
+ <b>Mute</b> · <b>Flag</b> (save the last 60&nbsp;s for review) ·
+ <b>Rotate</b> (fill a sideways-held phone) · <b>?</b></p>
+ <p style="color:#8a94a6">Full guide: docs/USER-GUIDE.md</p>
 </div>
 <div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
 <div id="toast"></div>
@@ -2292,6 +2323,12 @@ def main():
                 k = ord("v")
         if k == ord("q"):
             break
+        elif k == ord("?"):
+            try:
+                print((ROOT / "docs" / "USER-GUIDE.md")
+                      .read_text(encoding="utf-8"))
+            except OSError:
+                print("USER-GUIDE.md not found")
         elif k == ord("y"):
             show_det = not show_det
         elif k == ord("a"):
