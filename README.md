@@ -1,58 +1,84 @@
-<h1 align="center">VL53L8CX × ESP32-S3 — Live 3D Point Cloud</h1>
+<h1 align="center">Assistive Helmet</h1>
 
 <p align="center">
-  <em>A helmet-mounted obstacle warning device for the visually impaired, built around a 4×4 time-of-flight depth grid at 30 Hz on an ESP32-S3 (sensor supports 8×8 too — see v9 picks). Streams over WiFi, alerts via a buzzer + 3 directional haptic motors based on body-frame distance, and serves its own iPhone-friendly web viewer so I can debug while wearing it.</em>
+  <em>A helmet that answers what the white cane can't: what's at head height, what's approaching, and where exactly the thing you want is.</em>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCU-ESP32--S3-E7352C?style=flat-square" alt="ESP32-S3"/>
-  <img src="https://img.shields.io/badge/Sensor-VL53L8CX-1F8AC0?style=flat-square" alt="VL53L8CX"/>
-  <img src="https://img.shields.io/badge/Framework-ESP--IDF%20v5.4.4-blue?style=flat-square" alt="ESP-IDF v5.4.4"/>
-  <img src="https://img.shields.io/badge/Viewer-iPhone%20Safari%20%E2%86%92%20ESP%20HTTP-44A833?style=flat-square" alt="Phone viewer"/>
-  <img src="https://img.shields.io/badge/Status-Stage%204%20—%20camera%2BToF%20fusion%20live-brightgreen?style=flat-square" alt="Status"/>
-</p>
-
----
-
-<p align="center">
-  <img src="visualizer/progress_demo_v6.gif" width="840" alt="v6 visualiser in motion — world-frame point memory wrapping around the sensor"/>
-</p>
-<p align="center">
-  <em>v6 — accumulated past observations slide off to the side as the sensor pans, the cone effectively wraps around. Trail behind the sensor fades from invisible at the tail to bright yellow at the head. Live at 15 Hz.</em>
-  <br/>
-  <sub><a href="visualizer/progress_demo_v6.mp4">▶ HD MP4 (10 s, 370 KB)</a></sub>
+  <img src="https://img.shields.io/badge/Sensors-2%C3%97%20ToF%20%2B%20fisheye%20%2B%20IMU-1F8AC0?style=flat-square"/>
+  <img src="https://img.shields.io/badge/MCU-ESP32--S3-E7352C?style=flat-square"/>
+  <img src="https://img.shields.io/badge/Interface-voice%20%C2%B7%20spatial%20audio%20%C2%B7%20haptics-44A833?style=flat-square"/>
+  <img src="https://img.shields.io/badge/Parts-~%24200-blueviolet?style=flat-square"/>
+  <img src="https://img.shields.io/badge/Status-full%20stack%20built%2C%20field%20testing-brightgreen?style=flat-square"/>
 </p>
 
 ---
 
-## Latest — camera + ToF fusion (2026-08-16)
-
-The two depth sensors are now calibrated to the helmet camera and fused live:
-
-- **Extrinsic calibration** from a planar target: rotation within 1.2° of the
-  CAD design, 5.5 mm plane residual across 39 poses. Along the way this
-  uncovered that the sensor reports perpendicular distance (not slant), that
-  its effective per-zone aim on flat surfaces sits inside the geometric zone
-  centres (illumination roll-off), and a sign convention bug worth a devlog
-  entry on its own. Full story: `docs/DEVLOG.md`.
-- **Live fusion overlay** (`camera/fusion_overlay.py`): every ToF zone drawn
-  as a curved frustum patch on the fisheye feed, depth-coloured.
-- **CV fusion** (`camera/cv_fusion.py`): YOLO26n segmentation + ByteTrack on
-  the camera, each detection ranged by the ToF zones its mask claims, and a
-  voice that follows evidence from assistive-tech research — silent by
-  default, hazards only, distance as tick tempo rather than numbers, detail
-  on demand. A second "brevity" mode borrows fighter-aviation callout
-  structure (`docs/CALLOUT-PROTOCOL.md`), with a trainer
-  (`camera/callout_trainer.py`).
-- **Research base**: three commissioned deep-dives (CV stack, failure modes,
-  what blind users actually want) archived under `docs/research-sources/`,
-  merged into `docs/MASTER-SYNTHESIS-2026-08-16.md`.
-
-This is a research prototype exploring camera + time-of-flight sensing as a
-supplementary cue. It is not a mobility aid and not a substitute for a white
-cane, a guide dog, or O&M training.
+<p align="center">
+  <img src="visualizer/progress_demo_v6.gif" width="840" alt="Live 3D depth scan building as the helmet pans"/>
+</p>
+<p align="center"><em>The helmet's two depth sensors building a live 3D scan as the head pans. Demo video of the full system: coming with the field-test release.</em></p>
 
 ---
+
+## Why
+
+Blind pedestrians with a cane or a guide dog still take head-level hits — 13% report one at least monthly, and the number is the same for cane and dog users. GPS says "you have arrived" from 5–20 meters away, often on the wrong side of the building. And there is no way to ask the street a question. This helmet is a research prototype aimed at those three gaps. It stays silent until it matters, it never guides anywhere you didn't choose, and the cane stays in charge of the ground.
+
+It is not a mobility aid and not a substitute for a white cane, a guide dog, or O&M training.
+
+## What it does
+
+**Protect** — hazards above cane height, silent by default:
+- Tiered voice: nothing → "chair, left" on change → "stop stop" directive that interrupts everything
+- Proximity as a tick that speeds with time-to-collision — panned to the hazard's direction — not numbers
+- Gravity-referenced head-clearance watch: "low clearance, duck" computed in the world frame from live IMU attitude, so it works mid-stride at any head pitch
+- Three temple motors with a walkable-corridor mode: silence when centered, pulses only as you drift toward a wall
+- Speech gates itself during fast head turns (a stale "left" mid-scan is worse than silence)
+- If the helmet falls, it says so and repeats until picked up
+
+**Guide** — to a target you choose, never a guess:
+- "scan doors" → "door one, twelve o'clock, about six steps; door two…" → pick one → Microsoft Soundscape's actual audio beacon (their open-sourced assets) leads you, arrival melody at one meter
+- "find exit" → OCR scans as you pan, locks the beacon on the matched word in world coordinates — it keeps working when you look away
+- Distances spoken in your calibrated steps, not meters
+
+**Answer** — on demand only:
+- "what's around" → one item per sector, terse; ask again for ranges; a third time for a full scene description
+- "describe" / "what's in my hand" → a vision-language model answers in one sentence, and says "I can't see that clearly" rather than guess — blind users can't detect a wrong answer, so the system never bluffs
+- "read that" → speaks the dominant text in view
+- All of it by voice (wake word "helmet"), keyboard, or a double-tap on the shell
+
+## The numbers
+
+| What | Measured |
+|---|---|
+| ToF↔camera extrinsic calibration | 5.5 mm rms, 1.15° from CAD, 39 poses |
+| Full CV pipeline on the field laptop | 27 fps segmentation, 114 ms open-vocabulary door scan |
+| Scene OCR (cloud) | 1.3–2.4 s, per-word bearings |
+| Scene description (cloud VLM) | 2–6 s, abstention-prompted |
+| Head-turn gate estimator | tracks 191°/s, decays to 0 on stop |
+| False positives | logged per session as FP/hour — the metric that kills devices like this |
+
+## How it works
+
+Two $6 ST VL53L8CX time-of-flight sensors (seam-abutted for a ~90° depth field) and a fisheye camera on a bike helmet, an ESP32-S3 streaming depth + IMU attitude over WiFi, and a laptop fusing it: YOLO segmentation ranges each object by the depth zones its mask claims; an open-vocabulary detector finds doors on demand; cloud models handle text and description. Output is a tier engine modeled on assistive-audio research — Microsoft Soundscape's design language, fighter-aviation callout structure, bat-inspired time-to-collision coding — through open-ear audio and temple haptics. Every alert, override, and near-miss is logged; a hush within ten seconds of an alert counts as a false-positive vote against it.
+
+## Built on evidence
+
+- 30+ commissioned research syntheses in [`docs/research-sources/`](docs/research-sources) — what blind users actually ask for, why every commercial wearable in this space died, and the implementation literature feature by feature
+- Design constants read from [Microsoft Soundscape's source](docs/soundscape-reference), not its marketing; competitor patents (.lumen, Glidance, Toyota, Apple) mined for their engineering
+- Methods published as prior art so they stay free: [defensive publication](docs/DEFENSIVE-PUBLICATION.md)
+- The full build story, failures first: [`docs/DEVLOG.md`](docs/DEVLOG.md)
+
+## Honest limitations
+
+Glass is invisible to the depth sensors (the cane covers it — by design). Bright-sun range is untested and probably poor. Overhead coverage leans on natural gait pitch with the current sensor aim. Cloud features need connectivity (the field rig runs on a phone hotspot). One wearer so far.
+
+Parts of the research synthesis and code were built with Claude as an engineering copilot; every measurement and design decision above was verified on the bench.
+
+---
+
+# Technical reference
 
 ## What it does
 
