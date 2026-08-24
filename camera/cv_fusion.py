@@ -218,6 +218,19 @@ def phone_server(port):
         print(f"phone server: {e}")
 
 
+# camera -> helmet rotation (constant, from the CAD construction: the whole
+# sensor group is pitched 22.5 deg down; camera axes in helmet coords are
+# cam_x=(1,0,0), cam_y=(0,-s,-c), cam_z=(0,c,-s), s/c = sin/cos 22.5).
+# Verified: p_cam=(0,0,1) (boresight) -> helmet (0, c, -s) = forward+down.
+_S225 = np.sin(np.radians(22.5))
+_C225 = np.cos(np.radians(22.5))
+R_CH = np.array([[1.0, 0.0, 0.0],
+                 [0.0, -_S225, _C225],
+                 [0.0, -_C225, -_S225]])
+
+HEAD_MARGIN_MM = 120.0    # clearance margin above the pod plane (100-150)
+
+
 def quat_to_R(w, x, y, z):
     return np.array([
         [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
@@ -887,6 +900,9 @@ def main():
     dropped = False
     drop_n = 0
     next_drop_say = 0.0
+    clr_ring = []          # last-5-frames hazard votes (3-of-5 persistence)
+    clr_last_pattern = 0.0
+    clr_off_said = False
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -1193,6 +1209,16 @@ def main():
             find["sel"] = None
         _say_q(f"searching for {word}, pan slowly")
         threading.Thread(target=_find_scan, args=(word,), daemon=True).start()
+
+    def _duck_pattern():
+        """Fire the firmware all-motor double pulse (GET /api/pattern?p=duck).
+        Silent no-op on failure or in --serial field mode."""
+        try:
+            import urllib.request
+            urllib.request.urlopen(
+                f"http://{args.host}/api/pattern?p=duck", timeout=2).read()
+        except OSError:
+            pass
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -1211,6 +1237,11 @@ def main():
 
         ex = joint if (use_joint and joint) else cadex
         now = time.monotonic()
+        # helmet->world attitude for the clearance watch (None = feature off)
+        Rw_att = None
+        if imu_quat is not None and now - imu_stamp < 1.0 and mount_cal is not None:
+            _w, _x, _y, _z = imu_quat
+            Rw_att = quat_to_R(_w, _x, _y, _z) @ mount_cal.T
         # -- project all valid zones (same batch pattern as fusion_overlay) --
         zones = []          # {poly (P,2), centroid, z, sensor}
         for S in ("A", "B"):
@@ -1264,8 +1295,18 @@ def main():
                 poly = proj[i * P:(i + 1) * P]
                 if np.isnan(poly).any():
                     continue
-                zones.append({"poly": poly.astype(np.int32),
-                              "cen": poly.mean(0), "z": z, "S": S, "row": rr})
+                zn_rec = {"poly": poly.astype(np.int32),
+                          "cen": poly.mean(0), "z": z, "S": S, "row": rr}
+                if Rw_att is not None:
+                    # gravity-frame height: cam -> helmet (fixed R_CH) ->
+                    # world (live IMU). THE flagship trick: height-classify
+                    # per-sample with the simultaneous attitude, so gait
+                    # pitch sweeps integrate instead of corrupting.
+                    p_cam = allp[i * P:(i + 1) * P].mean(0)
+                    p_w = Rw_att @ (R_CH @ p_cam)
+                    zn_rec["h"] = float(p_w[2])
+                    zn_rec["d_fwd"] = float(np.hypot(p_w[0], p_w[1]))
+                zones.append(zn_rec)
 
         with det_lock:
             dets = list(det_latest) if show_det else []
@@ -1693,6 +1734,55 @@ def main():
                            else "GUIDING"),
                         (12, 188), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
                         (255, 180, 0), 2, cv2.LINE_AA)
+
+        # ── CLEARANCE WATCH: gravity-frame head clearance (FLAGSHIP) ─────────
+        # Warn when a persistent overhead return sits within HEAD_MARGIN_MM of
+        # the pod plane inside the path cone. World-frame, IMU-compensated --
+        # the novelty claim (Munoz 2025 discarded tilted frames; we use them).
+        # No IMU/mount-cal -> feature OFF and says so ONCE (a sensor-frame
+        # top-row rule is the fatal flaw per implementation-guide sec 2).
+        if Rw_att is not None:
+            haz = []
+            for zn in zones:
+                if "h" not in zn or zn.get("az") is None:
+                    continue
+                half = min(np.degrees(np.arctan2(BODY_HALF_W_MM,
+                                                 max(zn["d_fwd"], 1.0))),
+                           PATH_CONE_MAX_DEG)
+                if abs(zn["az"]) > half:
+                    continue
+                if -100.0 < zn["h"] < HEAD_MARGIN_MM and zn["d_fwd"] < 2500.0:
+                    haz.append(zn)
+            clr_ring.append(bool(haz))
+            if len(clr_ring) > 5:
+                clr_ring.pop(0)
+            nearest = min((zn["d_fwd"] for zn in haz), default=None)
+            if sum(clr_ring) >= 3 and nearest is not None \
+                    and audio_on and not dropped and not level_mode:
+                if nearest < 1200.0:
+                    with speech_lock:
+                        speech_next = ("low clearance, duck", "DUCK",
+                                       nearest, "directive", now)
+                    if not args.serial and now - clr_last_pattern > 2.0:
+                        clr_last_pattern = now
+                        threading.Thread(target=_duck_pattern,
+                                         daemon=True).start()
+                elif nearest < 2000.0 and not gated:
+                    with speech_lock:
+                        speech_next = ("low branch ahead", "CLRWARN",
+                                       nearest, "caution", now)
+            for zn in haz:
+                cv2.polylines(view, [zn["poly"]], True, (255, 0, 255), 3,
+                              cv2.LINE_AA)
+            if haz and nearest is not None:
+                hmin = min(zn["h"] for zn in haz)
+                cv2.putText(view, f"CLR {nearest/1000:.1f}m {hmin/10:+.0f}cm",
+                            (12, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                            (255, 0, 255), 2, cv2.LINE_AA)
+        elif not clr_off_said and imu_quat is not None:
+            clr_off_said = True     # IMU streams but no mount cal -> honest
+            if mount_cal is None:
+                _say_q("clearance watch off, no attitude calibration")
 
         # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
         # The pod hangs on a ball camera mount; every re-clamp needs squaring.
