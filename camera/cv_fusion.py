@@ -231,7 +231,7 @@ def phone_server(port):
  #bar{position:fixed;left:0;right:0;bottom:0;z-index:2;
       padding:8px 14px calc(8px + env(safe-area-inset-bottom));
       font-size:13px;color:#9fd8a4;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis;background:rgba(10,12,16,.35);
+      text-overflow:ellipsis;background:rgba(10,12,16,.22);
       backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
  #said{color:#fff;font-weight:600}
  #toast{position:fixed;top:calc(14px + env(safe-area-inset-top));left:50%;
@@ -257,6 +257,11 @@ def phone_server(port):
   <button title="Flag" onclick="cmd('flag','flagged')">
    <svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
     <path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg></button>
+  <button title="Rotate" onclick="toggleRot()">
+   <svg viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="2"
+    fill="none" stroke="currentColor" stroke-width="1.7"/>
+    <path d="M20 8a8 8 0 0 0-4-4m4 4h-3m3 0V5" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
 </div>
 <div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
 <div id="toast"></div>
@@ -285,11 +290,31 @@ setInterval(async()=>{
 
 // place controls in the black letterbox space so the video stays
 // full-size and uncovered (object-fit:contain math done by hand)
+let rotated=localStorage.getItem('rot')=='1';
+function toggleRot(){rotated=!rotated;localStorage.setItem('rot',rotated?'1':'0');layout()}
 function layout(){
  const W=innerWidth,H=innerHeight,vw=vid.naturalWidth||1280,vh=vid.naturalHeight||720;
+ const side=document.getElementById('side'),bar=document.getElementById('bar');
+ if(rotated&&H>W){
+  // portrait screen, landscape frame: rotate the video 90deg so it fills
+  // the whole screen (hold the phone sideways -- works even with iOS
+  // rotation lock on). Buttons + text stay unrotated overlays.
+  vid.style.width=H+'px';vid.style.height=W+'px';
+  vid.style.transformOrigin='top left';
+  vid.style.transform='rotate(90deg) translateY(-100%)';
+  bar.style.bottom='auto';bar.style.top='0';
+  bar.style.paddingTop='calc(8px + env(safe-area-inset-top))';
+  const s2=Math.min(H/vw,W/vh),padV=(H-vw*s2)/2;
+  side.style.flexDirection='row';
+  side.style.top='';side.style.transform='translateX(-50%)';
+  side.style.left='50%';side.style.right='';
+  side.style.bottom=(padV>=60?Math.max(8,(padV-46)/2):8)+'px';
+  return;
+ }
+ vid.style.width='100%';vid.style.height='100%';vid.style.transform='';
+ bar.style.top='auto';bar.style.bottom='0';bar.style.paddingTop='8px';
  const s=Math.min(W/vw,H/vh),dw=vw*s,dh=vh*s;
  const padX=(W-dw)/2,padY=(H-dh)/2;
- const side=document.getElementById('side');
  if(padX>=64){                 // pillarbox (landscape): column in right bar
   side.style.flexDirection='column';
   side.style.left='';side.style.transform='translateY(-50%)';
