@@ -56,3 +56,6 @@ camera/stride_cal.json
 camera/gate_log.jsonl
 camera/ocr_log.jsonl
 launcher_icon.png
+
+# Local capture output: never commit, these are frames of whoever is in the room
+camera/snapshots/
