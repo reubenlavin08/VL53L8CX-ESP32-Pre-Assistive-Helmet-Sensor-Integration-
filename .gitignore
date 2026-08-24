@@ -54,3 +54,4 @@ camera/models/
 camera/sessions/
 camera/stride_cal.json
 camera/gate_log.jsonl
+camera/ocr_log.jsonl

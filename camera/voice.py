@@ -47,7 +47,14 @@ PHRASES = {
     "what is around": "around",
     "wrong": "wrong",
     "flag that": "flag",
+    "read that": "read",
 }
+
+# curated findable words (closed grammar cannot do open vocabulary --
+# arbitrary words are dev-keyboard-only via key f; PLAN-find-by-text)
+FIND_WORDS = ["exit", "washroom", "open", "push", "pull", "sale", "ketchup"]
+for _w in FIND_WORDS:
+    PHRASES[f"find {_w}"] = f"find:{_w}"
 WAKE = "helmet"
 IDLE_OK = {"stop": "stop", "quiet": "quiet", "wrong": "wrong"}  # ungated
 

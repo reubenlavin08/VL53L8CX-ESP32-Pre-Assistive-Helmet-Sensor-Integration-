@@ -552,6 +552,31 @@ DOOR_CLUSTER_DEG = 14.0      # world-bearing bin -> one candidate per cluster
 DOOR_REDETECT_S = 1.2        # bearing re-fix cadence while guiding
 DOOR_HEIGHT_MM = 2030.0      # standard door leaf for bbox-height ranging
 
+# ── Find-by-text (voice "find <word>" / key f) + "read that" (key r) ─────
+# docs/plans/PLAN-find-by-text.md. Cloud OCR (camera/ocr.py, nemotron-ocr-v2)
+# with per-word normalized boxes -> pixel azimuth -> the same world-bearing
+# beacon lock as door mode. Range only from ToF association -- never invented.
+FIND_SCAN_S = 6.0            # OCR rounds while the user pans (~2-3 round trips)
+FIND_REOCR_S = 2.0           # bearing re-fix cadence while guiding
+FIND_EDIT_MAX = 1            # fuzzy match tolerance (Levenshtein)
+FIND_ARRIVE_MM = 1200.0
+FIND_MIN_CONF = 0.6          # OCR hallucination floor
+FIND_MIN_LEN = 3             # never match tokens shorter than this
+
+
+def _lev(a, b):
+    """Levenshtein distance, tiny DP -- no dependency."""
+    if len(a) < len(b):
+        a, b = b, a
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[-1] + 1,
+                           prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
 
 def ticker_worker():
     """TTC-based proximity ticker (see tick_state comment). Discrete ticks
@@ -868,6 +893,7 @@ def main():
     # machine: GTX 1650 = 20-25 s, field laptop = Iris Xe). Pull-only,
     # query tier, honest spoken failures, single-flight.
     import vlm as vlm_mod
+    import ocr as ocr_mod
     from collections import deque
     vlm_frames = deque(maxlen=10)      # recent frames for sharpest-of-N
 
@@ -880,6 +906,8 @@ def main():
     # -- door mode state ---------------------------------------------------
     door = {"model": None, "state": "idle",   # idle|scanning|choose|guiding
             "cands": [], "sel": None, "redetect_t": 0.0, "lock": threading.Lock()}
+    find = {"target": None, "state": "idle",  # idle|scanning|guiding
+            "sel": None, "reocr_t": 0.0, "lock": threading.Lock()}
 
     def _door_preload():
         try:
@@ -1025,6 +1053,146 @@ def main():
                             and d.get("range_mm")):
                         it["rng"] = d["range_mm"]
         _say_q(_around_text(st["items"], st["layer"]))
+
+    def _range_at_az(rel_az):
+        """Median ToF range near a wearer-relative azimuth (head band rows).
+        None past ToF reach -- callers must not invent distances."""
+        zs = [zn["z"] for zn in cur_scene.get("zones", [])
+              if zn["row"] < 3 and zn.get("az") is not None
+              and abs(zn["az"] - rel_az) < 8.0]
+        return float(np.median(zs)) if zs else None
+
+    def _match_target(words, target):
+        """Best fuzzy word match: casefold, split multi-word tokens,
+        Levenshtein <= FIND_EDIT_MAX or substring, conf floor."""
+        best = None
+        for w in words:
+            if w["conf"] < FIND_MIN_CONF:
+                continue
+            for tok in w["text"].casefold().split():
+                if len(tok) < FIND_MIN_LEN:
+                    continue
+                if _lev(tok, target) <= FIND_EDIT_MAX or target in tok:
+                    if best is None or w["conf"] > best["conf"]:
+                        best = w
+        return best
+
+    def _find_scan(target):
+        t0s = time.monotonic()
+        hit = None
+        while time.monotonic() - t0s < FIND_SCAN_S:
+            with fb_lock:
+                frm = frame_box["frame"]
+            if frm is None:
+                time.sleep(0.1)
+                continue
+            yaw0 = _yaw_now()          # AT GRAB TIME -- the round trip is
+            words = ocr_mod.read(frm)  # seconds long (the #1 likely bug)
+            if words is None:
+                _say_q("no connection, find cancelled")
+                with find["lock"]:
+                    find["state"] = "idle"
+                return
+            w = _match_target(words, target)
+            if w is not None:
+                Hf, Wf = frm.shape[:2]
+                az = pixel_azimuth(w["cx"] * Wf, w["cy"] * Hf)
+                if az is not None:
+                    hit = {"wb": az + yaw0 if yaw0 is not None else az,
+                           "imu": yaw0 is not None, "conf": w["conf"],
+                           "seen": time.monotonic(), "muted": False}
+                    break
+        if hit is None:
+            _say_q(f"didn't find {target}, get closer or pan and try again")
+            with find["lock"]:
+                find["state"] = "idle"
+            return
+        yawn = _yaw_now() or 0.0
+        rel = _wrap(hit["wb"] - yawn)
+        hr = int(round(rel / 30.0)) % 12
+        hr = 12 if hr == 0 else hr
+        rngmm = _range_at_az(rel)
+        phrase = f"found {target}, {hr} o'clock"
+        if rngmm:
+            phrase += f", {spoken_dist(rngmm, walking=True)}"
+        with find["lock"]:
+            find["sel"] = hit
+            find["state"] = "guiding"
+            find["reocr_t"] = 0.0
+        bcn.update(rel)
+        bcn.start()
+        _say_q(phrase + ". guiding, say stop when done")
+
+    def _find_reocr():
+        with fb_lock:
+            frm = frame_box["frame"]
+        if frm is None or find["sel"] is None:
+            return
+        yaw0 = _yaw_now()
+        words = ocr_mod.read(frm)
+        if not words:
+            return
+        w = _match_target(words, find["target"])
+        if w is None:
+            return
+        Hf, Wf = frm.shape[:2]
+        az = pixel_azimuth(w["cx"] * Wf, w["cy"] * Hf)
+        if az is None:
+            return
+        wb = az + yaw0 if yaw0 is not None else az
+        if abs(_wrap(wb - find["sel"]["wb"])) < 30.0:
+            with find["lock"]:
+                find["sel"]["wb"] = wb
+                find["sel"]["seen"] = time.monotonic()
+
+    def _read_that():
+        words = ocr_mod.read(vlm_mod.sharpest(list(vlm_frames)))
+        if words is None:
+            _say_q("reading failed, no connection")
+            return
+        if not words:
+            _say_q("no text visible")
+            return
+        # top block = biggest x most central; speak its whole line
+        def score(w):
+            cen = 1.0 - min(1.0, abs(w["cx"] - 0.5) + abs(w["cy"] - 0.5))
+            return w["w"] * w["h"] * (0.3 + cen)
+        best = max(words, key=score)
+        line = [w for w in words
+                if abs(w["cy"] - best["cy"]) < max(best["h"], 0.03)]
+        line.sort(key=lambda w: w["cx"])
+        _say_q(" ".join(w["text"] for w in line)[:140])
+
+    def _cancel_find(say=True):
+        if find["state"] != "idle":
+            if bcn:
+                bcn.stop()
+            with find["lock"]:
+                find["state"] = "idle"
+                find["sel"] = None
+            if say:
+                _say_q("find off")
+            return True
+        return False
+
+    def start_find(word):
+        nonlocal bcn, guide
+        if door["state"] != "idle":
+            with door["lock"]:
+                door["state"] = "idle"
+                door["sel"] = None
+        if guide is not None:
+            guide = None
+        if bcn is None:
+            bcn = Beacon()
+        else:
+            bcn.stop()
+        with find["lock"]:
+            find["target"] = word
+            find["state"] = "scanning"
+            find["sel"] = None
+        _say_q(f"searching for {word}, pan slowly")
+        threading.Thread(target=_find_scan, args=(word,), daemon=True).start()
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -1203,6 +1371,7 @@ def main():
                 zn["az"] = pixel_azimuth(*zn["cen"])
         cur_scene["alerts"] = [zn for zn in alert_zones
                                if zn.get("az") is not None]
+        cur_scene["zones"] = zones
         # CANE FILTER: bottom row is the cane's territory (and, worn at 22.5°
         # down, mostly the floor itself) -- rendered, never spoken/ticked.
         # Head/torso/waist band = rows 0-2.
@@ -1490,6 +1659,41 @@ def main():
             cv2.putText(view, lbl, (12, 162), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
                         (0, 200, 255), 2, cv2.LINE_AA)
 
+        # ── FIND MODE guiding (voice "find <word>" / key f) ──────────────────
+        if find["state"] == "guiding" and find["sel"] is not None \
+                and bcn is not None:
+            c = find["sel"]
+            if now - find["reocr_t"] > FIND_REOCR_S and not ocr_mod.busy.is_set():
+                find["reocr_t"] = now
+                threading.Thread(target=_find_reocr, daemon=True).start()
+            if not audio_on or level_mode:
+                if not c.get("muted"):
+                    bcn.stop()
+                    c["muted"] = True
+            else:
+                if c.get("muted"):
+                    bcn.start()
+                    c["muted"] = False
+                rel = (_wrap(c["wb"] - cur_yaw)
+                       if (cur_yaw is not None and c["imu"]) else 0.0)
+                stale = now - c.get("seen", 0) > 5.0
+                rngmm = _range_at_az(rel)
+                if rngmm and rngmm < FIND_ARRIVE_MM and abs(rel) < 25 \
+                        and not stale:
+                    bcn.stop(arrived=True)
+                    _say_q(f"{find['target']} reached")
+                    with find["lock"]:
+                        find["state"] = "idle"
+                        find["sel"] = None
+                else:
+                    bcn.update(rel, dim=stale, duck=speaking)
+        if find["state"] != "idle":
+            cv2.putText(view, f"FIND '{find['target']}' "
+                        + ("SCANNING..." if find["state"] == "scanning"
+                           else "GUIDING"),
+                        (12, 188), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                        (255, 180, 0), 2, cv2.LINE_AA)
+
         # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
         # The pod hangs on a ball camera mount; every re-clamp needs squaring.
         # A blind user can't watch a bubble, so the device coaches: "tilt up 5"
@@ -1601,7 +1805,9 @@ def main():
             elif vc == "guide":
                 k = ord("g")
             elif vc == "stop":
-                if door["state"] != "idle":
+                if _cancel_find():
+                    pass
+                elif door["state"] != "idle":
                     k = ord("d")               # cancels door mode
                 elif guide is not None:
                     k = ord("g")               # cancels object guide
@@ -1620,6 +1826,11 @@ def main():
                 _say_q("flagged")
             elif vc == "around":
                 voice_around = True
+            elif vc.startswith("find:"):
+                start_find(vc[5:])
+            elif vc == "read":
+                _say_q("reading")
+                threading.Thread(target=_read_that, daemon=True).start()
 
         # tap gesture (firmware TAP: lines). Double-tap = describe -- the
         # zero-hands query; single taps ignored (bump-prone). 1 s debounce,
@@ -1648,6 +1859,18 @@ def main():
         elif k in (ord("v"), ord("h")):
             _vlm_ask("What am I holding?" if k == ord("h")
                      else "Describe what is ahead.", k == ord("h"))
+        elif k == ord("f"):
+            if find["state"] != "idle":
+                _cancel_find()
+            else:
+                def _ask_word():
+                    wd = input("find word: ").strip().casefold()
+                    if wd:
+                        start_find(wd)
+                threading.Thread(target=_ask_word, daemon=True).start()
+        elif k == ord("r"):
+            _say_q("reading")
+            threading.Thread(target=_read_that, daemon=True).start()
         elif k == ord("u"):
             UNITS_MODE = {"auto": "steps", "steps": "meters",
                           "meters": "auto"}[UNITS_MODE]
