@@ -5,8 +5,8 @@ Two-state machine (industry pattern -- every shipping wearable gates
 behind a wake word; Vosk grammar mode force-matches bystander speech,
 vosk-api #1339):
 
-  IDLE   grammar ["helmet", "stop", "quiet", "[unk]"]
-         - "helmet" -> earcon -> ARMED (5 s window)
+  IDLE   grammar ["iris", "stop", "quiet", "[unk]"]
+         - "iris" -> earcon -> ARMED (5 s window)
          - "stop"/"quiet" work UNGATED (false-accept cost is benign)
   ARMED  full command grammar; one accepted command -> IDLE;
          timeout -> low tone -> IDLE
@@ -55,7 +55,7 @@ PHRASES = {
 FIND_WORDS = ["exit", "washroom", "open", "push", "pull", "sale", "ketchup"]
 for _w in FIND_WORDS:
     PHRASES[f"find {_w}"] = f"find:{_w}"
-WAKE = "helmet"
+WAKE = "iris"             # the iris of the eye, and the Greek goddess of sight
 IDLE_OK = {"stop": "stop", "quiet": "quiet", "wrong": "wrong"}  # ungated
 
 commands = queue.Queue()
@@ -117,7 +117,7 @@ def _worker(is_speaking):
         print(f"voice: no microphone ({e})")
         return
     available = True
-    print("voice: ready (say 'helmet' to wake; 'stop'/'quiet' always work)")
+    print("voice: ready (say 'iris' to wake; 'stop'/'quiet' always work)")
 
     while True:
         data = audio_q.get()

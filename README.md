@@ -46,7 +46,7 @@ It is not a mobility aid and not a substitute for a white cane, a guide dog, or 
 - "what's around" → one item per sector, terse; ask again for ranges; a third time for a full scene description
 - "describe" / "what's in my hand" → a vision-language model answers in one sentence, and says "I can't see that clearly" rather than guess — blind users can't detect a wrong answer, so the system never bluffs
 - "read that" → speaks the dominant text in view
-- All of it by voice (wake word "helmet"), keyboard, or a double-tap on the shell
+- All of it by voice (wake word "Iris"), keyboard, or a double-tap on the shell
 
 ## The numbers
 
