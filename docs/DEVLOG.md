@@ -4,6 +4,52 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-24 (afternoon) — Zenbook field deploy, directive nag fix, fleet launcher
+
+**Zenbook deployment**: Iris ran end-to-end on Reubens-Laptop (helmet
+camera moved over; frames + callouts live). Blockers found and fixed:
+Windows Firewall (added port-8123 rule), home WiFi profile was Public →
+set Private, and the helmet camera was still plugged into the Legion —
+PnP enumeration proved it; "no usable camera" was never a code bug.
+**Bench shootout** (`camera/bench_machine.py` → docs/BENCH-MACHINES.md):
+Zenbook 104 ms YOLO median vs Legion 170 ms — Tiger Lake AVX-512 beats
+the older i7; torch is CPU-only on BOTH (the GTX 1650 has never run
+YOLO). Verdict: Zenbook is fast enough — the safety loop has no NN in it.
+
+**Voice fix**: voice_log showed `"iris [unk]" → rejected-unk` — the mic
+heard the wake word but ambient noise glued into the same utterance and
+the strict [unk] filter binned it. Now [unk] tokens are stripped before
+matching; the wake word arms even with noise around it; ungated words
+("stop") stay strict. Lesson: one read of the log answered what guessing
+never would have.
+
+**Wrong-name fix**: nano-seg mislabels on fisheye+blur were being spoken.
+Naming ladder (`_det_name`): conf ≥ 0.70 → name, ≥ 0.55 → "maybe X",
+below → just "obstacle". A wrong name is worse than no name.
+
+**Directive nag fix** (user: "it kept yelling step left… say it once or
+twice per obstacle — the person can assume it's still there"): directives
+warn twice per encounter, then go silent. IMU stillness detector
+(pitch+yaw rate < 6 °/s for 1.5 s) silences repeats while standing
+still; closing another 0.4 m re-arms the pair; hazard absent 4 s = new
+encounter. No IMU → treated as moving (never silence blind). Ticker +
+haptics never stop carrying the range.
+
+**Fleet launcher**: one home-screen icon finds whichever machine runs
+Iris — each launcher proxies to its peer's live cv_fusion when its own
+is down; the Start page offers "Start on Legion / Start on Zenbook".
+Also: orbit-arc start page, in-app help overlay (? button),
+docs/USER-GUIDE.md, phone rotate button (fills a portrait screen with
+the landscape frame; works under iOS rotation lock).
+
+**Ops lessons**: Task Scheduler `/it` one-shots can wedge at "Queued";
+Windows OpenSSH kills child processes at session end — the only reliable
+interactive start is the user's own double-click or the Startup folder at
+login. Repo history was intentionally rewritten upstream (snapshot
+purge); consumer clones re-sync with `git checkout -B main origin/main`.
+
+---
+
 ## 2026-08-24 — Iris phone app (PWA) + always-on launcher; OTA flashed; audio mystery closed
 
 **OTA + verification (morning)**: helmet came up at **192.168.1.227**
