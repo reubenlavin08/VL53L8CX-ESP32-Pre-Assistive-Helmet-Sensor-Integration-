@@ -4,6 +4,62 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-24 — Iris phone app (PWA) + always-on launcher; OTA flashed; audio mystery closed
+
+**OTA + verification (morning)**: helmet came up at **192.168.1.227**
+(DHCP moved it from .228 — defaults updated across all tools). Flash
+succeeded (926 KB / 5.3 s); `/api/pattern?p=duck` fired the motors;
+serial at rest showed ONLY Q: lines (zero false TAP:/DROP:) — correct
+baseline. Full health sweep passed: all modules compile, beacon assets,
+Vosk grammars, NIM key + live OCR (1.2 s), all calibration artifacts.
+
+**Wake word renamed → "Iris"** (user's pick: iris of the eye + goddess
+of sight). "Iris, describe" etc.
+
+**Phone app built — the PWA path** (no Apple dev account): manifest +
+apple-mobile-web-app meta → Safari Add to Home Screen → fullscreen app
+with its own generated iris icon. Iterations driven by live user
+testing, each with a root-cause lesson:
+- *"Buttons do nothing"* → they worked (flightlog proved describe fired
+  3×, VLM answered) — the camera sat 32 cm from a wall so the
+  **"stop stop" directive monopolized the single speech slot**.
+  Behavior correct; UX lesson recorded.
+- *"No audio"* → desktop default output/volume fine; user later
+  confirmed audio working on the computer. En route: found ports
+  8090-8093 squatted by the known workspace-mcp leak (a stray Python
+  3.14 server answering 404 to everything) → **dashboard moved to
+  :8123**.
+- *"Video doesn't auto-start"* → two real causes, both fixed:
+  (1) long-lived MJPEG `<img>` streams silently stall in iOS standalone
+  PWAs → replaced with **single-frame polling** (fetch+blob ~8 fps,
+  self-healing); (2) iOS caches the PWA's start HTML indefinitely →
+  **Cache-Control: no-store** on everything.
+- UI iterations: big buttons → compact icon sidebar → emojis → inline
+  SVG line icons → **translucent blur overlays with letterbox-aware JS
+  placement** (video always max-size uncropped; buttons live in the
+  black bars, overlay a corner only when no dead space exists).
+- **Desktop parity**: the OpenCV window now draws the same four
+  buttons (radar/eye/speaker/flag) as clickable translucent overlays —
+  one dispatch queue serves voice, phone, desktop clicks, and keys.
+- **Starts MUTED by default** now (`--audio-on` to override) — no more
+  stop-stop spam on every launch.
+
+**Always-on launcher** (`camera/launcher.py`): owns :8123 permanently;
+proxies to cv_fusion (now on internal :8125) when running; otherwise
+serves a Start page whose button spawns cv_fusion and auto-reloads into
+the dashboard. Startup-folder entry installed
+(`iris_launcher.bat`) so the phone icon answers after any reboot.
+End-to-end verified: start page → /launch → spawn → proxied status +
+121 KB frames.
+
+**Lesson**: every "the button is broken" report today was the system
+working correctly with an invisible reason (directive monopoly, stale
+PWA cache, dead stream object). Instrumentation (flightlog, vlm_log)
+turned each vague report into a 2-minute diagnosis — the measurement
+layer paid for itself on day one.
+
+---
+
 ## 2026-08-23 (earlier same day) — VLM, voice control, OCR benchmark, planning apparatus
 
 Before the evening sprint below, the day built the query stack and the

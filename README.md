@@ -48,6 +48,16 @@ It is not a mobility aid and not a substitute for a white cane, a guide dog, or 
 - "read that" → speaks the dominant text in view
 - All of it by voice (wake word "Iris"), keyboard, or a double-tap on the shell
 
+**The Iris phone app** — the whole rig is monitored and driven from a phone
+with zero App Store involvement: a PWA (`Add to Home Screen` in Safari)
+that launches fullscreen under its own icon. Live annotated video at max
+size with translucent controls placed in the letterbox space, a status bar
+showing what Iris last said, and touch buttons (around / describe / mute /
+flag) feeding the same command queue as voice. An always-on launcher
+(`camera/launcher.py`, runs at login) means the icon works even when the
+software isn't running — it shows a Start button, boots the whole stack,
+and hands over to the live view. The desktop window mirrors the same UI.
+
 ## The numbers
 
 | What | Measured |

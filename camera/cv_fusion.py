@@ -959,7 +959,7 @@ def main():
                     help="spoken distances (auto: walking=steps, query=meters)")
     ap.add_argument("--calibrate-stride", action="store_true",
                     help="30-s console stride calibration, then exit")
-    ap.add_argument("--serve", type=int, default=8123,
+    ap.add_argument("--serve", type=int, default=8125,
                     help="phone-viewer port (0 = off). Open http://<laptop-ip>:PORT")
     args = ap.parse_args()
 
