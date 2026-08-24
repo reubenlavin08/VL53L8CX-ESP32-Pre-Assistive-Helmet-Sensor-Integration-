@@ -26,7 +26,7 @@ _child = None
 
 # two-machine fleet: each launcher knows the other one
 _FLEET = {"Reubens-Laptop": ("192.168.1.223", "Zenbook"),
-          "Lenovo": ("192.168.1.242", "gaming laptop")}
+          "Lenovo": ("192.168.1.242", "Legion")}
 _me = platform.node()
 PEER_IP, PEER_NAME = next(
     (v for k, v in _FLEET.items() if k != _me), ("", "other machine"))
@@ -53,20 +53,11 @@ START_PAGE = """<!doctype html><html><head>
       gap:20px;font-family:-apple-system,system-ui,sans-serif;
       background:radial-gradient(120vmax 120vmax at 50% 120%,
         #1a1f2b 0%,#101216 55%,#0a0c10 100%)}
- /* the iris: spinning conic ring + breathing pupil */
- #eye{position:relative;width:150px;height:150px;margin-bottom:6px}
- #ring{position:absolute;inset:0;border-radius:50%;
-   background:conic-gradient(from 0deg,#3c78dc,#c8a03c,#7a4fd0,#3c78dc);
-   -webkit-mask:radial-gradient(circle,transparent 58%,#000 60%,#000 97%,transparent 99%);
-   mask:radial-gradient(circle,transparent 58%,#000 60%,#000 97%,transparent 99%);
-   animation:spin 14s linear infinite;filter:drop-shadow(0 0 18px rgba(90,130,220,.35))}
- .starting #ring{animation-duration:1.6s}
- #pupil{position:absolute;inset:31%;border-radius:50%;
-   background:radial-gradient(circle at 38% 32%,#2b3550 0%,#12151d 60%,#0a0c10 100%);
-   box-shadow:inset 0 0 14px #000,0 0 26px rgba(80,120,210,.25);
-   animation:breathe 3.6s ease-in-out infinite}
+ /* minimal mark: faint ring + one gradient arc sweeping around it */
+ #eye{width:132px;height:132px;margin-bottom:4px;
+      animation:spin 7s linear infinite}
+ .starting #eye{animation-duration:1.2s}
  @keyframes spin{to{transform:rotate(360deg)}}
- @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(.9)}}
  h1{font-weight:200;font-size:34px;letter-spacing:.42em;
     text-indent:.42em;color:#e8e6e0}
  #s{color:#8a94a6;font-size:15px;min-height:22px;text-align:center}
@@ -79,7 +70,15 @@ START_PAGE = """<!doctype html><html><head>
  button:active{transform:scale(.97)}
  button[disabled]{background:#333a45;color:#8a94a6;border:0;box-shadow:none}
 </style></head><body>
-<div id="eye"><div id="ring"></div><div id="pupil"></div></div>
+<svg id="eye" viewBox="0 0 100 100">
+ <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#4f7fe0"/>
+  <stop offset="1" stop-color="#c8a03c"/></linearGradient></defs>
+ <circle cx="50" cy="50" r="44" fill="none" stroke="#20242e" stroke-width="2"/>
+ <circle cx="50" cy="50" r="44" fill="none" stroke="url(#g)" stroke-width="2.5"
+  stroke-linecap="round" stroke-dasharray="72 204"/>
+ <circle cx="50" cy="50" r="4.5" fill="#e8e6e0"/>
+</svg>
 <h1>IRIS</h1>
 <div id="s">not running on either machine</div>
 <button id="b0" onclick="go('')">Start on __ME__</button>
@@ -214,8 +213,7 @@ class H(BaseHTTPRequestHandler):
             page = (START_PAGE
                     .replace("__ME__", "this computer" if not PEER_IP
                              else {"Reubens-Laptop": "Zenbook",
-                                   "Lenovo": "gaming laptop"}.get(
-                                       _me, _me))
+                                   "Lenovo": "Legion"}.get(_me, _me))
                     .replace("__PEER__", PEER_NAME))
             self._send(page.encode(), "text/html")
 
