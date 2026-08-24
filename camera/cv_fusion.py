@@ -332,6 +332,9 @@ setInterval(async()=>{try{
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            # iOS standalone PWAs cache page HTML aggressively; without this
+            # the home-screen icon can launch a stale copy forever.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
