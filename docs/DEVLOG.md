@@ -4,6 +4,48 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-23 (earlier same day) — VLM, voice control, OCR benchmark, planning apparatus
+
+Before the evening sprint below, the day built the query stack and the
+plan that made the sprint possible:
+
+- **VLM "describe" shipped** (keys v/h): benchmarked local Qwen3-VL-2B
+  on the desktop GTX 1650 — **20–25 s/answer, FAIL** (first benchmark's
+  "3.8 s" was an empty truncated-thinking answer; lesson: check the
+  ANSWER, not the clock). NVIDIA NIM cloud llama-3.2-11b-vision (user's
+  free key) = **2.3–6.4 s with correct abstention** ("too blurry — can't
+  identify") → NIM is the path on both machines (field laptop = Iris Xe,
+  no CUDA). `camera/vlm.py` built to the industry checklist
+  (docs/VLM-BUILD-SPEC.md): env-var secrets, timeouts+retry,
+  single-flight, honest spoken failures, blur-aware frame pick,
+  sensor-context grounding, forced abstention, jsonl logging.
+- **nemotron-ocr-v2 benchmarked**: 1.3–2.4 s, per-word boxes; read a
+  synthetic "HEINZ / TOMATO KETCHUP" label at 0.92 conf and found every
+  probe word on a text-dense screenshot → became the find-by-text
+  engine.
+- **Voice control shipped** (`camera/voice.py`): research first
+  (voice-commands-2026-08-23.md) CORRECTED the naive design — Vosk
+  grammar mode force-matches bystander speech (vosk-api #1339), so
+  always-on ungated is out; shipped the industry shape instead: wake
+  word "helmet" arms a 5 s window; "stop"/"quiet"/"wrong" ungated;
+  half-duplex (mic dropped while our TTS speaks); every utterance
+  logged.
+- **Field laptop verified for the whole stack over SSH**: repo pulled,
+  vosk+model+sounddevice installed, NIM key placed, YOLO-World
+  benchmarked at **114 ms/frame (2× faster than the desktop)**; mic
+  array present. VLM stays cloud (no NVIDIA GPU).
+- **4-agent research-gap assessment** over the entire corpus →
+  FEATURE-GAP-VERDICT-2026-08-23.md (5 convergent adds, ruthless cuts:
+  on-track ping, pulse vocab >2, text earcon, seat auto-pick, vehicle
+  interlock, trajectory prediction — each contradicted by its own
+  evidence).
+- **Planning apparatus**: 4 scoping agents wrote 10 implementation
+  plans (docs/plans/PLAN-*.md, ~1,800 lines, real line anchors from the
+  code) + GRAND-PLAN.md with dependency ordering and an Aug-29 deadline
+  guard. This is what made the evening sprint mechanical.
+
+---
+
 ## 2026-08-23 — GRAND PLAN executed: 9 features in one sprint
 
 All build items of docs/plans/GRAND-PLAN.md landed in a single evening
