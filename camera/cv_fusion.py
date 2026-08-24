@@ -247,7 +247,7 @@ def phone_server(port):
          transform:translateY(-50%);flex-direction:column}
  }
 </style></head><body>
-<img id="v" src="/stream">
+<img id="v" alt="">
 <div id="side">
   <button title="What's around" onclick="cmd('around','around')">
    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor"/>
@@ -269,11 +269,25 @@ def phone_server(port):
 <div id="toast"></div>
 <script>
 let audioOn=true,toastT=null;
-// auto-reconnect the MJPEG stream if the server restarts or iOS resumes us
+// frame polling (long-lived MJPEG streams stall in iOS standalone PWAs;
+// fetching single JPEGs is bulletproof and self-healing)
 const vid=document.getElementById('v');
-vid.onerror=()=>setTimeout(()=>{vid.src='/stream?'+Date.now()},1200);
-document.addEventListener('visibilitychange',()=>{
- if(!document.hidden){vid.src='/stream?'+Date.now()}});
+let lastUrl=null,busyF=false;
+setInterval(async()=>{
+ if(busyF||document.hidden)return;
+ busyF=true;
+ try{
+  const r=await fetch('/frame?'+Date.now(),{cache:'no-store'});
+  const b=await r.blob();
+  if(b.size>100){
+   const u=URL.createObjectURL(b);
+   vid.src=u;
+   if(lastUrl)URL.revokeObjectURL(lastUrl);
+   lastUrl=u;
+  }
+ }catch(e){}
+ busyF=false;
+},120);
 function toast(m){const t=document.getElementById('toast');
  t.textContent=m;t.style.opacity=1;clearTimeout(toastT);
  toastT=setTimeout(()=>t.style.opacity=0,1200)}
@@ -318,6 +332,10 @@ setInterval(async()=>{try{
                         time.sleep(0.09)
                 except (ConnectionError, OSError):
                     pass
+            elif self.path.startswith("/frame"):
+                with phone_lock:
+                    j = phone_jpeg
+                self._send(j if j is not None else b"", "image/jpeg")
             elif self.path == "/manifest.json":
                 self._send(MANIFEST, "application/manifest+json")
             elif self.path == "/icon.png":
