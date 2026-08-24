@@ -912,6 +912,12 @@ static esp_err_t health_get_handler(httpd_req_t *req)
  * (the GPIO aliases; PHYSICAL location is what the ID test determines). */
 static volatile int64_t g_manual_hold_until_us = 0;
 
+/* Walkable-tunnel duties, host-commanded with a TTL so a dead laptop can
+ * never leave a motor latched (PLAN-walkable-tunnel Option B). Max-blended
+ * into haptic_apply so corridor cues coexist with autonomous haptics. */
+static volatile uint8_t g_tunnel_duty[HAPTIC_N] = {0};
+static volatile int64_t g_tunnel_until_us = 0;
+
 static void haptic_set(int i, uint8_t duty);   /* fwd decl (defined below) */
 
 static esp_err_t motor_get_handler(httpd_req_t *req)
@@ -960,6 +966,37 @@ static esp_err_t pattern_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* GET /api/tunnel?l=&r=&c=&ttl= -- walkable-tunnel corridor duties from the
+ * host (0..255 each, ttl ms 100..2000). TTL-guarded; see g_tunnel_duty. */
+static esp_err_t tunnel_get_handler(httpd_req_t *req)
+{
+    char q[96] = {0}, val[16];
+    int l = 0, r = 0, c = 0, ttl = 400;
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "l", val, sizeof(val)) == ESP_OK)   l = atoi(val);
+        if (httpd_query_key_value(q, "r", val, sizeof(val)) == ESP_OK)   r = atoi(val);
+        if (httpd_query_key_value(q, "c", val, sizeof(val)) == ESP_OK)   c = atoi(val);
+        if (httpd_query_key_value(q, "ttl", val, sizeof(val)) == ESP_OK) ttl = atoi(val);
+    }
+    if (l < 0) l = 0;
+    if (l > 255) l = 255;
+    if (r < 0) r = 0;
+    if (r > 255) r = 255;
+    if (c < 0) c = 0;
+    if (c > 255) c = 255;
+    if (ttl < 100) ttl = 100;
+    if (ttl > 2000) ttl = 2000;
+    g_tunnel_duty[HAPTIC_IDX_LEFT]   = (uint8_t)l;
+    g_tunnel_duty[HAPTIC_IDX_RIGHT]  = (uint8_t)r;
+    g_tunnel_duty[HAPTIC_IDX_CENTER] = (uint8_t)c;
+    g_tunnel_until_us = esp_timer_get_time() + (int64_t)ttl * 1000;
+    char out[64];
+    snprintf(out, sizeof(out), "{\"tunnel\":[%d,%d,%d],\"ttl\":%d}\n", l, r, c, ttl);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, out);
+    return ESP_OK;
+}
+
 /* GET /api/haptics?en=0|1 — software motor mute. No query = report state. */
 static esp_err_t haptics_get_handler(httpd_req_t *req)
 {
@@ -1000,6 +1037,7 @@ static void start_ota_server(void)
     httpd_uri_t motor_uri  = { .uri = "/api/motor",   .method = HTTP_GET,  .handler = motor_get_handler,   .user_ctx = NULL };
     httpd_uri_t hapt_uri   = { .uri = "/api/haptics", .method = HTTP_GET,  .handler = haptics_get_handler, .user_ctx = NULL };
     httpd_uri_t pat_uri    = { .uri = "/api/pattern", .method = HTTP_GET,  .handler = pattern_get_handler, .user_ctx = NULL };
+    httpd_uri_t tun_uri    = { .uri = "/api/tunnel",  .method = HTTP_GET,  .handler = tunnel_get_handler,  .user_ctx = NULL };
     httpd_register_uri_handler(server, &ota_uri);
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &status_uri);
@@ -1007,6 +1045,7 @@ static void start_ota_server(void)
     httpd_register_uri_handler(server, &motor_uri);
     httpd_register_uri_handler(server, &hapt_uri);
     httpd_register_uri_handler(server, &pat_uri);
+    httpd_register_uri_handler(server, &tun_uri);
     ESP_LOGI(TAG, "HTTP server on port %d: GET / (viewer), GET /api/status, GET /api/health, GET /api/motor, POST /update",
              OTA_HTTP_PORT);
 }
@@ -1683,6 +1722,12 @@ static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *act
                           above * HAPTIC_DOMINANCE_NUM / HAPTIC_DOMINANCE_DEN);
             }
         }
+    }
+    /* walkable-tunnel blend: max with host-commanded corridor duties while
+     * their TTL is live -- tunnel cues coexist with obstacle haptics. */
+    if (esp_timer_get_time() < g_tunnel_until_us) {
+        for (int m = 0; m < HAPTIC_N; m++)
+            if (g_tunnel_duty[m] > duty[m]) duty[m] = g_tunnel_duty[m];
     }
     for (int m = 0; m < HAPTIC_N; m++) haptic_set(m, duty[m]);
 }

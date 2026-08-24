@@ -229,6 +229,9 @@ R_CH = np.array([[1.0, 0.0, 0.0],
                  [0.0, -_C225, -_S225]])
 
 HEAD_MARGIN_MM = 120.0    # clearance margin above the pod plane (100-150)
+TUNNEL_HALF_MM = 450.0    # virtual corridor half-width (0.9 m total)
+TUNNEL_NEAR_MM = 1200.0   # wall proximity where cueing starts
+TUNNEL_SEND_S = 0.25      # host->firmware duty update cadence
 
 
 def quat_to_R(w, x, y, z):
@@ -934,6 +937,8 @@ def main():
     clr_ring = []          # last-5-frames hazard votes (3-of-5 persistence)
     clr_last_pattern = 0.0
     clr_off_said = False
+    tunnel_on = False      # walkable-tunnel haptics (key n; TCP mode only)
+    tunnel_last = 0.0
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -1240,6 +1245,15 @@ def main():
             find["sel"] = None
         _say_q(f"searching for {word}, pan slowly")
         threading.Thread(target=_find_scan, args=(word,), daemon=True).start()
+
+    def _send_tunnel(l, r):
+        try:
+            import urllib.request
+            urllib.request.urlopen(
+                f"http://{args.host}/api/tunnel?l={l}&r={r}&ttl=500",
+                timeout=1).read()
+        except OSError:
+            pass
 
     def _duck_pattern():
         """Fire the firmware all-motor double pulse (GET /api/pattern?p=duck).
@@ -1819,6 +1833,32 @@ def main():
             if mount_cal is None:
                 _say_q("clearance watch off, no attitude calibration")
 
+        # ── WALKABLE TUNNEL (key n): motors ONLY near the corridor walls ─────
+        # .lumen's error-correction pattern -- silence when centered
+        # (PLAN-walkable-tunnel; firmware /api/tunnel max-blend, TTL-guarded).
+        if tunnel_on and not args.serial and now - tunnel_last > TUNNEL_SEND_S:
+            tunnel_last = now
+            def _wall(lo, hi):
+                zs = [zn["z"] * np.sin(np.radians(abs(zn["az"])))
+                      for zn in upper
+                      if lo <= zn["az"] <= hi and zn["z"] < 3000]
+                return min(zs) if zs else None
+            lat_l = _wall(-60.0, -10.0)
+            lat_r = _wall(10.0, 60.0)
+            def _duty(lat):
+                if lat is None or lat > TUNNEL_NEAR_MM:
+                    return 0
+                x = max(0.0, min(1.0, (TUNNEL_NEAR_MM - lat)
+                                 / (TUNNEL_NEAR_MM - TUNNEL_HALF_MM)))
+                return int(90 + 110 * x)
+            dl, dr = _duty(lat_l), _duty(lat_r)
+            if (dl or dr) and audio_on and not dropped:
+                threading.Thread(target=_send_tunnel, args=(dl, dr),
+                                 daemon=True).start()
+        if tunnel_on:
+            cv2.putText(view, "TUNNEL", (12, 240), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65, (0, 255, 120), 2, cv2.LINE_AA)
+
         # ── LEVELING MODE: voice-guided ball-mount alignment (key 'l') ───────
         # The pod hangs on a ball camera mount; every re-clamp needs squaring.
         # A blind user can't watch a bubble, so the device coaches: "tilt up 5"
@@ -1996,6 +2036,9 @@ def main():
         elif k == ord("r"):
             _say_q("reading")
             threading.Thread(target=_read_that, daemon=True).start()
+        elif k == ord("n"):
+            tunnel_on = not tunnel_on
+            _say_q(f"tunnel {'on' if tunnel_on else 'off'}")
         elif k == ord("u"):
             UNITS_MODE = {"auto": "steps", "steps": "meters",
                           "meters": "auto"}[UNITS_MODE]

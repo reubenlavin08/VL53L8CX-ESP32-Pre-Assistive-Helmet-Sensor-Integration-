@@ -4,6 +4,75 @@ A running log of the build: problems, root causes, fixes, and lessons. Newest fi
 
 ---
 
+## 2026-08-23 — GRAND PLAN executed: 9 features in one sprint
+
+All build items of docs/plans/GRAND-PLAN.md landed in a single evening
+(each from its own scoped PLAN-*.md; every item compiled + unit/live
+tested where testable without the wearer):
+
+1. **Flight logging** (`flightlog.py` + `session_report.py`): every
+   spoken alert logged; implicit FP votes (hush within 10 s of a
+   caution) + explicit ("wrong"/key x); 60 s RAM ring (2 fps 360p JPEG +
+   ToF grids + 20 Hz IMU) persisted ONLY on triggers (override, manual
+   "flag that", ToF/CV disagreement, directive) — the openpilot pattern
+   at fleet-size 1. Verified end-to-end: events, votes, 3 clips, npz,
+   report math.
+2. **Steps-not-meters**: dead `spoken_range()` resurrected as
+   `spoken_steps()`; `--calibrate-stride` CLI; `--units auto` (walking =
+   steps, query = meters) + key `u`. Unit-tested.
+3. **Head-turn speech gate**: yaw-rate estimator on the Q: stream
+   (120 ms endpoint delta + EMA — verified: tracks 191°/s synthetic,
+   decays on stop); gates CAUTION only at 100/60°/s hysteresis + 250 ms
+   dwell; directive/query/ticker never gated; events logged (the
+   citable novelty claim).
+4. **Firmware batch** (built, OTA PENDING — helmet was offline):
+   SH2_TAP_DETECTOR → `TAP:1/2` lines (double-tap → VLM describe,
+   1 s debounce); accelerometer 50 Hz freefall→impact drop detector →
+   `DROP:1/0` (laptop announces "helmet dropped" every 10 s, hazard
+   speech muted while down); `/api/pattern?p=duck` (all-motor double
+   pulse); `/api/tunnel?l&r&ttl` (TTL-guarded corridor duties
+   max-blended in haptic_apply).
+5. **Around-Me interrogation layers**: ONE responder for F9 / voice /
+   future tap; front-left/center/right sectors + honest "behind you I
+   can't see"; repeat ≤10 s peels labels → ranges → VLM one-liner.
+6. **Find-by-text flagship** (`ocr.py`, nemotron-ocr-v2): voice "find
+   exit" (curated grammar) or key f (any word) → OCR while panning →
+   fuzzy match (Levenshtein ≤1, conf ≥0.6, len ≥3) → world-bearing
+   beacon lock (yaw sampled AT FRAME GRAB — the #1 flagged bug) →
+   re-OCR every 2 s → arrival by ToF range. Live-tested: found "EXIT"
+   at 0.92 conf on a synthetic frame. "Read that" (key r / voice)
+   speaks the dominant text line.
+7. **Gravity-frame head-clearance watch (flagship)**: per-zone world
+   height via cam→helmet (R_CH, geometry-verified: level = −765 mm at
+   2 m on boresight; pitched up 22.5° = 0) → live IMU attitude;
+   ±margin band in the path cone; 3-of-5 persistence; caution at 2 m,
+   "low clearance, duck" directive + firmware duck pattern at 1.2 m.
+   Feature OFF (spoken once) without IMU+mount-cal — never a
+   sensor-frame fallback. KNOWN LIMIT (documented in the plan): top
+   zone edge sits ~+1° above horizontal, so overhead coverage leans on
+   the ±8° gait pitch sweep; splay re-aim is the v2 fix if field tests
+   demand it.
+8. **Spatialized ticker**: ticks now pan to the hazard's azimuth
+   (ClickPlayer, constant-power ILD ×1.5 exaggeration per the BC
+   research), TTC law unchanged; mono winsound fallback. Audible smoke
+   test passed (left/center/right sweep + trill).
+9. **Walkable tunnel** (key `n`, TCP mode): lateral wall distance from
+   upper zones → duty ramp 90–200 inside 1.2 m → `/api/tunnel` at 4 Hz;
+   silence when centered (.lumen's unclaimed mechanism).
+
+**Also today**: laptop verified field-ready for the whole stack
+(door-scan 114 ms/frame — 2× faster than the desktop; vosk + models +
+NIM key installed; mic array present).
+
+**Lesson**: scoped plan docs with real line anchors made a 9-feature
+sprint mechanical — every edit script asserted its anchors before
+touching the file, so drift failed loudly instead of corrupting.
+
+**Pending**: OTA flash (helmet power), live walk tests of everything
+(item 0 needs the wearer), demo video (item 10).
+
+---
+
 ## 2026-08-22 — Scan-and-select door guidance (key `d` → 1/2/3) + VLM path decided
 
 **Door guidance built** per the last-meter research spec
