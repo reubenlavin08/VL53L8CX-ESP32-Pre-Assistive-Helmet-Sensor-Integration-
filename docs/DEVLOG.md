@@ -110,8 +110,15 @@ NIM key installed; mic array present).
 sprint mechanical — every edit script asserted its anchors before
 touching the file, so drift failed loudly instead of corrupting.
 
-**Pending**: OTA flash (helmet power), live walk tests of everything
-(item 0 needs the wearer), demo video (item 10).
+**OTA FLASHED 2026-08-23 22:30** — helmet found at 192.168.1.227 (DHCP
+had moved it from .228). Flash succeeded (926 KB, 5.3 s). Verified live:
+`/api/pattern?p=duck` returned 200 and fired the motors; serial stream
+at rest shows ONLY Q: lines (98 samples, zero false TAP:/DROP:) —
+correct baseline, no false triggers sitting still.
+
+**Pending**: live walk test of everything (item 0 — tap-through-foam,
+drop truth-table, find/door/VLM/voice, duck-under-broom), demo video
+(item 10).
 
 ---
 
