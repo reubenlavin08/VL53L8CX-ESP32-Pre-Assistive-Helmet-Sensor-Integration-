@@ -271,6 +271,11 @@ def phone_server(port):
 <div id="toast"></div>
 <script>
 let audioOn=true,toastT=null;
+// auto-reconnect the MJPEG stream if the server restarts or iOS resumes us
+const vid=document.getElementById('v');
+vid.onerror=()=>setTimeout(()=>{vid.src='/stream?'+Date.now()},1200);
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden){vid.src='/stream?'+Date.now()}});
 function toast(m){const t=document.getElementById('toast');
  t.textContent=m;t.style.opacity=1;clearTimeout(toastT);
  toastT=setTimeout(()=>t.style.opacity=0,1200)}
