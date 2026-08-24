@@ -227,6 +227,7 @@ def phone_server(port):
         border-radius:12px;width:46px;height:46px;font-size:20px;
         display:flex;align-items:center;justify-content:center}
  button:active{background:#3a4252}
+ button svg{width:24px;height:24px}
  #mute.off{background:#5a1f1f;border-color:#7c2c2c}
  #bar{padding:6px 12px;font-size:13px;color:#9fd8a4;min-height:30px;
       border-top:1px solid #2a2e36;white-space:nowrap;overflow:hidden;
@@ -249,10 +250,21 @@ def phone_server(port):
 <div id="main">
  <img id="v" src="/stream">
  <div id="side">
-  <button title="What's around" onclick="cmd('around','around')">&#128264;</button>
-  <button title="Describe" onclick="cmd('describe','describe')">&#128065;</button>
-  <button id="mute" onclick="toggleMute()">&#128263;</button>
-  <button title="Flag" onclick="cmd('flag','flagged')">&#128681;</button>
+  <button title="What's around" onclick="cmd('around','around')">
+   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor"/>
+    <circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 3"/></svg></button>
+  <button title="Describe" onclick="cmd('describe','describe')">
+   <svg viewBox="0 0 24 24"><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z"
+    fill="none" stroke="currentColor" stroke-width="1.7"/>
+    <circle cx="12" cy="12" r="3" fill="currentColor"/></svg></button>
+  <button id="mute" onclick="toggleMute()">
+   <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>
+    <g id="mx" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+     <line x1="16" y1="9" x2="21" y2="15"/><line x1="21" y1="9" x2="16" y2="15"/></g></svg></button>
+  <button title="Flag" onclick="cmd('flag','flagged')">
+   <svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg></button>
  </div>
 </div>
 <div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
@@ -270,7 +282,8 @@ setInterval(async()=>{try{
  document.getElementById('mode').textContent=s.mode+(s.gated?' · gated':'')+(s.dropped?' · DROPPED':'');
  document.getElementById('said').textContent=s.said;
  const m=document.getElementById('mute');
- m.innerHTML=audioOn?'&#128263;':'&#128266;'; m.className=audioOn?'':'off';
+ m.className=audioOn?'':'off';
+ document.getElementById('mx').style.opacity=audioOn?1:0.25;
 }catch(e){}},600);
 </script></body></html>"""
 
