@@ -940,7 +940,8 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--cam", type=int, default=-1,
                     help="-1 = auto (USB re-enumeration moves indices)")
-    ap.add_argument("--no-audio", action="store_true", help="start with audio off")
+    ap.add_argument("--audio-on", action="store_true",
+                    help="start with audio ON (default: muted until F8/'a'/phone)")
     ap.add_argument("--mode", default="plain", choices=["plain", "brevity"],
                     help="callout language (docs/CALLOUT-PROTOCOL.md)")
     ap.add_argument("--rate", type=int, default=240,
@@ -1073,9 +1074,75 @@ def main():
             return None
         return float(np.degrees(np.arctan(u[0, 0, 0])))
 
+    # desktop UI buttons (mirror of the phone app): drawn as translucent
+    # overlays on the right edge, clickable via the OpenCV mouse callback,
+    # dispatched through the SAME voice-command queue as phone/speech.
+    import queue as _queue
+    ui_q = _queue.Queue()
+    ui_btns = []           # (x0, y0, x1, y1, cmd) rebuilt each frame
+
+    def _on_mouse(event, mx, my, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for x0b, y0b, x1b, y1b, cmdb in ui_btns:
+                if x0b <= mx <= x1b and y0b <= my <= y1b:
+                    ui_q.put(cmdb)
+                    break
+
+    cv2.namedWindow("CV fusion")
+    cv2.setMouseCallback("CV fusion", _on_mouse)
+
+    def _draw_ui(view, audio_on):
+        S, M = 46, 12
+        h, w = view.shape[:2]
+        x0 = w - S - M
+        y0 = (h - (4 * S + 3 * M)) // 2
+        ui_btns.clear()
+        specs = [("around", None), ("describe", None),
+                 ("mute", audio_on), ("flag", None)]
+        for i, (cmdb, st) in enumerate(specs):
+            y = y0 + i * (S + M)
+            roi = view[y:y + S, x0:x0 + S]
+            tint = np.full_like(roi, 30)
+            if cmdb == "mute" and not audio_on:
+                tint[:] = (30, 30, 110)          # red-ish when muted
+            cv2.addWeighted(tint, 0.55, roi, 0.45, 0, roi)
+            cv2.rectangle(view, (x0, y), (x0 + S, y + S), (200, 200, 200), 1,
+                          cv2.LINE_AA)
+            cx0, cy0 = x0 + S // 2, y + S // 2
+            wcol = (255, 255, 255)
+            if cmdb == "around":                 # radar
+                cv2.circle(view, (cx0, cy0), 4, wcol, -1, cv2.LINE_AA)
+                cv2.circle(view, (cx0, cy0), 10, wcol, 1, cv2.LINE_AA)
+                cv2.circle(view, (cx0, cy0), 16, wcol, 1, cv2.LINE_AA)
+            elif cmdb == "describe":             # eye
+                cv2.ellipse(view, (cx0, cy0), (15, 9), 0, 0, 360, wcol, 1,
+                            cv2.LINE_AA)
+                cv2.circle(view, (cx0, cy0), 4, wcol, -1, cv2.LINE_AA)
+            elif cmdb == "mute":                 # speaker +/- X
+                pts = np.array([[cx0 - 12, cy0 - 4], [cx0 - 5, cy0 - 4],
+                                [cx0 + 1, cy0 - 10], [cx0 + 1, cy0 + 10],
+                                [cx0 - 5, cy0 + 4], [cx0 - 12, cy0 + 4]])
+                cv2.fillPoly(view, [pts], wcol, cv2.LINE_AA)
+                if audio_on:
+                    cv2.line(view, (cx0 + 6, cy0 - 6), (cx0 + 13, cy0 + 6),
+                             wcol, 2, cv2.LINE_AA)
+                    cv2.line(view, (cx0 + 13, cy0 - 6), (cx0 + 6, cy0 + 6),
+                             wcol, 2, cv2.LINE_AA)
+                else:
+                    cv2.ellipse(view, (cx0 + 4, cy0), (7, 9), 0, -55, 55,
+                                wcol, 2, cv2.LINE_AA)
+            else:                                # flag
+                cv2.line(view, (cx0 - 8, cy0 - 12), (cx0 - 8, cy0 + 13),
+                         wcol, 2, cv2.LINE_AA)
+                cv2.fillPoly(view, [np.array([[cx0 - 7, cy0 - 11],
+                                              [cx0 + 12, cy0 - 7],
+                                              [cx0 - 7, cy0 - 2]])],
+                             wcol, cv2.LINE_AA)
+            ui_btns.append((x0, y, x0 + S, y + S, cmdb))
+
     outline = {"A": (255, 220, 80), "B": (60, 230, 230)}
     show_det, show_text = True, False
-    audio_on = not args.no_audio
+    audio_on = args.audio_on          # default MUTED (user request 2026-08-24)
     brevity = args.mode == "brevity"
     directive_active = False
     blind_said = False
@@ -2121,6 +2188,7 @@ def main():
                 with phone_lock:
                     phone_jpeg = jb.tobytes()
 
+        _draw_ui(view, audio_on)
         cv2.imshow("CV fusion", view)
         k = cv2.waitKey(1) & 0xFF
 
@@ -2129,6 +2197,15 @@ def main():
             vc = voice_mod.commands.get_nowait()
         except Exception:
             vc = None
+        if vc is None:
+            try:
+                uc = ui_q.get_nowait()
+                if uc == "mute":
+                    vc = "quiet" if audio_on else "audio_on"
+                else:
+                    vc = uc
+            except Exception:
+                pass
         if vc:
             if vc == "describe":
                 k = ord("v")
