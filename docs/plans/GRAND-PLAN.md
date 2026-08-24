@@ -1,5 +1,13 @@
 # GRAND PLAN — every addition, in execution order — 2026-08-23
 
+> **EXECUTION STATUS (same evening)**: ALL build items (1–9) implemented,
+> compiled, unit/live-tested where testable without the wearer, committed
+> and pushed (see DEVLOG 2026-08-23 for the full record). Firmware with
+> tap + drop + /api/pattern + /api/tunnel builds clean — **OTA flash
+> pending helmet power-on**. Remaining items need the wearer: **item 0
+> (live walk test of everything)** and **item 10 (demo video + physical
+> finish)**. Laptop verified field-ready for the entire stack.
+
 Ten scoped plans (each has its own PLAN-*.md in this folder with full
 design, file-referenced steps, tests, risks, hours). This document is
 the ORDER and the reasoning. Execute consecutively; test + commit after
