@@ -487,7 +487,7 @@ def speech_worker():
 # per approach regardless of speed, a terminal cue at a fixed TIME margin
 # (the bat strategy, Melcon 2007), and a stationary user goes SILENT -- which
 # kills the alarm-fatigue failure that sank the BuzzClip.
-tick_state = [(None, None)]
+tick_state = [(None, None, 0.0)]
 speaking = False          # ticker mutes while an utterance plays (masking)
 TTC_ON_S = 2.0            # start ticking below this time-to-contact
 TTC_TERM_S = 0.6          # terminal cue below this (~human stop reaction)
@@ -539,6 +539,19 @@ def _make_trill(path, freq, ms, amp, mod_hz):
 
 
 _make_trill(TERM_WAV, 600, 280, 0.16, 22)
+
+
+def _tone_array(freq, ms, amp, mod_hz=None, sr=22050):
+    n = int(sr * ms / 1000)
+    env = np.minimum(1, np.minimum(np.arange(n), n - np.arange(n)) / (sr * 0.005))
+    s = amp * env * np.sin(2 * np.pi * freq * np.arange(n) / sr)
+    if mod_hz:
+        s *= 0.5 * (1 + np.sin(2 * np.pi * mod_hz * np.arange(n) / sr))
+    return s.astype(np.float32)
+
+
+TICK_ARR = _tone_array(600, 40, 0.10)
+TERM_ARR = _tone_array(600, 280, 0.16, mod_hz=22)
 
 # ── Soundscape beacon guidance (key 'g') ─────────────────────────────────
 # Port of Microsoft Soundscape's 4-region audio beacon (camera/beacon.py,
@@ -595,30 +608,48 @@ def ticker_worker():
     """TTC-based proximity ticker (see tick_state comment). Discrete ticks
     accelerate with 1/time-to-contact; below TTC_TERM_S a distinct trill
     fires; a stationary user hears only a slow standoff heartbeat when
-    something sits inside STANDOFF_MM. MUTES during speech (masking)."""
-    import winsound
+    something sits inside STANDOFF_MM. MUTES during speech (masking).
 
-    def play(p):
+    SPATIALIZED (PLAN-spatialized-clicks): each tick is panned to the
+    hazard's azimuth via beacon.ClickPlayer -- the tick now says WHERE,
+    not just how soon. Mono winsound fallback if audio output fails."""
+    import winsound
+    player = None
+    try:
+        from beacon import ClickPlayer
+        player = ClickPlayer()
+        player._ensure()
+    except Exception as e:
+        print(f"ticker: stereo unavailable ({e}), mono fallback")
+        player = None
+
+    def play(path, arr, az):
+        if player is not None:
+            try:
+                player.play(arr, az)
+                return
+            except Exception:
+                pass
         try:
-            winsound.PlaySound(str(p), winsound.SND_FILENAME | winsound.SND_ASYNC
-                               | winsound.SND_NODEFAULT)
+            winsound.PlaySound(str(path), winsound.SND_FILENAME
+                               | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
         except Exception:
             pass
 
     while running:
-        ttc, rng = tick_state[0]
+        ttc, rng, az = tick_state[0]
         if speaking or (ttc is None and (rng is None or rng > STANDOFF_MM)):
             time.sleep(0.1)
             continue
         if ttc is not None and ttc <= TTC_TERM_S:
-            play(TERM_WAV)                 # terminal: category change
+            play(TERM_WAV, TERM_ARR, az)   # terminal: category change
             time.sleep(0.30)
         elif ttc is not None and ttc <= TTC_ON_S:
             rate = float(np.clip(TICK_K / ttc, TICK_RATE_MIN, TICK_RATE_MAX))
-            play(TICK_WAV)
+            play(TICK_WAV, TICK_ARR, az)
             time.sleep(max(0.06, 1.0 / rate))
         else:                              # stationary near something: heartbeat
-            play(TICK_WAV)
+            play(TICK_WAV, TICK_ARR, az)
             time.sleep(1.0 / TICK_RATE_MIN)
 
 
@@ -1435,7 +1466,11 @@ def main():
             closing = (v0h - v1h) / 1000.0 / max(0.2, t1h - t0h)   # m/s toward
             if closing > 0.05:
                 ttc = (near_path / 1000.0) / closing
-        tick_state[0] = ((ttc, near_path) if (audio_on and not dropped) else (None, None))
+        near_az = 0.0
+        if near_path is not None and path:
+            near_az = min(path, key=lambda zn: zn["z"]).get("az") or 0.0
+        tick_state[0] = ((ttc, near_path, near_az)
+                         if (audio_on and not dropped) else (None, None, 0.0))
 
         # drop alarm (firmware DROP: lines): announce at directive tier,
         # repeat every 10 s until picked up; hazard callouts are garbage

@@ -167,3 +167,46 @@ class Beacon:
                 self.outro_pos = 0        # play outro, then silence
             else:
                 self.active = False
+
+
+class ClickPlayer:
+    """Latest-wins stereo one-shot player for the directional ticker
+    (PLAN-spatialized-clicks). Constant-power pan with ILD exaggeration
+    (x1.5 angle, capped +-90): on bone conduction / laptop speakers the
+    level difference does the spatial work (ITD is unreliable there --
+    bone-conduction-spatial-2026-08-20). Own OutputStream; Windows mixes
+    it with the beacon's."""
+
+    def __init__(self, sr=22050):
+        self.sr = sr
+        self.lock = threading.Lock()
+        self.cur = None          # (stereo ndarray, pos)
+        self.stream = None
+
+    def _ensure(self):
+        if self.stream is not None:
+            return
+        import sounddevice as sd
+        self.stream = sd.OutputStream(samplerate=self.sr, channels=2,
+                                      dtype="float32", blocksize=256,
+                                      callback=self._cb)
+        self.stream.start()
+
+    def _cb(self, out, nframes, t, status):
+        out.fill(0)
+        with self.lock:
+            if self.cur is None:
+                return
+            buf, pos = self.cur
+            take = min(nframes, len(buf) - pos)
+            out[:take] = buf[pos:pos + take]
+            self.cur = None if pos + take >= len(buf) else (buf, pos + take)
+
+    def play(self, mono, az_deg):
+        self._ensure()
+        az = max(-90.0, min(90.0, az_deg * 1.5))
+        th = (az + 90.0) / 180.0 * (np.pi / 2)
+        st = np.column_stack([mono * np.cos(th),
+                              mono * np.sin(th)]).astype(np.float32)
+        with self.lock:
+            self.cur = (st, 0)
