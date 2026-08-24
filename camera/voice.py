@@ -50,6 +50,8 @@ PHRASES = {
     "read that": "read",
     "start recording": "record",
     "stop recording": "record",
+    "haptics off": "haptics_off",
+    "haptics on": "haptics_on",
 }
 
 # curated findable words (closed grammar cannot do open vocabulary --

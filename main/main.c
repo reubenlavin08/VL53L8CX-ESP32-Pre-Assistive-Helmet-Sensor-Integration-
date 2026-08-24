@@ -918,6 +918,14 @@ static volatile int64_t g_manual_hold_until_us = 0;
 static volatile uint8_t g_tunnel_duty[HAPTIC_N] = {0};
 static volatile int64_t g_tunnel_until_us = 0;
 
+/* Host-commanded haptic gain (adaptive damping in tight passages; 0 =
+ * standby). TTL-guarded like the tunnel so a dead laptop can never leave
+ * the safety layer quiet -- expiry restores full autonomous haptics.
+ * Scales ONLY the autonomous duties; tunnel cues are explicit host intent
+ * and pass unscaled. */
+static volatile uint8_t g_haptic_gain_pct = 100;
+static volatile int64_t g_gain_until_us = 0;
+
 static void haptic_set(int i, uint8_t duty);   /* fwd decl (defined below) */
 
 static esp_err_t motor_get_handler(httpd_req_t *req)
@@ -1016,6 +1024,29 @@ static esp_err_t haptics_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* GET /api/gain?g=0..100&ttl=ms -- scale autonomous haptics (g=0 standby,
+ * g=40 tight-passage damping, 100 normal). TTL 100..600000 ms. */
+static esp_err_t gain_get_handler(httpd_req_t *req)
+{
+    char q[96] = {0}, val[16];
+    int g = 100, ttl = 1000;
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "g", val, sizeof(val)) == ESP_OK)   g = atoi(val);
+        if (httpd_query_key_value(q, "ttl", val, sizeof(val)) == ESP_OK) ttl = atoi(val);
+    }
+    if (g < 0)   g = 0;
+    if (g > 100) g = 100;
+    if (ttl < 100)    ttl = 100;
+    if (ttl > 600000) ttl = 600000;  /* 10 min hard cap: standby always expires */
+    g_haptic_gain_pct = (uint8_t)g;
+    g_gain_until_us = esp_timer_get_time() + (int64_t)ttl * 1000;
+    char out[48];
+    snprintf(out, sizeof(out), "{\"gain\":%d,\"ttl\":%d}\n", g, ttl);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, out);
+    return ESP_OK;
+}
+
 static void start_ota_server(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
@@ -1023,7 +1054,7 @@ static void start_ota_server(void)
     cfg.recv_wait_timeout = 60;          /* longer wait so slow flash writes don't drop OTA */
     cfg.send_wait_timeout = 60;
     cfg.stack_size        = 12288;       /* extra headroom for OTA write paths */
-    cfg.max_uri_handlers  = 8;
+    cfg.max_uri_handlers  = 10;
 
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &cfg) != ESP_OK) {
@@ -1038,6 +1069,8 @@ static void start_ota_server(void)
     httpd_uri_t hapt_uri   = { .uri = "/api/haptics", .method = HTTP_GET,  .handler = haptics_get_handler, .user_ctx = NULL };
     httpd_uri_t pat_uri    = { .uri = "/api/pattern", .method = HTTP_GET,  .handler = pattern_get_handler, .user_ctx = NULL };
     httpd_uri_t tun_uri    = { .uri = "/api/tunnel",  .method = HTTP_GET,  .handler = tunnel_get_handler,  .user_ctx = NULL };
+    httpd_uri_t gain_uri   = { .uri = "/api/gain",    .method = HTTP_GET,  .handler = gain_get_handler,    .user_ctx = NULL };
+    httpd_register_uri_handler(server, &gain_uri);
     httpd_register_uri_handler(server, &ota_uri);
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &status_uri);
@@ -1721,6 +1754,19 @@ static void haptic_apply(const int16_t *fwd, const int16_t *thr, const bool *act
                 duty[m] = (uint8_t)(HAPTIC_DUTY_MIN +
                           above * HAPTIC_DOMINANCE_NUM / HAPTIC_DOMINANCE_DEN);
             }
+        }
+    }
+    /* host gain: scale the above-floor part of autonomous duties (a damped
+     * motor stays felt at the floor); gain 0 = full standby. Applied BEFORE
+     * the tunnel blend so explicit corridor cues are never attenuated. */
+    if (esp_timer_get_time() < g_gain_until_us && g_haptic_gain_pct < 100) {
+        for (int m = 0; m < HAPTIC_N; m++) {
+            if (duty[m] == 0) continue;
+            if (g_haptic_gain_pct == 0) { duty[m] = 0; continue; }
+            int32_t above = (int32_t)duty[m] - HAPTIC_DUTY_MIN;
+            if (above < 0) above = 0;
+            duty[m] = (uint8_t)(HAPTIC_DUTY_MIN +
+                      above * g_haptic_gain_pct / 100);
         }
     }
     /* walkable-tunnel blend: max with host-commanded corridor duties while

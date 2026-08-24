@@ -308,6 +308,7 @@ def phone_server(port):
   <li><b>read that</b> — read nearby text</li>
   <li><b>guide</b> — beacon on what's centered ahead</li>
   <li><b>audio on</b> — unmute</li>
+  <li><b>haptics off / haptics on</b> — silence the motors for 10 min / restore</li>
  </ul>
  <p style="margin-bottom:14px"><b>Anytime, no wake word:</b> "stop" ·
  "quiet" (mute) · "wrong" (bad callout — logged)</p>
@@ -465,7 +466,7 @@ setInterval(async()=>{try{
                 c = self.path.split("=", 1)[1]
                 if c in ("around", "describe", "quiet", "audio_on",
                          "flag", "stop", "doors", "guide", "hand", "read",
-                         "shutdown", "record"):
+                         "shutdown", "record", "haptics_off", "haptics_on"):
                     import voice
                     voice.commands.put(c)   # same dispatch as spoken commands
                 self._send(b"{}", "application/json")
@@ -663,6 +664,10 @@ DIRECTIVE_CLEAR_S = 4.0   # hazard absent this long = new encounter
 HAND_Q = ("First check: is a hand or a hand-held object actually visible? "
           "If not, reply exactly: I don't see anything in your hand. "
           "If yes, name the held object in one short sentence.")
+TIGHT_MM = 700.0          # lateral wall distance per side: BOTH under this
+                          # = threading a gap -> damp haptics to 40% (field
+                          # feedback 2026-08-24: doorway squeeze shouldn't
+                          # scream from both temples)
 MOVE_DPS = 6.0            # head-rate floor: above = wearer moving (gait bob
                           # is ~30 deg/s in pitch; true stillness is <2)
 STILL_S = 1.5             # under the floor this long = standing still;
@@ -1343,6 +1348,7 @@ def main():
     clr_off_said = False
     tunnel_on = False      # walkable-tunnel haptics (key n; TCP mode only)
     tunnel_last = 0.0
+    damp_last = 0.0        # tight-passage haptic damping send throttle
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -1717,6 +1723,18 @@ def main():
             import urllib.request
             urllib.request.urlopen(
                 f"http://{args.host}/api/tunnel?l={l}&r={r}&ttl=500",
+                timeout=1).read()
+        except OSError:
+            pass
+
+    def _send_gain(g, ttl):
+        """Scale the helmet's autonomous haptics (firmware /api/gain).
+        g=0 standby, g=40 tight-passage damping, 100 normal. TTL-guarded
+        firmware-side so a dead laptop can never leave haptics quiet."""
+        try:
+            import urllib.request
+            urllib.request.urlopen(
+                f"http://{args.host}/api/gain?g={g}&ttl={ttl}",
                 timeout=1).read()
         except OSError:
             pass
@@ -2321,6 +2339,22 @@ def main():
             if (dl or dr) and audio_on and not dropped:
                 threading.Thread(target=_send_tunnel, args=(dl, dr),
                                  daemon=True).start()
+        # adaptive haptics: threading a tight gap (walls close on BOTH
+        # sides) -> damp autonomous haptics to 40% so the squeeze doesn't
+        # scream from both temples. The firmware TTL (800 ms) restores
+        # full strength the moment the passage opens.
+        if not args.serial and now - damp_last > 0.4:
+            def _lat2(lo, hi):
+                zs = [zn["z"] * np.sin(np.radians(abs(zn["az"])))
+                      for zn in upper
+                      if lo <= zn["az"] <= hi and zn["z"] < 2500]
+                return min(zs) if zs else None
+            ll2, rr2 = _lat2(-60.0, -10.0), _lat2(10.0, 60.0)
+            if (ll2 is not None and rr2 is not None
+                    and ll2 < TIGHT_MM and rr2 < TIGHT_MM):
+                damp_last = now
+                threading.Thread(target=_send_gain, args=(40, 800),
+                                 daemon=True).start()
         if tunnel_on:
             cv2.putText(view, "TUNNEL", (12, 240), cv2.FONT_HERSHEY_SIMPLEX,
                         0.65, (0, 255, 120), 2, cv2.LINE_AA)
@@ -2483,6 +2517,14 @@ def main():
                 k = ord("q")       # clean exit; launcher takes 8123 back
             elif vc == "record":
                 k = ord("c")
+            elif vc == "haptics_off":
+                threading.Thread(target=_send_gain, args=(0, 600000),
+                                 daemon=True).start()
+                _say_q("haptics off for ten minutes")
+            elif vc == "haptics_on":
+                threading.Thread(target=_send_gain, args=(100, 100),
+                                 daemon=True).start()
+                _say_q("haptics on")
 
         # tap gesture (firmware TAP: lines). Double-tap = describe -- the
         # zero-hands query; single taps ignored (bump-prone). 1 s debounce,
