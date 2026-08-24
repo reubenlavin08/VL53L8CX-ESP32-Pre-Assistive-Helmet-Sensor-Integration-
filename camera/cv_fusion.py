@@ -215,38 +215,62 @@ def phone_server(port):
 <title>Iris</title>
 <style>
  *{margin:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+ html,body{height:100%}
  body{background:#101216;color:#e8e6e0;font-family:-apple-system,system-ui,sans-serif;
-      height:100vh;display:flex;flex-direction:column;
-      padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
- #v{width:100%;flex:1;object-fit:contain;background:#000;min-height:0}
- #bar{padding:10px 14px;font-size:15px;min-height:44px;
-      border-top:1px solid #2a2e36;color:#9fd8a4}
- #said{color:#e8e6e0;font-weight:600}
- #grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 16px}
- button{background:#1c2027;border:1px solid #333a45;color:#e8e6e0;
-        border-radius:14px;padding:18px 0;font-size:17px;font-weight:600}
- button:active{background:#2a3140}
+      display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) env(safe-area-inset-right)
+              env(safe-area-inset-bottom) env(safe-area-inset-left)}
+ #main{flex:1;display:flex;min-height:0}
+ #v{flex:1;object-fit:contain;background:#000;min-width:0;min-height:0}
+ #side{display:flex;gap:8px;padding:6px}
+ button{background:#1c2027cc;border:1px solid #333a45;color:#e8e6e0;
+        border-radius:12px;width:46px;height:46px;font-size:20px;
+        display:flex;align-items:center;justify-content:center}
+ button:active{background:#3a4252}
  #mute.off{background:#5a1f1f;border-color:#7c2c2c}
+ #bar{padding:6px 12px;font-size:13px;color:#9fd8a4;min-height:30px;
+      border-top:1px solid #2a2e36;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis}
+ #said{color:#e8e6e0;font-weight:600}
+ #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);
+        background:#2a3140ee;border-radius:10px;padding:6px 14px;
+        font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+ /* portrait: buttons in a thin row under the video */
+ @media (orientation: portrait){
+   #main{flex-direction:column}
+   #side{flex-direction:row;justify-content:center}
+ }
+ /* landscape: thin sidebar on the right, video gets the screen */
+ @media (orientation: landscape){
+   #main{flex-direction:row}
+   #side{flex-direction:column;justify-content:center}
+ }
 </style></head><body>
-<img id="v" src="/stream">
-<div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
-<div id="grid">
- <button onclick="cmd('around')">What's around</button>
- <button onclick="cmd('describe')">Describe</button>
- <button id="mute" onclick="toggleMute()">Mute</button>
- <button onclick="cmd('flag')">Flag that</button>
+<div id="main">
+ <img id="v" src="/stream">
+ <div id="side">
+  <button title="What's around" onclick="cmd('around','around')">&#128264;</button>
+  <button title="Describe" onclick="cmd('describe','describe')">&#128065;</button>
+  <button id="mute" onclick="toggleMute()">&#128263;</button>
+  <button title="Flag" onclick="cmd('flag','flagged')">&#128681;</button>
+ </div>
 </div>
+<div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
+<div id="toast"></div>
 <script>
-let audioOn=true;
-function cmd(c){fetch('/cmd?c='+c)}
-function toggleMute(){cmd(audioOn?'quiet':'audio_on')}
+let audioOn=true,toastT=null;
+function toast(m){const t=document.getElementById('toast');
+ t.textContent=m;t.style.opacity=1;clearTimeout(toastT);
+ toastT=setTimeout(()=>t.style.opacity=0,1200)}
+function cmd(c,label){fetch('/cmd?c='+c);toast('→ '+label)}
+function toggleMute(){cmd(audioOn?'quiet':'audio_on',audioOn?'muted':'audio on')}
 setInterval(async()=>{try{
  const s=await(await fetch('/status')).json();
  audioOn=s.audio;
  document.getElementById('mode').textContent=s.mode+(s.gated?' · gated':'')+(s.dropped?' · DROPPED':'');
  document.getElementById('said').textContent=s.said;
  const m=document.getElementById('mute');
- m.textContent=audioOn?'Mute':'Unmute'; m.className=audioOn?'':'off';
+ m.innerHTML=audioOn?'&#128263;':'&#128266;'; m.className=audioOn?'':'off';
 }catch(e){}},600);
 </script></body></html>"""
 
