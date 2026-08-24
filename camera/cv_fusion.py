@@ -308,7 +308,7 @@ def phone_server(port):
   <li><b>read that</b> — read nearby text</li>
   <li><b>guide</b> — beacon on what's centered ahead</li>
   <li><b>audio on</b> — unmute</li>
-  <li><b>haptics off / haptics on</b> — silence the motors for 10 min / restore</li>
+  <li><b>haptics off / haptics on</b> — silence the motors / restore them</li>
  </ul>
  <p style="margin-bottom:14px"><b>Anytime, no wake word:</b> "stop" ·
  "quiet" (mute) · "wrong" (bad callout — logged)</p>
@@ -2518,9 +2518,9 @@ def main():
             elif vc == "record":
                 k = ord("c")
             elif vc == "haptics_off":
-                threading.Thread(target=_send_gain, args=(0, 600000),
+                threading.Thread(target=_send_gain, args=(0, 0),
                                  daemon=True).start()
-                _say_q("haptics off for ten minutes")
+                _say_q("haptics off")
             elif vc == "haptics_on":
                 threading.Thread(target=_send_gain, args=(100, 100),
                                  daemon=True).start()

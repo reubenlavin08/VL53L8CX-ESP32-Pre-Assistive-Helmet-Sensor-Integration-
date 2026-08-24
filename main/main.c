@@ -1036,10 +1036,13 @@ static esp_err_t gain_get_handler(httpd_req_t *req)
     }
     if (g < 0)   g = 0;
     if (g > 100) g = 100;
-    if (ttl < 100)    ttl = 100;
-    if (ttl > 600000) ttl = 600000;  /* 10 min hard cap: standby always expires */
+    /* ttl=0 = indefinite (user ruling 2026-08-24: no auto-restore -- the
+     * physical switch is the hardware backstop). Reboot resets to 100. */
+    if (ttl != 0 && ttl < 100) ttl = 100;
+    if (ttl > 600000)          ttl = 600000;
     g_haptic_gain_pct = (uint8_t)g;
-    g_gain_until_us = esp_timer_get_time() + (int64_t)ttl * 1000;
+    g_gain_until_us = ttl == 0 ? INT64_MAX
+                    : esp_timer_get_time() + (int64_t)ttl * 1000;
     char out[48];
     snprintf(out, sizeof(out), "{\"gain\":%d,\"ttl\":%d}\n", g, ttl);
     httpd_resp_set_type(req, "application/json");
