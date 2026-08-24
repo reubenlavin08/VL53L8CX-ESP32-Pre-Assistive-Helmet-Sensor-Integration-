@@ -175,14 +175,91 @@ def helmet_serial_reader(port, baud):
 # detections, horizon, attitude inset) at ~10 fps.
 phone_jpeg = None
 phone_lock = threading.Lock()
+phone_status = {"said": "", "audio": True, "mode": "idle", "gated": False,
+                "dropped": False}   # updated each frame; served at /status
 
 
 def phone_server(port):
+    """PWA dashboard: installs to the iPhone home screen via Safari's
+    Add to Home Screen (manifest + apple meta tag -> launches fullscreen,
+    no App Store, no dev account). Live MJPEG view + status bar + big
+    touch buttons that inject the SAME commands as voice/keys -- the
+    phone is a silent remote for demos."""
+    import io
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    # generated iris icon (concentric circles), cached once
+    ic = np.zeros((512, 512, 3), np.uint8)
+    ic[:] = (24, 18, 16)
+    cv2.circle(ic, (256, 256), 200, (140, 90, 30), -1, cv2.LINE_AA)
+    cv2.circle(ic, (256, 256), 200, (220, 170, 60), 14, cv2.LINE_AA)
+    cv2.circle(ic, (256, 256), 90, (30, 24, 20), -1, cv2.LINE_AA)
+    cv2.circle(ic, (310, 200), 34, (250, 240, 230), -1, cv2.LINE_AA)
+    _, icon_png = cv2.imencode(".png", ic)
+    icon_bytes = icon_png.tobytes()
+
+    MANIFEST = json.dumps({
+        "name": "Iris", "short_name": "Iris",
+        "display": "standalone", "orientation": "portrait",
+        "background_color": "#101216", "theme_color": "#101216",
+        "start_url": "/", "icons": [{"src": "/icon.png",
+                                     "sizes": "512x512",
+                                     "type": "image/png"}]}).encode()
+
+    PAGE = """<!doctype html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>Iris</title>
+<style>
+ *{margin:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+ body{background:#101216;color:#e8e6e0;font-family:-apple-system,system-ui,sans-serif;
+      height:100vh;display:flex;flex-direction:column;
+      padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+ #v{width:100%;flex:1;object-fit:contain;background:#000;min-height:0}
+ #bar{padding:10px 14px;font-size:15px;min-height:44px;
+      border-top:1px solid #2a2e36;color:#9fd8a4}
+ #said{color:#e8e6e0;font-weight:600}
+ #grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 16px}
+ button{background:#1c2027;border:1px solid #333a45;color:#e8e6e0;
+        border-radius:14px;padding:18px 0;font-size:17px;font-weight:600}
+ button:active{background:#2a3140}
+ #mute.off{background:#5a1f1f;border-color:#7c2c2c}
+</style></head><body>
+<img id="v" src="/stream">
+<div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
+<div id="grid">
+ <button onclick="cmd('around')">What's around</button>
+ <button onclick="cmd('describe')">Describe</button>
+ <button id="mute" onclick="toggleMute()">Mute</button>
+ <button onclick="cmd('flag')">Flag that</button>
+</div>
+<script>
+let audioOn=true;
+function cmd(c){fetch('/cmd?c='+c)}
+function toggleMute(){cmd(audioOn?'quiet':'audio_on')}
+setInterval(async()=>{try{
+ const s=await(await fetch('/status')).json();
+ audioOn=s.audio;
+ document.getElementById('mode').textContent=s.mode+(s.gated?' · gated':'')+(s.dropped?' · DROPPED':'');
+ document.getElementById('said').textContent=s.said;
+ const m=document.getElementById('mute');
+ m.textContent=audioOn?'Mute':'Unmute'; m.className=audioOn?'':'off';
+}catch(e){}},600);
+</script></body></html>"""
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
+
+        def _send(self, body, ctype):
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def do_GET(self):
             if self.path == "/stream":
@@ -201,16 +278,22 @@ def phone_server(port):
                         time.sleep(0.09)
                 except (ConnectionError, OSError):
                     pass
+            elif self.path == "/manifest.json":
+                self._send(MANIFEST, "application/manifest+json")
+            elif self.path == "/icon.png":
+                self._send(icon_bytes, "image/png")
+            elif self.path == "/status":
+                self._send(json.dumps(phone_status).encode(),
+                           "application/json")
+            elif self.path.startswith("/cmd?c="):
+                c = self.path.split("=", 1)[1]
+                if c in ("around", "describe", "quiet", "audio_on",
+                         "flag", "stop", "doors", "guide", "hand", "read"):
+                    import voice
+                    voice.commands.put(c)   # same dispatch as spoken commands
+                self._send(b"{}", "application/json")
             else:
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<html><head><meta name='viewport' content="
-                                 b"'width=device-width,initial-scale=1'>"
-                                 b"<title>helmet</title></head>"
-                                 b"<body style='margin:0;background:#111'>"
-                                 b"<img src='/stream' style='width:100%'>"
-                                 b"</body></html>")
+                self._send(PAGE.encode(), "text/html")
 
     try:
         ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
@@ -464,6 +547,7 @@ def speech_worker():
                 continue
         speech_last[key] = (now, rng)
         flightlog.spoken(text, key, tier, rng)
+        phone_status["said"] = text
         global speaking
         try:
             speaking = True                # ticker mutes so words stay audible
@@ -793,7 +877,7 @@ def main():
                     help="spoken distances (auto: walking=steps, query=meters)")
     ap.add_argument("--calibrate-stride", action="store_true",
                     help="30-s console stride calibration, then exit")
-    ap.add_argument("--serve", type=int, default=8090,
+    ap.add_argument("--serve", type=int, default=8123,
                     help="phone-viewer port (0 = off). Open http://<laptop-ip>:PORT")
     args = ap.parse_args()
 
@@ -1943,6 +2027,12 @@ def main():
                     (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (240, 240, 240), 2,
                     cv2.LINE_AA)
 
+        phone_status.update(
+            audio=audio_on, gated=gated, dropped=dropped,
+            mode=("door " + door["state"] if door["state"] != "idle" else
+                  "find " + find["state"] if find["state"] != "idle" else
+                  "guiding" if guide is not None else
+                  "tunnel" if tunnel_on else "idle"))
         if args.serve:
             ok_j, jb = cv2.imencode(".jpg", view,
                                     [cv2.IMWRITE_JPEG_QUALITY, 70])
