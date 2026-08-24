@@ -38,6 +38,17 @@ deferred with trigger · ❌ = ruled out (kept with reasons at the bottom).
 
 ## P1 — highest impact per session (build next)
 
+> [!note]- 0. Adaptive haptic intensity in tight spaces (field walk 2026-08-24)
+> **What**: scale haptic strength down when the passage is narrow on BOTH
+> sides (doorway squeeze, tight corner) — full-strength buzzing on both
+> temples while deliberately threading a gap is alarm without information.
+> Possible shape: when left AND right ranges are short and symmetric,
+> drop to the walkable-tunnel centering encoding instead of raw proximity.
+> **Also from the same walk**: helmet haptics run standalone in firmware
+> (fire whether the laptop is on or not) — by design (safety layer never
+> depends on the laptop), but consider a phone-toggleable standby.
+> **Source**: Reuben's first full walkthrough, 2026-08-24.
+
 > [!note]- 1. ✅ Soundscape audio beacon — **BUILT, needs live camera test** [key `g`]
 > **What**: lock a detected object; Soundscape's actual 4-region musical
 > beacon (their MIT WAVs) leads you to it; arrival melody at 1 m.

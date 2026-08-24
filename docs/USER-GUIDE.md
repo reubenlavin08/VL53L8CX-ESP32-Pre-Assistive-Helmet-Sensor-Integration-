@@ -24,7 +24,8 @@ Say **"Iris"**, wait for the **high beep**, then the command (5 s window):
 - **"what's in my hand"** — same, focused on a held object
 - **"what's around"** — one item per direction (front-left / center / right). Say it again within 10 s for distances; a third time for the full AI description
 - **"scan doors"** — finds up to 3 doors, tells you clock direction + steps; then **"door one/two/three"** picks one and the audio beacon guides you to it
-- **"find exit"** (also: washroom, open, push, pull, sale, ketchup) — reads text in view, locks the beacon on the match
+- **"find door"** (also: window, chair, stairs, table, couch, bed, fridge, sink, elevator, garbage) — finds the *object* with open-vocabulary detection, beacon guides you to it
+- **"find exit"** (also: washroom, open, push, pull, sale, ketchup) — finds that *written text* on signs/labels, locks the beacon on it. Text words need actual writing in view — a door with no EXIT sign won't match "exit"; say "find door" for that
 - **"read that"** — reads nearby text aloud
 - **"guide"** — audio beacon toward what's centered ahead
 - **"audio on"** — unmute

@@ -108,9 +108,11 @@ def _helmet_line(s):
             (t0p, p0p), (t1p, p1p) = _pith[0], _pith[-1]
             rp = (p1p - p0p) / max(t1p - t0p, 1e-3)
             globals()["pitch_rate"] = 0.7 * pitch_rate + 0.3 * rp
-            # stillness detector: walking gait bobs pitch/yaw well above
-            # this floor; a genuinely still wearer sits under it
-            if max(abs(yaw_rate), abs(pitch_rate)) > MOVE_DPS:
+            # stillness detector on PITCH only: walking gait bobs pitch at
+            # ~25-50 deg/s, but turning the head in place is pure yaw --
+            # scanning while standing must not count as "moving" (field
+            # feedback 2026-08-24: differentiate rotation from walking)
+            if abs(pitch_rate) > MOVE_DPS:
                 globals()["last_move_t"] = imu_stamp
         return
     if s.startswith("TAP:"):
@@ -301,7 +303,8 @@ def phone_server(port):
   <li><b>what's in my hand</b> — identify a held object</li>
   <li><b>what's around</b> — one item per direction; repeat for distances, again for full AI view</li>
   <li><b>scan doors</b> → <b>door one/two/three</b> — beacon guides you to it</li>
-  <li><b>find exit / washroom / open / push / pull / sale / ketchup</b> — beacon locks on that text</li>
+  <li><b>find door / window / chair / stairs / table / couch / bed / fridge / sink / elevator / garbage</b> — finds the object, beacon guides you</li>
+  <li><b>find exit / washroom / open / push / pull / sale / ketchup</b> — finds that WRITTEN text on signs</li>
   <li><b>read that</b> — read nearby text</li>
   <li><b>guide</b> — beacon on what's centered ahead</li>
   <li><b>audio on</b> — unmute</li>
@@ -688,8 +691,10 @@ def _det_name(d):
     if d["conf"] >= CONF_HEDGE:
         return f"maybe {d['name']}"
     return "obstacle"
-GATE_ON_DPS = 100.0       # sterile cockpit: gate CAUTION above this yaw rate
-GATE_OFF_DPS = 60.0       # release below this...
+GATE_ON_DPS = 60.0        # sterile cockpit: gate CAUTION above this yaw rate
+                          # (was 100: field walk showed normal deliberate
+                          # scanning sits at 60-90 deg/s and still chattered)
+GATE_OFF_DPS = 35.0       # release below this...
 GATE_OFF_DWELL_S = 0.25   # ...sustained this long
 # proximity ticker: parking-sensor repetition-rate encoding (the pattern every
 # shipped product uses instead of speaking numbers). Sparse 40 ms blips.
@@ -904,6 +909,25 @@ FIND_EDIT_MAX = 1            # fuzzy match tolerance (Levenshtein)
 FIND_ARRIVE_MM = 1200.0
 FIND_MIN_CONF = 0.6          # OCR hallucination floor
 FIND_MIN_LEN = 3             # never match tokens shorter than this
+
+# Object-find (field walk 2026-08-24: "find door / find window" expected
+# OBJECTS, not signage text). These words route to YOLO-World open-vocab
+# detection instead of OCR; best hit gets the same beacon lock.
+OBJ_FIND = {
+    "door": ["door", "glass door", "doorway", "double door"],
+    "window": ["window"],
+    "chair": ["chair", "office chair", "armchair"],
+    "stairs": ["staircase", "stairs"],
+    "table": ["table", "desk"],
+    "couch": ["couch", "sofa"],
+    "bed": ["bed"],
+    "fridge": ["refrigerator"],
+    "sink": ["sink"],
+    "elevator": ["elevator doors", "elevator"],
+    "garbage": ["trash can", "garbage bin"],
+}
+OBJ_FIND_CONF = 0.20         # single-target floor (higher than DOOR_CONF:
+                             # no cluster+vote to filter noise here)
 
 
 def _lev(a, b):
@@ -1556,6 +1580,64 @@ def main():
         bcn.start()
         _say_q(phrase + ". guiding, say stop when done")
 
+    def _find_scan_obj(target):
+        """YOLO-World object variant of _find_scan: same scan window, same
+        world-bearing beacon lock, detection instead of OCR."""
+        m = door["model"]
+        if m is None:
+            _say_q("object finder still loading, try again")
+            with find["lock"]:
+                find["state"] = "idle"
+            return
+        t0s = time.monotonic()
+        hit = None
+        try:
+            m.set_classes(OBJ_FIND[target])
+            while time.monotonic() - t0s < DOOR_SCAN_S:
+                with fb_lock:
+                    frm = frame_box["frame"]
+                if frm is None:
+                    time.sleep(0.1)
+                    continue
+                yaw0 = _yaw_now()
+                r = m.predict(frm, imgsz=640, conf=OBJ_FIND_CONF,
+                              verbose=False)[0]
+                bb = None
+                for b in r.boxes:
+                    if bb is None or float(b.conf) > float(bb.conf):
+                        bb = b
+                if bb is not None:
+                    x0b, y0b, x1b, y1b = bb.xyxy[0].tolist()
+                    az = pixel_azimuth((x0b + x1b) / 2, (y0b + y1b) / 2)
+                    if az is not None:
+                        hit = {"wb": az + yaw0 if yaw0 is not None else az,
+                               "imu": yaw0 is not None,
+                               "conf": float(bb.conf),
+                               "seen": time.monotonic(), "muted": False}
+                        break
+        finally:
+            m.set_classes(DOOR_CLASSES)     # door mode expects its own vocab
+        if hit is None:
+            _say_q(f"didn't find a {target}, pan and try again")
+            with find["lock"]:
+                find["state"] = "idle"
+            return
+        yawn = _yaw_now() or 0.0
+        rel = _wrap(hit["wb"] - yawn)
+        hr = int(round(rel / 30.0)) % 12
+        hr = 12 if hr == 0 else hr
+        rngmm = _range_at_az(rel)
+        phrase = f"found a {target}, {hr} o'clock"
+        if rngmm:
+            phrase += f", {spoken_dist(rngmm, walking=True)}"
+        with find["lock"]:
+            find["sel"] = hit
+            find["state"] = "guiding"
+            find["reocr_t"] = 0.0
+        bcn.update(rel)
+        bcn.start()
+        _say_q(phrase + ". guiding, say stop when done")
+
     def _find_reocr():
         with fb_lock:
             frm = frame_box["frame"]
@@ -1620,12 +1702,15 @@ def main():
             bcn = Beacon()
         else:
             bcn.stop()
+        obj = word in OBJ_FIND
         with find["lock"]:
             find["target"] = word
+            find["kind"] = "obj" if obj else "text"
             find["state"] = "scanning"
             find["sel"] = None
-        _say_q(f"searching for {word}, pan slowly")
-        threading.Thread(target=_find_scan, args=(word,), daemon=True).start()
+        _say_q(f"searching for {'a ' if obj else ''}{word}, pan slowly")
+        threading.Thread(target=_find_scan_obj if obj else _find_scan,
+                         args=(word,), daemon=True).start()
 
     def _send_tunnel(l, r):
         try:
@@ -2133,7 +2218,8 @@ def main():
         if find["state"] == "guiding" and find["sel"] is not None \
                 and bcn is not None:
             c = find["sel"]
-            if now - find["reocr_t"] > FIND_REOCR_S and not ocr_mod.busy.is_set():
+            if (find.get("kind") != "obj" and now - find["reocr_t"]
+                    > FIND_REOCR_S and not ocr_mod.busy.is_set()):
                 find["reocr_t"] = now
                 threading.Thread(target=_find_reocr, daemon=True).start()
             if not audio_on or level_mode:

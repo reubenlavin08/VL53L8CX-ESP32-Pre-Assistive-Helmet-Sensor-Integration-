@@ -53,8 +53,12 @@ PHRASES = {
 }
 
 # curated findable words (closed grammar cannot do open vocabulary --
-# arbitrary words are dev-keyboard-only via key f; PLAN-find-by-text)
-FIND_WORDS = ["exit", "washroom", "open", "push", "pull", "sale", "ketchup"]
+# arbitrary words are dev-keyboard-only via key f; PLAN-find-by-text).
+# Text words -> OCR find; object words -> YOLO-World find (cv_fusion
+# OBJ_FIND decides the route -- keep the two lists in sync).
+FIND_WORDS = ["exit", "washroom", "open", "push", "pull", "sale", "ketchup",
+              "door", "window", "chair", "stairs", "table", "couch", "bed",
+              "fridge", "sink", "elevator", "garbage"]
 for _w in FIND_WORDS:
     PHRASES[f"find {_w}"] = f"find:{_w}"
 WAKE = "iris"             # the iris of the eye, and the Greek goddess of sight
