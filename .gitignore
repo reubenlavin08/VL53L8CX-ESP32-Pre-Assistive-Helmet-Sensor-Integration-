@@ -52,3 +52,5 @@ yolov8s-worldv2.pt
 camera/voice_log.jsonl
 camera/models/
 camera/sessions/
+camera/stride_cal.json
+camera/gate_log.jsonl

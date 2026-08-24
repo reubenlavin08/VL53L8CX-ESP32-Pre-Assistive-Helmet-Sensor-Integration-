@@ -58,6 +58,9 @@ import flightlog                     # FP/hour metric + intervention clips
 # downstream logic keeps its ">0 = valid" convention. TCP is the default so the
 # viewer never fights another tool for the COM port.
 imu_quat = None          # latest [w,x,y,z], helmet firmware only
+from collections import deque as _dq
+_yawh = _dq(maxlen=12)   # ~120 ms of yaw samples for the rate estimator
+yaw_rate = 0.0           # deg/s, EMA-smoothed, signed
 imu_stamp = 0.0
 
 
@@ -84,6 +87,16 @@ def _helmet_line(s):
             return
         imu_quat = q
         flightlog.add_imu(*q)
+        # yaw-rate estimator (sterile-cockpit gate). Chip-frame yaw is fine
+        # for a RATE -- mount_cal is constant and cancels in the delta.
+        w_, x_, y_, z_ = q
+        _yawh.append((imu_stamp,
+                      np.degrees(np.arctan2(2 * (w_ * z_ + x_ * y_),
+                                            1 - 2 * (y_ * y_ + z_ * z_)))))
+        if len(_yawh) >= 2 and _yawh[-1][0] - _yawh[0][0] > 0.02:
+            (t0y, y0y), (t1y, y1y) = _yawh[0], _yawh[-1]
+            r = (((y1y - y0y + 180.0) % 360.0) - 180.0) / (t1y - t0y)
+            globals()["yaw_rate"] = 0.7 * yaw_rate + 0.3 * r
         imu_stamp = time.monotonic()
 
 
@@ -360,6 +373,9 @@ PATH_CONE_MAX_DEG = 45.0
 CAUTION_MM = 1800.0       # caution tier ceiling
 CLOSING_MPS = -0.5        # range rate for the "closing"/"hot" aspect word
 CONF_HEDGE = 0.50         # below this confidence the callout says "maybe"
+GATE_ON_DPS = 100.0       # sterile cockpit: gate CAUTION above this yaw rate
+GATE_OFF_DPS = 60.0       # release below this...
+GATE_OFF_DWELL_S = 0.25   # ...sustained this long
 # proximity ticker: parking-sensor repetition-rate encoding (the pattern every
 # shipped product uses instead of speaking numbers). Sparse 40 ms blips.
 TICK_NEAR_S, TICK_FAR_S = 0.15, 1.2      # period at DIRECTIVE_MM .. CAUTION_MM
@@ -565,15 +581,27 @@ def direction_word(az_deg):
     return "hard right"
 
 
-def spoken_range(mm):
-    """Bare number = meters, half-meter steps; 'close' under 0.75 m. The unit
-    word is dropped entirely -- the convention is learnable in one use and
-    saves ~a second per utterance."""
+STRIDE_M = 0.7            # per-user, overwritten by stride_cal.json
+UNITS_MODE = "auto"       # steps|meters|auto (auto: walking=steps, query=meters)
+
+
+def spoken_steps(mm):
+    """Distances as calibrated steps -- body-scaled and directly executable
+    (UTILITY-ROADMAP delivery invariant). Whole steps, always hedged; past
+    ~20 steps a count stops being countable -> meters."""
+    steps = (mm / 1000.0) / STRIDE_M
+    if steps < 2:
+        return "right there"
+    if steps <= 20:
+        return f"about {int(round(steps))} steps"
+    return f"about {mm / 1000.0:.0f} meters"
+
+
+def spoken_dist(mm, walking):
+    if UNITS_MODE == "steps" or (UNITS_MODE == "auto" and walking):
+        return spoken_steps(mm)
     m = mm / 1000.0
-    if m < 0.75:
-        return "close"
-    step = round(m * 2) / 2
-    return f"{step:g}"
+    return "about 1 meter" if m < 1.3 else f"about {m:.0f} meters"
 
 
 def detector_worker(get_frame):
@@ -629,7 +657,7 @@ def detector_worker(get_frame):
 
 
 def main():
-    global running, use_dewarp, phone_jpeg
+    global running, use_dewarp, phone_jpeg, STRIDE_M, UNITS_MODE
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM9")
     ap.add_argument("--baud", type=int, default=115200)
@@ -648,6 +676,11 @@ def main():
     ap.add_argument("--serial", action="store_true",
                     help="FIELD MODE: read the helmet stream over USB serial "
                          "(--port) instead of WiFi TCP")
+    ap.add_argument("--units", default="auto",
+                    choices=["steps", "meters", "auto"],
+                    help="spoken distances (auto: walking=steps, query=meters)")
+    ap.add_argument("--calibrate-stride", action="store_true",
+                    help="30-s console stride calibration, then exit")
     ap.add_argument("--serve", type=int, default=8090,
                     help="phone-viewer port (0 = off). Open http://<laptop-ip>:PORT")
     args = ap.parse_args()
@@ -661,6 +694,25 @@ def main():
         return bool(ctypes.windll.user32.GetAsyncKeyState(VK_F8) & 0x8000)
     def f9_pressed():
         return bool(ctypes.windll.user32.GetAsyncKeyState(VK_F9) & 0x8000)
+
+    if args.calibrate_stride:
+        d = float(input("distance walked (m)? "))
+        n = int(input("steps taken? "))
+        s = d / n
+        if not 0.4 <= s <= 1.0:
+            raise SystemExit(f"stride {s:.2f} m outside 0.4-1.0 -- remeasure")
+        (ROOT / "camera" / "stride_cal.json").write_text(json.dumps(
+            {"stride_m": round(s, 3), "steps_counted": n, "dist_m": d,
+             "t": time.strftime("%Y-%m-%d %H:%M")}))
+        print(f"stride {s:.2f} m saved")
+        return
+    UNITS_MODE = args.units
+    try:
+        STRIDE_M = json.loads((ROOT / "camera" / "stride_cal.json")
+                              .read_text())["stride_m"]
+        print(f"stride: {STRIDE_M:.2f} m (calibrated)")
+    except (OSError, KeyError, ValueError):
+        print(f"stride: {STRIDE_M:.2f} m (default -- run --calibrate-stride)")
 
     global SPEECH_RATE
     SPEECH_RATE = args.rate
@@ -761,6 +813,9 @@ def main():
     bcn = None             # Beacon instance, created on first 'g'
     voice_around = False   # voice "what's around" -> F9 on the next frame
     disagree_since = None  # ToF-near-with-no-CV-explanation persistence
+    gated = False          # sterile-cockpit speech gate (head-turn)
+    gate_below_since = None
+    gate_entered = 0.0
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -856,8 +911,8 @@ def main():
             rel = _wrap(c["wb"] - yawn)
             hr = int(round(rel / 30.0)) % 12
             hr = 12 if hr == 0 else hr
-            m = c["rng"] / 1000.0
-            parts.append(f"door {i+1}, {hr} o'clock, about {m:.0f} meters")
+            parts.append(f"door {i+1}, {hr} o'clock, "
+                         f"{spoken_dist(c['rng'], walking=True)}")
         _say_q("; ".join(parts) + ". press a number to select")
 
     def _say_q(text):
@@ -1064,6 +1119,27 @@ def main():
                 ttc = (near_path / 1000.0) / closing
         tick_state[0] = (ttc, near_path) if audio_on else (None, None)
 
+        # sterile-cockpit gate: CAUTION speech suppressed during fast head
+        # turns (stale azimuth words + collides with deliberate scanning).
+        # Directive, sensors-lost, query, ticker: NEVER gated.
+        imu_fresh = imu_quat is not None and now - imu_stamp < 0.3
+        rate_now = abs(yaw_rate) if imu_fresh else 0.0
+        if not gated and rate_now > GATE_ON_DPS:
+            gated = True
+            gate_entered = now
+            gate_below_since = None
+            flightlog.event("gate_enter", yaw_rate=round(rate_now, 1))
+        elif gated:
+            if rate_now < GATE_OFF_DPS:
+                if gate_below_since is None:
+                    gate_below_since = now
+                elif now - gate_below_since > GATE_OFF_DWELL_S:
+                    gated = False
+                    flightlog.event("gate_exit",
+                                    dur_s=round(now - gate_entered, 2))
+            else:
+                gate_below_since = None
+
         if audio_on and not level_mode:
             if near_path is not None and near_path < DIRECTIVE_MM:
                 # DIRECTIVE: command, chosen by where the free space is
@@ -1083,9 +1159,10 @@ def main():
             else:
                 if directive_active and (near_path is None or near_path > 1000):
                     directive_active = False
-                    with speech_lock:
-                        speech_next = ("clean" if brevity else "path clear",
-                                       "CLEAR", 0, "caution", now)
+                    if not gated:
+                        with speech_lock:
+                            speech_next = ("clean" if brevity else "path clear",
+                                           "CLEAR", 0, "caution", now)
                 # CAUTION: nearest hazard, no class priority (person callouts
                 # are the LEAST-wanted feature; nearest threat wins, period).
                 cand = None      # (spoken-name, key, raw_range, azimuth)
@@ -1128,9 +1205,15 @@ def main():
                                 text = f"{name}, {direction_word(az)}"
                                 if closing:
                                     text += ", closing"
-                            with speech_lock:
-                                speech_next = (text, f"{stem}:{direction_word(az)}",
-                                               rng, "caution", now)
+                            if gated:
+                                flightlog.event("gated", text=text,
+                                                yaw_rate=round(abs(yaw_rate), 1),
+                                                range_mm=round(rng))
+                            else:
+                                with speech_lock:
+                                    speech_next = (text,
+                                                   f"{stem}:{direction_word(az)}",
+                                                   rng, "caution", now)
 
             # sensor-loss callout: silence must never mean "safe"
             with fo.lock:
@@ -1158,15 +1241,14 @@ def main():
                 if az is None:
                     continue
                 nm = d["name"] if d["conf"] >= CONF_HEDGE else f"maybe {d['name']}"
-                m = d["range_mm"] / 1000.0
-                parts.append(f"{nm} {direction_word(az)}, about "
-                             f"{'1 meter' if m < 1.3 else f'{m:.0f} meters'}")
+                parts.append(f"{nm} {direction_word(az)}, "
+                             f"{spoken_dist(d['range_mm'], walking=False)}")
             if not parts and alert_zones:
                 zn = min(alert_zones, key=lambda z: z["z"])
                 az = zn.get("az")
                 if az is not None:
-                    parts.append(f"obstacle {direction_word(az)}, about "
-                                 f"{max(1, round(zn['z']/1000))} meters")
+                    parts.append(f"obstacle {direction_word(az)}, "
+                                 f"{spoken_dist(zn['z'], walking=False)}")
             text = ("; ".join(parts) if parts
                     else "There is nothing to call out right now")
             with speech_lock:
@@ -1376,8 +1458,9 @@ def main():
                             cv2.LINE_AA)
 
         mode = "JOINT" if (use_joint and joint) else "CAD"
+        gflag = "  GATED" if gated else ""
         voice = "BREVITY" if brevity else "plain"
-        cv2.putText(view, f"CV fusion  [{mode}]  det {'on' if show_det else 'OFF'}"
+        cv2.putText(view, f"CV fusion  [{mode}]{gflag}  det {'on' if show_det else 'OFF'}"
                     f"{'/dewarp' if use_dewarp else '/raw'}  "
                     f"audio {'on' if audio_on else 'OFF'} ({voice})  zones {len(zones)}",
                     (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (240, 240, 240), 2,
@@ -1456,6 +1539,10 @@ def main():
                     args=(list(vlm_frames), q),
                     kwargs={"sensor_ctx": ctx, "hand_mode": hand,
                             "speak": _say_q}, daemon=True).start()
+        elif k == ord("u"):
+            UNITS_MODE = {"auto": "steps", "steps": "meters",
+                          "meters": "auto"}[UNITS_MODE]
+            _say_q(f"units {UNITS_MODE}")
         elif k == ord("x"):
             flightlog.explicit_fp()
             _say_q("noted")
