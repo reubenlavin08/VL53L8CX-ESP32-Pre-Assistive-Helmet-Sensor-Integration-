@@ -238,14 +238,7 @@ def phone_server(port):
         transform:translateX(-50%);z-index:3;background:rgba(40,50,66,.85);
         border-radius:10px;padding:6px 14px;font-size:14px;opacity:0;
         transition:opacity .2s;pointer-events:none}
- @media (orientation: portrait){
-   #side{left:50%;transform:translateX(-50%);
-         bottom:calc(44px + env(safe-area-inset-bottom));flex-direction:row}
- }
- @media (orientation: landscape){
-   #side{right:calc(10px + env(safe-area-inset-right));top:50%;
-         transform:translateY(-50%);flex-direction:column}
- }
+ /* positions set by JS into the letterbox space around the video */
 </style></head><body>
 <img id="v" alt="">
 <div id="side">
@@ -287,7 +280,34 @@ setInterval(async()=>{
   }
  }catch(e){}
  busyF=false;
+ layout();
 },120);
+
+// place controls in the black letterbox space so the video stays
+// full-size and uncovered (object-fit:contain math done by hand)
+function layout(){
+ const W=innerWidth,H=innerHeight,vw=vid.naturalWidth||1280,vh=vid.naturalHeight||720;
+ const s=Math.min(W/vw,H/vh),dw=vw*s,dh=vh*s;
+ const padX=(W-dw)/2,padY=(H-dh)/2;
+ const side=document.getElementById('side');
+ if(padX>=64){                 // pillarbox (landscape): column in right bar
+  side.style.flexDirection='column';
+  side.style.left='';side.style.transform='translateY(-50%)';
+  side.style.top='50%';side.style.bottom='';
+  side.style.right=Math.max(8,(padX-46)/2)+'px';
+ }else if(padY>=64){           // letterbox (portrait): row under the video
+  side.style.flexDirection='row';
+  side.style.top='';side.style.transform='translateX(-50%)';
+  side.style.left='50%';side.style.right='';
+  side.style.bottom=Math.max(8,(padY-46)/2+8)+'px';
+ }else{                        // no dead space: overlay bottom-right corner
+  side.style.flexDirection='row';
+  side.style.top='';side.style.transform='';
+  side.style.left='';side.style.right='10px';
+  side.style.bottom='calc(46px + env(safe-area-inset-bottom))';
+ }
+}
+addEventListener('resize',layout);layout();
 function toast(m){const t=document.getElementById('toast');
  t.textContent=m;t.style.opacity=1;clearTimeout(toastT);
  toastT=setTimeout(()=>t.style.opacity=0,1200)}
