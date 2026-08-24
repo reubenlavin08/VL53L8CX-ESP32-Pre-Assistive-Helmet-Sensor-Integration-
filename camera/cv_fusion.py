@@ -62,7 +62,10 @@ tap_event = None         # (count, t) from firmware TAP: lines
 drop_state = None        # 1 = dropped, 0 = picked up (firmware DROP: lines)
 from collections import deque as _dq
 _yawh = _dq(maxlen=12)   # ~120 ms of yaw samples for the rate estimator
+_pith = _dq(maxlen=12)   # same for pitch (gait bob shows up here)
 yaw_rate = 0.0           # deg/s, EMA-smoothed, signed
+pitch_rate = 0.0         # deg/s, EMA-smoothed, signed
+last_move_t = 0.0        # last time the head/body was measurably moving
 imu_stamp = 0.0
 
 
@@ -95,10 +98,20 @@ def _helmet_line(s):
         _yawh.append((imu_stamp,
                       np.degrees(np.arctan2(2 * (w_ * z_ + x_ * y_),
                                             1 - 2 * (y_ * y_ + z_ * z_)))))
+        _pith.append((imu_stamp,
+                      np.degrees(np.arcsin(
+                          np.clip(2 * (w_ * y_ - z_ * x_), -1, 1)))))
         if len(_yawh) >= 2 and _yawh[-1][0] - _yawh[0][0] > 0.02:
             (t0y, y0y), (t1y, y1y) = _yawh[0], _yawh[-1]
             r = (((y1y - y0y + 180.0) % 360.0) - 180.0) / (t1y - t0y)
             globals()["yaw_rate"] = 0.7 * yaw_rate + 0.3 * r
+            (t0p, p0p), (t1p, p1p) = _pith[0], _pith[-1]
+            rp = (p1p - p0p) / max(t1p - t0p, 1e-3)
+            globals()["pitch_rate"] = 0.7 * pitch_rate + 0.3 * rp
+            # stillness detector: walking gait bobs pitch/yaw well above
+            # this floor; a genuinely still wearer sits under it
+            if max(abs(yaw_rate), abs(pitch_rate)) > MOVE_DPS:
+                globals()["last_move_t"] = imu_stamp
         return
     if s.startswith("TAP:"):
         try:
@@ -610,7 +623,18 @@ running = True
 REPEAT_S = 60.0           # per-object cooldown (Soundscape: 60 s, was 5)
 RANGE_DELTA_MM = 500.0    # approach by this much re-announces inside cooldown
 STALE_S = 1.5             # queued speech older than this is dropped unspoken
-DIRECTIVE_REPEAT_S = 1.2  # directive tier repeats this often while active
+DIRECTIVE_REPEAT_S = 1.2  # min gap between directive utterances
+DIRECTIVE_MAX_SAY = 2     # per encounter: warn twice, then trust the wearer
+                          # (user ruling 2026-08-24: "say it once or twice
+                          # per obstacle -- the person can assume it's still
+                          # there"; ticker + haptics carry the range on)
+DIRECTIVE_REARM_MM = 400  # closing this much re-arms the warning pair
+DIRECTIVE_CLEAR_S = 4.0   # hazard absent this long = new encounter
+MOVE_DPS = 6.0            # head-rate floor: above = wearer moving (gait bob
+                          # is ~30 deg/s in pitch; true stillness is <2)
+STILL_S = 1.5             # under the floor this long = standing still;
+                          # a still wearer gets ONE warning, not a loop
+                          # (no IMU -> always treated as moving: fail loud)
 DIRECTIVE_MM = 800.0      # anything nearer in the path cone -> command
 # Path cone is RANGE-ADAPTIVE (2026-08-20 biosonar review found the bug):
 # a fixed 15 deg cone is +-8 cm at 0.3 m -- narrower than a torso, so a pole
@@ -655,7 +679,19 @@ def clock_hour(az_deg):
     return ((h - 1) % 12) + 1
 speech_lock = threading.Lock()
 speech_next = None        # latest-wins slot: (text, key, range_mm)
-speech_last = {}          # key -> (t_spoken, range_mm)
+speech_last = {}          # key -> (t_spoken, range_mm, times_said)
+_dir_seen = {}            # key -> last time the directive was ATTEMPTED
+                          # (spoken or not) -- gap > DIRECTIVE_CLEAR_S means
+                          # the hazard went away and this is a new encounter
+
+
+def _wearer_still():
+    """True only with fresh IMU evidence of >STILL_S below the motion
+    floor. No IMU (or stale) -> False: never silence warnings blind."""
+    now = time.monotonic()
+    if imu_quat is None or now - imu_stamp > 0.5:
+        return False
+    return now - last_move_t > STILL_S
 
 
 def speech_worker():
@@ -685,15 +721,30 @@ def speech_worker():
         if now - born > STALE_S and tier != "query":
             continue                       # world moved on; don't narrate the past
         prev = speech_last.get(key)
+        cnt = 1
         if tier == "directive":
+            # Encounter-scoped: warn DIRECTIVE_MAX_SAY times, then trust the
+            # wearer ("the person can assume it's still there"). Standing
+            # still (IMU) silences repeats entirely; genuinely closing in
+            # re-arms the pair. Ticker + haptics never stop.
+            new_enc = now - _dir_seen.get(key, 0.0) > DIRECTIVE_CLEAR_S
+            _dir_seen[key] = now
+            cnt = 0 if new_enc or not prev or len(prev) < 3 else prev[2]
             if prev and now - prev[0] < DIRECTIVE_REPEAT_S:
                 continue
+            if cnt >= 1 and _wearer_still():
+                continue
+            if cnt >= DIRECTIVE_MAX_SAY:
+                if prev and rng > prev[1] - DIRECTIVE_REARM_MM:
+                    continue
+                cnt = 0
+            cnt += 1
         elif tier != "query" and prev and (now - prev[0] < REPEAT_S):
             # Approach-only re-announce inside the cooldown: range increase
             # is never urgent, and association flapping would chatter.
             if rng > prev[1] - RANGE_DELTA_MM:
                 continue
-        speech_last[key] = (now, rng)
+        speech_last[key] = (now, rng, cnt)
         flightlog.spoken(text, key, tier, rng)
         phone_status["said"] = text
         global speaking
