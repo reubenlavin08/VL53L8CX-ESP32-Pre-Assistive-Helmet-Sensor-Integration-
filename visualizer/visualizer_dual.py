@@ -13,7 +13,7 @@ Spatial grounding: faint FoV frustums, head sphere + nose line, floor plane.
 Readability: connected surface-net, hot->cool colormap, FPS + nearest L/R title.
 
 Usage (WiFi TCP):
-    python visualizer_dual.py --host 192.168.1.228
+    python visualizer_dual.py --host 192.168.1.227
 Knobs:
     --ema 0.3        smoothing (lower = smoother/laggier)
     --sigma-max 20   drop zones noisier than this (mm)
@@ -260,7 +260,7 @@ class Reader(QtCore.QThread):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="192.168.1.228")
+    ap.add_argument("--host", default="192.168.1.227")
     ap.add_argument("--tcp-port", type=int, default=3333)
     ap.add_argument("--max-mm", type=int, default=4000)
     ap.add_argument("--floor-mm", type=int, default=1400)

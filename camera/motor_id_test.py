@@ -1,6 +1,6 @@
 """MOTOR ID TEST -- guided, spoken, zero-ambiguity mapping of GPIO -> skull.
 
-    python camera/motor_id_test.py                      (host 192.168.1.228)
+    python camera/motor_id_test.py                      (host 192.168.1.227)
 
 Fires each motor channel through the firmware's /api/motor endpoint (no
 reflash, ranging keeps running), announces which channel is pulsing, and asks
@@ -45,7 +45,7 @@ def pulse(host, i, duty, ms):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="192.168.1.228")
+    ap.add_argument("--host", default="192.168.1.227")
     ap.add_argument("--duty", type=int, default=220)
     ap.add_argument("--ms", type=int, default=500)
     args = ap.parse_args()

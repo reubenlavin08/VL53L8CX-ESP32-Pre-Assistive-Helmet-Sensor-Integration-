@@ -783,7 +783,7 @@ def main():
     ap.add_argument("--source", default="helmet", choices=["helmet", "pintest"],
                     help="helmet = flashed firmware via TCP (default); "
                          "pintest = tof_pin_test GRID: over serial")
-    ap.add_argument("--host", default="192.168.1.228", help="helmet firmware IP")
+    ap.add_argument("--host", default="192.168.1.227", help="helmet firmware IP")
     ap.add_argument("--tcp-port", type=int, default=3333)
     ap.add_argument("--serial", action="store_true",
                     help="FIELD MODE: read the helmet stream over USB serial "

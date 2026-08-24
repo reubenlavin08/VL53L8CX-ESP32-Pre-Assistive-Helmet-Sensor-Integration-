@@ -3,7 +3,7 @@ Push a freshly-built firmware image to the ESP over WiFi (no USB needed).
 
 Usage:
     python ota_flash.py                 # uses default host + default bin path
-    python ota_flash.py 192.168.1.228   # explicit host
+    python ota_flash.py 192.168.1.227   # explicit host
 
 Requires the ESP to be running firmware with the OTA HTTP endpoint enabled
 (POST /update with X-OTA-Token header). The token is hard-coded below — keep
@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 
 # ── Config ──────────────────────────────────────────────────────────────────
-DEFAULT_HOST = "192.168.1.228"
+DEFAULT_HOST = "192.168.1.227"
 OTA_TOKEN    = "helmet-ota-2026"     # must match wifi_credentials.h OTA_TOKEN
 BIN_PATH     = Path(__file__).resolve().parent.parent / "build" / "vl53l8cx_esp32.bin"
 HTTP_PORT    = 80
