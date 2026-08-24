@@ -189,7 +189,7 @@ def helmet_serial_reader(port, baud):
 phone_jpeg = None
 phone_lock = threading.Lock()
 phone_status = {"said": "", "audio": True, "mode": "idle", "gated": False,
-                "dropped": False}   # updated each frame; served at /status
+                "dropped": False, "rec": False}   # served at /status
 
 
 def phone_server(port):
@@ -241,6 +241,7 @@ def phone_server(port):
  button:active{background:rgba(70,85,110,.6)}
  button svg{width:24px;height:24px}
  #mute.off{background:rgba(120,30,30,.55);border-color:rgba(255,120,120,.4)}
+ #rec.on{background:rgba(190,40,40,.75);border-color:rgba(255,120,120,.6)}
  #bar{position:fixed;left:0;right:0;bottom:0;z-index:2;
       padding:8px 14px calc(8px + env(safe-area-inset-bottom));
       font-size:13px;color:#9fd8a4;white-space:nowrap;overflow:hidden;
@@ -277,6 +278,15 @@ def phone_server(port):
     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <button title="Help" style="font-size:22px;font-weight:700"
    onclick="document.getElementById('help').style.display='block'">?</button>
+  <button id="rec" title="Record" onclick="cmd('record','record')">
+   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/>
+    <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor"
+    stroke-width="1.6"/></svg></button>
+  <button id="pwr" title="Shut down" onclick="powerTap()">
+   <svg viewBox="0 0 24 24"><line x1="12" y1="3" x2="12" y2="11"
+    stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M7 6.3a8 8 0 1 0 10 0" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
 <div id="help" onclick="this.style.display='none'" style="display:none;
  position:fixed;inset:0;z-index:4;background:rgba(10,12,16,.94);
@@ -304,7 +314,9 @@ def phone_server(port):
  <h3>Buttons</h3>
  <p style="margin:6px 0 14px"><b>Around</b> · <b>Describe</b> ·
  <b>Mute</b> · <b>Flag</b> (save the last 60&nbsp;s for review) ·
- <b>Rotate</b> (fill a sideways-held phone) · <b>?</b></p>
+ <b>Rotate</b> (fill a sideways-held phone) · <b>?</b> ·
+ <b>REC</b> (record video + mic; say "Iris… start/stop recording" too) ·
+ <b>Power</b> (tap twice: shuts Iris down, back to Start screen)</p>
  <p style="color:#8a94a6">Full guide: docs/USER-GUIDE.md</p>
 </div>
 <div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
@@ -382,14 +394,25 @@ function toast(m){const t=document.getElementById('toast');
  toastT=setTimeout(()=>t.style.opacity=0,1200)}
 function cmd(c,label){fetch('/cmd?c='+c);toast('→ '+label)}
 function toggleMute(){cmd(audioOn?'quiet':'audio_on',audioOn?'muted':'audio on')}
+let pwrArmed=0;
+function powerTap(){
+ const now=Date.now();
+ if(now-pwrArmed<3000){cmd('shutdown','shutting down');pwrArmed=0;
+  setTimeout(()=>location.reload(),2500)}
+ else{pwrArmed=now;toast('tap again to shut down')}
+}
+let downCount=0;
 setInterval(async()=>{try{
  const s=await(await fetch('/status')).json();
+ if(!('said' in s)){if(++downCount>=3)location.reload();return}
+ downCount=0;
  audioOn=s.audio;
  document.getElementById('mode').textContent=s.mode+(s.gated?' · gated':'')+(s.dropped?' · DROPPED':'');
  document.getElementById('said').textContent=s.said;
  const m=document.getElementById('mute');
  m.className=audioOn?'':'off';
  document.getElementById('mx').style.opacity=audioOn?1:0.25;
+ document.getElementById('rec').className=s.rec?'on':'';
 }catch(e){}},600);
 </script></body></html>"""
 
@@ -438,7 +461,8 @@ setInterval(async()=>{try{
             elif self.path.startswith("/cmd?c="):
                 c = self.path.split("=", 1)[1]
                 if c in ("around", "describe", "quiet", "audio_on",
-                         "flag", "stop", "doors", "guide", "hand", "read"):
+                         "flag", "stop", "doors", "guide", "hand", "read",
+                         "shutdown", "record"):
                     import voice
                     voice.commands.put(c)   # same dispatch as spoken commands
                 self._send(b"{}", "application/json")
@@ -630,6 +654,12 @@ DIRECTIVE_MAX_SAY = 2     # per encounter: warn twice, then trust the wearer
                           # there"; ticker + haptics carry the range on)
 DIRECTIVE_REARM_MM = 400  # closing this much re-arms the warning pair
 DIRECTIVE_CLEAR_S = 4.0   # hazard absent this long = new encounter
+# Hand queries presuppose a hand, and small VLMs oblige by inventing one
+# (live 2026-08-24: empty desk -> "you are holding paper"). Existence
+# check FIRST, with the exact abstention sentence spelled out.
+HAND_Q = ("First check: is a hand or a hand-held object actually visible? "
+          "If not, reply exactly: I don't see anything in your hand. "
+          "If yes, name the held object in one short sentence.")
 MOVE_DPS = 6.0            # head-rate floor: above = wearer moving (gait bob
                           # is ~30 deg/s in pitch; true stillness is <2)
 STILL_S = 1.5             # under the floor this long = standing still;
@@ -1296,6 +1326,8 @@ def main():
     # query tier, honest spoken failures, single-flight.
     import vlm as vlm_mod
     import ocr as ocr_mod
+    import recorder as rec_mod
+    recorder = rec_mod.Recorder()
     from collections import deque
     vlm_frames = deque(maxlen=10)      # recent frames for sharpest-of-N
 
@@ -2292,7 +2324,7 @@ def main():
                     cv2.LINE_AA)
 
         phone_status.update(
-            audio=audio_on, gated=gated, dropped=dropped,
+            audio=audio_on, gated=gated, dropped=dropped, rec=recorder.on,
             mode=("door " + door["state"] if door["state"] != "idle" else
                   "find " + find["state"] if find["state"] != "idle" else
                   "guiding" if guide is not None else
@@ -2305,6 +2337,7 @@ def main():
                     phone_jpeg = jb.tobytes()
 
         _draw_ui(view, audio_on)
+        recorder.add(view, now)
         cv2.imshow("CV fusion", view)
         k = cv2.waitKey(1) & 0xFF
 
@@ -2360,6 +2393,10 @@ def main():
             elif vc == "read":
                 _say_q("reading")
                 threading.Thread(target=_read_that, daemon=True).start()
+            elif vc == "shutdown":
+                k = ord("q")       # clean exit; launcher takes 8123 back
+            elif vc == "record":
+                k = ord("c")
 
         # tap gesture (firmware TAP: lines). Double-tap = describe -- the
         # zero-hands query; single taps ignored (bump-prone). 1 s debounce,
@@ -2380,6 +2417,14 @@ def main():
                       .read_text(encoding="utf-8"))
             except OSError:
                 print("USER-GUIDE.md not found")
+        elif k == ord("c"):
+            if recorder.on:
+                p = recorder.stop()
+                _say_q("recording saved")
+                print(f"recording -> {p}")
+            else:
+                recorder.start(view)
+                _say_q("recording")
         elif k == ord("y"):
             show_det = not show_det
         elif k == ord("a"):
@@ -2392,7 +2437,7 @@ def main():
         elif k == ord("w"):
             use_dewarp = not use_dewarp
         elif k in (ord("v"), ord("h")):
-            _vlm_ask("What am I holding?" if k == ord("h")
+            _vlm_ask(HAND_Q if k == ord("h")
                      else "Describe what is ahead.", k == ord("h"))
         elif k == ord("f"):
             if find["state"] != "idle":
@@ -2496,6 +2541,8 @@ def main():
 
     running = False
     fo.running = False
+    if recorder.on:
+        print(f"recording -> {recorder.stop()}")
     cap.release()
     cv2.destroyAllWindows()
 

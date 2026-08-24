@@ -39,9 +39,13 @@ Say **"Iris"**, wait for the **high beep**, then the command (5 s window):
 ## Phone app (and computer viewer buttons)
 
 Top-to-bottom / left-to-right: **What's around · Describe · Mute · Flag ·
-Rotate · Help (?)**. Flag = "remember this moment": saves the last 60 s
-of video + sensors so problems can be replayed later. Rotate fills a
-portrait phone screen with the video (hold the phone sideways).
+Rotate · Help (?) · REC · Power**. Flag = "remember this moment": saves
+the last 60 s of video + sensors so problems can be replayed later.
+Rotate fills a portrait phone screen with the video (hold the phone
+sideways). REC records the annotated video + laptop mic to
+`camera/sessions/*_rec/` — for backpack field runs ("Iris… start
+recording" works too). Power (tap twice to confirm) shuts Iris down
+cleanly and returns the app to the Start screen.
 
 ## Keyboard (computer viewer)
 
@@ -55,6 +59,7 @@ portrait phone screen with the video (hold the phone sideways).
 | `n` | Walkable-tunnel haptics (corridor centering) |
 | `l` | Level check (IMU) |
 | `u` | Toggle steps/meters |
+| `c` | Start/stop session recording (video + mic) |
 | `x` | "Wrong" (false-positive vote) |
 | `F8` | Mute/unmute |
 | `F9` | What's around |

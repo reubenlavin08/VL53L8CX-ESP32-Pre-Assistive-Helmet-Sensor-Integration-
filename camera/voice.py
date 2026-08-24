@@ -48,6 +48,8 @@ PHRASES = {
     "wrong": "wrong",
     "flag that": "flag",
     "read that": "read",
+    "start recording": "record",
+    "stop recording": "record",
 }
 
 # curated findable words (closed grammar cannot do open vocabulary --
