@@ -58,6 +58,8 @@ import flightlog                     # FP/hour metric + intervention clips
 # downstream logic keeps its ">0 = valid" convention. TCP is the default so the
 # viewer never fights another tool for the COM port.
 imu_quat = None          # latest [w,x,y,z], helmet firmware only
+tap_event = None         # (count, t) from firmware TAP: lines
+drop_state = None        # 1 = dropped, 0 = picked up (firmware DROP: lines)
 from collections import deque as _dq
 _yawh = _dq(maxlen=12)   # ~120 ms of yaw samples for the rate estimator
 yaw_rate = 0.0           # deg/s, EMA-smoothed, signed
@@ -97,6 +99,18 @@ def _helmet_line(s):
             (t0y, y0y), (t1y, y1y) = _yawh[0], _yawh[-1]
             r = (((y1y - y0y + 180.0) % 360.0) - 180.0) / (t1y - t0y)
             globals()["yaw_rate"] = 0.7 * yaw_rate + 0.3 * r
+        return
+    if s.startswith("TAP:"):
+        try:
+            globals()["tap_event"] = (int(s[4:]), time.monotonic())
+        except ValueError:
+            pass
+        return
+    if s.startswith("DROP:"):
+        try:
+            globals()["drop_state"] = int(s[5:])
+        except ValueError:
+            pass
         imu_stamp = time.monotonic()
 
 
@@ -570,6 +584,32 @@ def ticker_worker():
             time.sleep(1.0 / TICK_RATE_MIN)
 
 
+AROUND_REPEAT_S = 10.0    # repeat within this = next depth layer
+SECTOR_EDGE_DEG = 20.0    # front-left | front-center | front-right split
+
+
+def _sector(az):
+    if az < -SECTOR_EDGE_DEG:
+        return "front-left"
+    if az > SECTOR_EDGE_DEG:
+        return "front-right"
+    return "front-center"
+
+
+def _around_text(items, layer):
+    """Around-Me phrasing. Layer 1 = labels+sectors (terse); layer 2 = same
+    items with ranges. Sectors are camera-honest: we see ~120 deg forward,
+    nothing behind -- and say so rather than overreach."""
+    if not items:
+        return "nothing close in front"
+    if layer == 1:
+        txt = "; ".join(f"{it['name']} {it['sector']}" for it in items)
+        return txt + ". behind you I can't see"
+    return "; ".join(f"{it['name']} {it['sector']}, "
+                     f"{spoken_dist(it['rng'], walking=False)}"
+                     for it in items)
+
+
 def direction_word(az_deg):
     """Wearer-relative direction, TERSE. Long phrases proved unusable live
     ('takes way too long to hear') -- three words max, no qualifiers."""
@@ -657,7 +697,7 @@ def detector_worker(get_frame):
 
 
 def main():
-    global running, use_dewarp, phone_jpeg, STRIDE_M, UNITS_MODE
+    global running, use_dewarp, phone_jpeg, STRIDE_M, UNITS_MODE, tap_event, drop_state
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="COM9")
     ap.add_argument("--baud", type=int, default=115200)
@@ -816,6 +856,12 @@ def main():
     gated = False          # sterile-cockpit speech gate (head-turn)
     gate_below_since = None
     gate_entered = 0.0
+    around_state = {"t": 0.0, "layer": 0, "items": []}
+    cur_scene = {"dets": [], "alerts": []}   # live refs for query closures
+    last_tap = 0.0
+    dropped = False
+    drop_n = 0
+    next_drop_say = 0.0
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -920,6 +966,65 @@ def main():
         with speech_lock:
             speech_next = (text, f"DOOR{time.monotonic()}", 0, "query",
                            time.monotonic())
+
+    def _vlm_ask(question, hand):
+        """One VLM launch path shared by keys v/h and Around-Me layer 3."""
+        if vlm_mod.busy.is_set():
+            _say_q("still working")
+            return
+        ctx = "; ".join(f"{d['name']} {d['range_mm']/1000:.1f}m"
+                        for d in cur_scene["dets"] if d.get("range_mm"))[:200]
+        _say_q("looking")
+        threading.Thread(target=vlm_mod.describe,
+                         args=(list(vlm_frames), question),
+                         kwargs={"sensor_ctx": ctx, "hand_mode": hand,
+                                 "speak": _say_q}, daemon=True).start()
+
+    def around_me_trigger(now):
+        """ONE responder for F9, voice "what's around", and the tap gesture.
+        Repeat within AROUND_REPEAT_S peels a layer: labels -> ranges -> VLM."""
+        st = around_state
+        if now - st["t"] > AROUND_REPEAT_S:
+            st["layer"] = 0
+        st["t"] = now
+        st["layer"] = st["layer"] % 3 + 1
+        if st["layer"] == 3:
+            _vlm_ask("Describe what is ahead.", False)
+            return
+        if st["layer"] == 1:
+            best = {}
+            for d in cur_scene["dets"]:
+                if not d.get("range_mm"):
+                    continue
+                x0a, y0a, x1a, y1a = d["xyxy"]
+                az = pixel_azimuth((x0a + x1a) / 2, (y0a + y1a) / 2)
+                if az is None:
+                    continue
+                nm = (d["name"] if d["conf"] >= CONF_HEDGE
+                      else f"maybe {d['name']}")
+                sec = _sector(az)
+                if sec not in best or d["range_mm"] < best[sec]["rng"]:
+                    best[sec] = {"name": nm, "sector": sec, "az": az,
+                                 "rng": d["range_mm"], "tid": d.get("tid")}
+            for zn in cur_scene["alerts"]:
+                az = zn.get("az")
+                if az is None:
+                    continue
+                sec = _sector(az)
+                if sec not in best:
+                    best[sec] = {"name": "obstacle", "sector": sec, "az": az,
+                                 "rng": zn["z"], "tid": None}
+            order = {"front-left": 0, "front-center": 1, "front-right": 2}
+            st["items"] = sorted(best.values(),
+                                 key=lambda i: order[i["sector"]])
+        else:
+            # layer 2 re-answers THE SAME items, re-ranged if still tracked
+            for it in st["items"]:
+                for d in cur_scene["dets"]:
+                    if (d.get("tid") is not None and d["tid"] == it["tid"]
+                            and d.get("range_mm")):
+                        it["rng"] = d["range_mm"]
+        _say_q(_around_text(st["items"], st["layer"]))
     tof_hist = {"A": [], "B": []}      # (t, grid) valid-hold window per sensor
     snapdir = ROOT / "camera" / "snapshots"
     snapdir.mkdir(exist_ok=True)
@@ -1029,6 +1134,7 @@ def main():
             else:
                 d["range_mm"] = None
                 d["zrows"] = set()
+        cur_scene["dets"] = dets
 
         # -- render --
         view = frame.copy()
@@ -1095,6 +1201,8 @@ def main():
         for zn in zones:
             if "az" not in zn:
                 zn["az"] = pixel_azimuth(*zn["cen"])
+        cur_scene["alerts"] = [zn for zn in alert_zones
+                               if zn.get("az") is not None]
         # CANE FILTER: bottom row is the cane's territory (and, worn at 22.5°
         # down, mostly the floor itself) -- rendered, never spoken/ticked.
         # Head/torso/waist band = rows 0-2.
@@ -1117,7 +1225,27 @@ def main():
             closing = (v0h - v1h) / 1000.0 / max(0.2, t1h - t0h)   # m/s toward
             if closing > 0.05:
                 ttc = (near_path / 1000.0) / closing
-        tick_state[0] = (ttc, near_path) if audio_on else (None, None)
+        tick_state[0] = ((ttc, near_path) if (audio_on and not dropped) else (None, None))
+
+        # drop alarm (firmware DROP: lines): announce at directive tier,
+        # repeat every 10 s until picked up; hazard callouts are garbage
+        # while the helmet is on the floor -- suppressed via `dropped`.
+        if drop_state == 1:
+            if not dropped:
+                dropped = True
+                drop_n = 0
+                next_drop_say = now
+            if now >= next_drop_say:
+                drop_n += 1
+                with speech_lock:
+                    speech_next = ("helmet dropped", f"DROP{drop_n}", 0,
+                                   "directive", now)
+                next_drop_say = now + 10.0
+        elif drop_state == 0 and dropped:
+            dropped = False
+            drop_state = None
+            with speech_lock:
+                speech_next = ("helmet picked up", "DROPCLR", 0, "query", now)
 
         # sterile-cockpit gate: CAUTION speech suppressed during fast head
         # turns (stale azimuth words + collides with deliberate scanning).
@@ -1140,7 +1268,7 @@ def main():
             else:
                 gate_below_since = None
 
-        if audio_on and not level_mode:
+        if audio_on and not level_mode and not dropped:
             if near_path is not None and near_path < DIRECTIVE_MM:
                 # DIRECTIVE: command, chosen by where the free space is
                 left = [zn["z"] for zn in upper if zn["az"] < -10]
@@ -1232,27 +1360,7 @@ def main():
         f9_now = f9_pressed()
         if (f9_now and not f9_was_down) or voice_around:
             voice_around = False
-            parts = []
-            ranged = sorted([d for d in dets if d["range_mm"]],
-                            key=lambda d: d["range_mm"])[:2]
-            for d in ranged:
-                x0, y0, x1, y1 = d["xyxy"]
-                az = pixel_azimuth((x0 + x1) / 2, (y0 + y1) / 2)
-                if az is None:
-                    continue
-                nm = d["name"] if d["conf"] >= CONF_HEDGE else f"maybe {d['name']}"
-                parts.append(f"{nm} {direction_word(az)}, "
-                             f"{spoken_dist(d['range_mm'], walking=False)}")
-            if not parts and alert_zones:
-                zn = min(alert_zones, key=lambda z: z["z"])
-                az = zn.get("az")
-                if az is not None:
-                    parts.append(f"obstacle {direction_word(az)}, "
-                                 f"{spoken_dist(zn['z'], walking=False)}")
-            text = ("; ".join(parts) if parts
-                    else "There is nothing to call out right now")
-            with speech_lock:
-                speech_next = (text, f"QUERY{now}", 0, "query", now)
+            around_me_trigger(now)
         f9_was_down = f9_now
 
         # ── BEACON GUIDANCE (key 'g'): Soundscape 4-region beacon ────────────
@@ -1512,6 +1620,18 @@ def main():
                 _say_q("flagged")
             elif vc == "around":
                 voice_around = True
+
+        # tap gesture (firmware TAP: lines). Double-tap = describe -- the
+        # zero-hands query; single taps ignored (bump-prone). 1 s debounce,
+        # 0.5 s staleness so a queued tap can't fire late.
+        te = tap_event
+        if te is not None:
+            tap_event = None
+            tcount, t_tap = te
+            if (tcount == 2 and now - t_tap < 0.5
+                    and now - last_tap > 1.0):
+                last_tap = now
+                k = ord("v")
         if k == ord("q"):
             break
         elif k == ord("y"):
@@ -1526,19 +1646,8 @@ def main():
         elif k == ord("w"):
             use_dewarp = not use_dewarp
         elif k in (ord("v"), ord("h")):
-            if vlm_mod.busy.is_set():
-                _say_q("still working")
-            else:
-                hand = k == ord("h")
-                q = "What am I holding?" if hand else "Describe what is ahead."
-                ctx = "; ".join(f"{d['name']} {d['range_mm']/1000:.1f}m"
-                                for d in dets if d.get("range_mm"))[:200]
-                _say_q("looking")          # ack the press; answer in ~2-6 s
-                threading.Thread(
-                    target=vlm_mod.describe,
-                    args=(list(vlm_frames), q),
-                    kwargs={"sensor_ctx": ctx, "hand_mode": hand,
-                            "speak": _say_q}, daemon=True).start()
+            _vlm_ask("What am I holding?" if k == ord("h")
+                     else "Describe what is ahead.", k == ord("h"))
         elif k == ord("u"):
             UNITS_MODE = {"auto": "steps", "steps": "meters",
                           "meters": "auto"}[UNITS_MODE]

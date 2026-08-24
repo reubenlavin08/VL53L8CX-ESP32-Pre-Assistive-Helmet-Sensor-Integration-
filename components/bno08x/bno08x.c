@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
+#include <math.h>
 #include "esp_timer.h"
 #include "sh2.h"
 #include "sh2_SensorValue.h"
@@ -127,9 +128,40 @@ static void enable_reports(void)
      * far from the motors) switch back to SH2_ROTATION_VECTOR. */
     int r = sh2_setSensorConfig(SH2_ARVR_STABILIZED_GRV, &cfg);
     ESP_LOGW(TAG, "enable ARVR-stabilized GRV (6-axis, mag-free) -> %d", r);
+
+    /* TAP detector: on-chip event report (fires only on taps -- near-zero
+     * bus cost). Double-tap = the hands-free query gesture (PLAN-tap-to-query). */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.reportInterval_us = 100000;      /* keep-alive; taps arrive as events */
+    cfg.changeSensitivityEnabled = true;
+    r = sh2_setSensorConfig(SH2_TAP_DETECTOR, &cfg);
+    ESP_LOGW(TAG, "enable TAP detector -> %d", r);
+
+    /* Accelerometer @50 Hz for the drop-alarm state machine (freefall ->
+     * impact). Consumed entirely in sensor_cb; nothing new streamed raw
+     * (PLAN-drop-alarm). */
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.reportInterval_us = 20000;       /* 50 Hz */
+    r = sh2_setSensorConfig(SH2_ACCELEROMETER, &cfg);
+    ESP_LOGW(TAG, "enable accelerometer 50Hz (drop alarm) -> %d", r);
 }
 
 static volatile uint32_t s_evt = 0, s_dec_fail = 0, s_rv = 0;
+
+/* -- tap + drop event latches (consume-on-read via accessors below) -- */
+static volatile uint8_t  s_tap_flags = 0;
+static volatile uint32_t s_tap_seq = 0, s_tap_taken = 0;
+
+#define DROP_FREEFALL_G     0.40f    /* |a| below this = freefall candidate */
+#define DROP_FREEFALL_MS    150      /* sustained this long (>=40 cm fall)  */
+#define DROP_IMPACT_G       2.5f     /* spike above this within the window  */
+#define DROP_IMPACT_WIN_MS  500
+static volatile int  s_drop_pending = -1;   /* -1 none, 1 dropped, 0 cleared */
+static bool     s_drop_latched = false;
+static int64_t  s_ff_start_us = 0;          /* freefall entry time, 0 = none */
+static int64_t  s_ff_deadline_us = 0;       /* impact must land before this  */
+static int      s_motion_cnt = 0;           /* post-drop pickup detection    */
+static int64_t  s_motion_win_us = 0;
 
 static void sensor_cb(void *cookie, sh2_SensorEvent_t *event)
 {
@@ -157,6 +189,46 @@ static void sensor_cb(void *cookie, sh2_SensorEvent_t *event)
         s_status   = v.status & 0x03;                 /* 0..3 calibration accuracy */
         s_head_acc = v.un.rotationVector.accuracy;    /* heading accuracy, radians */
         s_have = true;
+    } else if (v.sensorId == SH2_TAP_DETECTOR) {
+        s_tap_flags = v.un.tapDetector.flags;
+        s_tap_seq++;
+    } else if (v.sensorId == SH2_ACCELEROMETER) {
+        /* drop-alarm state machine: freefall window -> impact -> latched;
+         * sustained motion afterwards = picked up -> cleared. All in-firmware,
+         * nothing streamed raw (PLAN-drop-alarm). */
+        float ax = v.un.accelerometer.x, ay = v.un.accelerometer.y,
+              az = v.un.accelerometer.z;
+        float mag = sqrtf(ax * ax + ay * ay + az * az);   /* m/s^2 */
+        int64_t now = esp_timer_get_time();
+        if (!s_drop_latched) {
+            if (mag < DROP_FREEFALL_G * 9.81f) {
+                if (s_ff_start_us == 0) s_ff_start_us = now;
+                else if (now - s_ff_start_us > (int64_t)DROP_FREEFALL_MS * 1000)
+                    s_ff_deadline_us = now + (int64_t)DROP_IMPACT_WIN_MS * 1000;
+            } else {
+                s_ff_start_us = 0;
+                if (mag > DROP_IMPACT_G * 9.81f && now < s_ff_deadline_us) {
+                    s_drop_latched = true;
+                    s_drop_pending = 1;
+                    s_motion_cnt = 0;
+                    s_motion_win_us = now;
+                    ESP_LOGW(TAG, "DROP detected (impact %.1f m/s2)", (double)mag);
+                }
+            }
+        } else {
+            /* picked up = sustained non-still motion over a 2 s window */
+            if (fabsf(mag - 9.81f) > 1.5f) s_motion_cnt++;
+            if (now - s_motion_win_us > 2000000) {
+                if (s_motion_cnt >= 20) {
+                    s_drop_latched = false;
+                    s_drop_pending = 0;
+                    s_ff_deadline_us = 0;
+                    ESP_LOGW(TAG, "DROP cleared (picked up)");
+                }
+                s_motion_cnt = 0;
+                s_motion_win_us = now;
+            }
+        }
     } else if (v.sensorId == SH2_ARVR_STABILIZED_GRV) {
         s_rv++;
         s_q[0] = v.un.arvrStabilizedGRV.real;
@@ -167,6 +239,24 @@ static void sensor_cb(void *cookie, sh2_SensorEvent_t *event)
         s_head_acc = 0.0f;              /* mag-free: no heading-accuracy estimate */
         s_have = true;
     }
+}
+
+/* Consume-on-read tap event. Returns true once per new tap; flags bit 64
+ * (TAPDET_DOUBLE) = double tap. */
+bool bno08x_get_tap(uint8_t *flags)
+{
+    if (s_tap_seq == s_tap_taken) return false;
+    s_tap_taken = s_tap_seq;
+    if (flags) *flags = s_tap_flags;
+    return true;
+}
+
+/* Consume-on-read drop event: -1 no change, 1 drop latched, 0 cleared. */
+int bno08x_get_drop(void)
+{
+    int e = s_drop_pending;
+    s_drop_pending = -1;
+    return e;
 }
 
 /* -------------------------------------------------------------------- API */

@@ -943,6 +943,23 @@ static esp_err_t motor_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* GET /api/pattern?p=duck -- named haptic pattern from the host. v1: "duck"
+ * = all-3-motor double pulse, the head-clearance urgent cue
+ * (PLAN-head-clearance). Uses the manual-hold guard like /api/motor. */
+static esp_err_t pattern_get_handler(httpd_req_t *req)
+{
+    g_manual_hold_until_us = esp_timer_get_time() + 900LL * 1000;
+    for (int rep = 0; rep < 2; rep++) {
+        for (int mi = 0; mi < HAPTIC_N; mi++) haptic_set(mi, 230);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        for (int mi = 0; mi < HAPTIC_N; mi++) haptic_set(mi, 0);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"pattern\":\"duck\"}\n");
+    return ESP_OK;
+}
+
 /* GET /api/haptics?en=0|1 — software motor mute. No query = report state. */
 static esp_err_t haptics_get_handler(httpd_req_t *req)
 {
@@ -982,12 +999,14 @@ static void start_ota_server(void)
     httpd_uri_t health_uri = { .uri = "/api/health",  .method = HTTP_GET,  .handler = health_get_handler,  .user_ctx = NULL };
     httpd_uri_t motor_uri  = { .uri = "/api/motor",   .method = HTTP_GET,  .handler = motor_get_handler,   .user_ctx = NULL };
     httpd_uri_t hapt_uri   = { .uri = "/api/haptics", .method = HTTP_GET,  .handler = haptics_get_handler, .user_ctx = NULL };
+    httpd_uri_t pat_uri    = { .uri = "/api/pattern", .method = HTTP_GET,  .handler = pattern_get_handler, .user_ctx = NULL };
     httpd_register_uri_handler(server, &ota_uri);
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &health_uri);
     httpd_register_uri_handler(server, &motor_uri);
     httpd_register_uri_handler(server, &hapt_uri);
+    httpd_register_uri_handler(server, &pat_uri);
     ESP_LOGI(TAG, "HTTP server on port %d: GET / (viewer), GET /api/status, GET /api/health, GET /api/motor, POST /update",
              OTA_HTTP_PORT);
 }
@@ -1382,6 +1401,21 @@ static void ranging_task(void *arg)
                                   (unsigned)st, (double)head_acc);
                 fputs(qb, stdout);
                 tcp_write(qb, qn);
+            }
+            /* TAP / DROP event lines (grand-plan item 4) */
+            uint8_t tf;
+            if (bno08x_get_tap(&tf)) {
+                char tb[16];
+                int tn = snprintf(tb, sizeof(tb), "TAP:%d\n", (tf & 64) ? 2 : 1);
+                fputs(tb, stdout);
+                tcp_write(tb, tn);
+            }
+            int de = bno08x_get_drop();
+            if (de >= 0) {
+                char db[16];
+                int dn = snprintf(db, sizeof(db), "DROP:%d\n", de);
+                fputs(db, stdout);
+                tcp_write(db, dn);
             }
         }
         if (!got) {

@@ -31,6 +31,10 @@ void bno08x_run_task(SemaphoreHandle_t mutex);
  * Returns false if no rotation-vector report has arrived yet. */
 bool bno08x_get_quat(float out_wxyz[4]);
 
+/* Tap + drop events (consume-on-read; PLAN-tap-to-query / PLAN-drop-alarm) */
+bool bno08x_get_tap(uint8_t *flags);     /* flags & 64 = double tap */
+int  bno08x_get_drop(void);              /* -1 none, 1 dropped, 0 cleared */
+
 /* Magnetometer-fusion quality of the current ROTATION_VECTOR report.
  * Returns calibration accuracy 0..3 (0=Unreliable 1=Low 2=Med 3=High, datasheet
  * 3.1.5). If head_acc_rad != NULL, also writes the estimated heading accuracy in
