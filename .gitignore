@@ -51,3 +51,4 @@ camera/nim_key.txt
 yolov8s-worldv2.pt
 camera/voice_log.jsonl
 camera/models/
+camera/sessions/

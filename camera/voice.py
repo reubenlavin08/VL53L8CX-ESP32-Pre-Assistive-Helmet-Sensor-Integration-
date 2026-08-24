@@ -45,9 +45,11 @@ PHRASES = {
     "audio on": "audio_on",
     "what's around": "around",
     "what is around": "around",
+    "wrong": "wrong",
+    "flag that": "flag",
 }
 WAKE = "helmet"
-IDLE_OK = {"stop": "stop", "quiet": "quiet"}    # ungated safety words
+IDLE_OK = {"stop": "stop", "quiet": "quiet", "wrong": "wrong"}  # ungated
 
 commands = queue.Queue()
 available = False

@@ -49,6 +49,7 @@ import cv2
 import numpy as np
 
 import fusion_overlay as fo          # projection machinery + serial reader
+import flightlog                     # FP/hour metric + intervention clips
 
 # ── helmet-firmware source (post-flash) ──────────────────────────────────────
 # The flashed helmet firmware streams over USB-serial AND TCP:3333:
@@ -82,6 +83,7 @@ def _helmet_line(s):
         except ValueError:
             return
         imu_quat = q
+        flightlog.add_imu(*q)
         imu_stamp = time.monotonic()
 
 
@@ -415,6 +417,7 @@ def speech_worker():
             if rng > prev[1] - RANGE_DELTA_MM:
                 continue
         speech_last[key] = (now, rng)
+        flightlog.spoken(text, key, tier, rng)
         global speaking
         try:
             speaking = True                # ticker mutes so words stay audible
@@ -661,6 +664,9 @@ def main():
 
     global SPEECH_RATE
     SPEECH_RATE = args.rate
+    flightlog.start_session({"mode": args.mode, "rate": args.rate,
+                             "source": args.source,
+                             "serial": bool(args.serial)})
 
     cal = np.load(ROOT / "camera" / "calibration_720p.npz")
     K = cal["K"]
@@ -754,6 +760,7 @@ def main():
     guide = None           # beacon target: {tid, name, az, yaw, seen, rng, muted}
     bcn = None             # Beacon instance, created on first 'g'
     voice_around = False   # voice "what's around" -> F9 on the next frame
+    disagree_since = None  # ToF-near-with-no-CV-explanation persistence
 
     # -- VLM describe (keys 'v' = ahead, 'h' = in my hand) -------------------
     # docs/VLM-BUILD-SPEC.md. Cloud NIM only (no local option on either
@@ -871,6 +878,8 @@ def main():
             frame_box["id"] += 1
             frame_box["frame"] = frame
         vlm_frames.append(frame)       # ring for sharpest-of-N (keys v/h)
+        flightlog.add_frame(frame)
+        flightlog.heartbeat()
 
         ex = joint if (use_joint and joint) else cadex
         now = time.monotonic()
@@ -899,6 +908,7 @@ def main():
                 warnings.simplefilter("ignore")
                 gm = np.nanmedian(np.where(stack > 0, stack, np.nan), axis=0)
             g = np.where(np.isnan(gm), 0.0, gm)
+            flightlog.add_tof(S, g)
             R, t = ex[S]
             quads, zs, rows = [], [], []
             for r in range(SIDE):
@@ -982,10 +992,20 @@ def main():
         # ToF-only near obstacles: unclaimed + close = CV-blind hazard
         alert_zones = [zn for i, zn in enumerate(zones)
                        if i not in claimed and zn["z"] < ALERT_MM]
+        if not alert_zones:
+            disagree_since = None
         for zn in alert_zones:
             cv2.polylines(view, [zn["poly"]], True, (0, 0, 255), 3, cv2.LINE_AA)
         if alert_zones:
             near = min(zn["z"] for zn in alert_zones)
+            ranged_any = any(d.get("range_mm") for d in dets)
+            if near < 1000 and not ranged_any:
+                if disagree_since is None:
+                    disagree_since = now
+                elif now - disagree_since > 1.0:
+                    flightlog.disagreement()
+            else:
+                disagree_since = None
             cv2.putText(view, f"OBSTACLE (unlabeled) {near/1000:.1f} m",
                         (12, 700), cv2.FONT_HERSHEY_SIMPLEX, 0.85,
                         (0, 0, 255), 2, cv2.LINE_AA)
@@ -1006,6 +1026,10 @@ def main():
         f8_now = f8_pressed()
         if f8_now and not f8_was_down:
             audio_on = not audio_on
+            if audio_on:
+                flightlog.audio_on("F8")
+            else:
+                flightlog.override("F8")
         f8_was_down = f8_now
 
         # ── TIER ENGINE v2 (docs/MASTER-SYNTHESIS-2026-08-16.md) ─────────────
@@ -1392,9 +1416,17 @@ def main():
                     k = ord("g")               # cancels object guide
             elif vc == "quiet":
                 audio_on = False
+                flightlog.override("voice")
             elif vc == "audio_on":
                 audio_on = True
+                flightlog.audio_on("voice")
                 _say_q("audio on")
+            elif vc == "wrong":
+                flightlog.explicit_fp()
+                _say_q("noted")
+            elif vc == "flag":
+                flightlog.trigger_clip("manual")
+                _say_q("flagged")
             elif vc == "around":
                 voice_around = True
         if k == ord("q"):
@@ -1424,6 +1456,9 @@ def main():
                     args=(list(vlm_frames), q),
                     kwargs={"sensor_ctx": ctx, "hand_mode": hand,
                             "speak": _say_q}, daemon=True).start()
+        elif k == ord("x"):
+            flightlog.explicit_fp()
+            _say_q("noted")
         elif k == ord("t"):
             show_text = not show_text
         elif k == ord("m") and joint is not None:
