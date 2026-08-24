@@ -215,41 +215,40 @@ def phone_server(port):
 <title>Iris</title>
 <style>
  *{margin:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
- html,body{height:100%}
- body{background:#101216;color:#e8e6e0;font-family:-apple-system,system-ui,sans-serif;
-      display:flex;flex-direction:column;
-      padding:env(safe-area-inset-top) env(safe-area-inset-right)
-              env(safe-area-inset-bottom) env(safe-area-inset-left)}
- #main{flex:1;display:flex;min-height:0}
- #v{flex:1;object-fit:contain;background:#000;min-width:0;min-height:0}
- #side{display:flex;gap:8px;padding:6px}
- button{background:#1c2027cc;border:1px solid #333a45;color:#e8e6e0;
-        border-radius:12px;width:46px;height:46px;font-size:20px;
-        display:flex;align-items:center;justify-content:center}
- button:active{background:#3a4252}
+ html,body{height:100%;background:#000;overflow:hidden}
+ body{font-family:-apple-system,system-ui,sans-serif;color:#e8e6e0}
+ /* video owns the whole screen */
+ #v{position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+ /* controls float over it, translucent */
+ #side{position:fixed;display:flex;gap:10px;z-index:2}
+ button{background:rgba(22,26,33,.45);border:1px solid rgba(255,255,255,.18);
+        color:#fff;border-radius:12px;width:46px;height:46px;font-size:20px;
+        display:flex;align-items:center;justify-content:center;
+        backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+ button:active{background:rgba(70,85,110,.6)}
  button svg{width:24px;height:24px}
- #mute.off{background:#5a1f1f;border-color:#7c2c2c}
- #bar{padding:6px 12px;font-size:13px;color:#9fd8a4;min-height:30px;
-      border-top:1px solid #2a2e36;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis}
- #said{color:#e8e6e0;font-weight:600}
- #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);
-        background:#2a3140ee;border-radius:10px;padding:6px 14px;
-        font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
- /* portrait: buttons in a thin row under the video */
+ #mute.off{background:rgba(120,30,30,.55);border-color:rgba(255,120,120,.4)}
+ #bar{position:fixed;left:0;right:0;bottom:0;z-index:2;
+      padding:8px 14px calc(8px + env(safe-area-inset-bottom));
+      font-size:13px;color:#9fd8a4;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;background:rgba(10,12,16,.35);
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+ #said{color:#fff;font-weight:600}
+ #toast{position:fixed;top:calc(14px + env(safe-area-inset-top));left:50%;
+        transform:translateX(-50%);z-index:3;background:rgba(40,50,66,.85);
+        border-radius:10px;padding:6px 14px;font-size:14px;opacity:0;
+        transition:opacity .2s;pointer-events:none}
  @media (orientation: portrait){
-   #main{flex-direction:column}
-   #side{flex-direction:row;justify-content:center}
+   #side{left:50%;transform:translateX(-50%);
+         bottom:calc(44px + env(safe-area-inset-bottom));flex-direction:row}
  }
- /* landscape: thin sidebar on the right, video gets the screen */
  @media (orientation: landscape){
-   #main{flex-direction:row}
-   #side{flex-direction:column;justify-content:center}
+   #side{right:calc(10px + env(safe-area-inset-right));top:50%;
+         transform:translateY(-50%);flex-direction:column}
  }
 </style></head><body>
-<div id="main">
- <img id="v" src="/stream">
- <div id="side">
+<img id="v" src="/stream">
+<div id="side">
   <button title="What's around" onclick="cmd('around','around')">
    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor"/>
     <circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
@@ -265,7 +264,6 @@ def phone_server(port):
   <button title="Flag" onclick="cmd('flag','flagged')">
    <svg viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
     <path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg></button>
- </div>
 </div>
 <div id="bar"><span id="mode">idle</span> · <span id="said"></span></div>
 <div id="toast"></div>
